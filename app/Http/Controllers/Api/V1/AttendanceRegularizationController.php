@@ -46,10 +46,13 @@ class AttendanceRegularizationController extends Controller
 
     public function pending(Request $request): JsonResponse
     {
-        $pending = $this->regularizationService->pendingForReviewer($request->user());
+        $groups = $this->regularizationService->pendingGroupsForReviewer($request->user());
 
         return $this->success([
-            'regularization_requests' => AttendanceRegularizationResource::collection($pending),
+            'pending_groups' => $groups,
+            'regularization_requests' => AttendanceRegularizationResource::collection(
+                $this->regularizationService->pendingForReviewer($request->user()),
+            ),
         ]);
     }
 
@@ -69,9 +72,26 @@ class AttendanceRegularizationController extends Controller
 
     public function store(StoreAttendanceRegularizationRequest $request): JsonResponse
     {
+        $validated = $request->validated();
+
+        if (! empty($validated['dates'])) {
+            $requests = $this->regularizationService->createBulk(
+                $request->user(),
+                $validated,
+            );
+
+            $count = count($requests);
+
+            return $this->success(
+                ['regularization_requests' => AttendanceRegularizationResource::collection($requests)],
+                "Attendance regularization submitted for {$count} day(s).",
+                201,
+            );
+        }
+
         $regularization = $this->regularizationService->create(
             $request->user(),
-            $request->validated(),
+            $validated,
         );
 
         return $this->success(
@@ -102,6 +122,17 @@ class AttendanceRegularizationController extends Controller
         );
     }
 
+    public function approveBatch(Request $request, string $batchId): JsonResponse
+    {
+        $requests = $this->regularizationService->approveBatch($request->user(), $batchId);
+        $count = count($requests);
+
+        return $this->success(
+            ['regularization_requests' => AttendanceRegularizationResource::collection($requests)],
+            "Attendance regularization approved for {$count} day(s).",
+        );
+    }
+
     public function reject(
         RejectAttendanceRegularizationRequest $request,
         AttendanceRegularizationRequest $attendance_regularization,
@@ -116,6 +147,23 @@ class AttendanceRegularizationController extends Controller
         return $this->success(
             ['regularization_request' => new AttendanceRegularizationResource($attendance_regularization)],
             'Attendance regularization rejected.',
+        );
+    }
+
+    public function rejectBatch(
+        RejectAttendanceRegularizationRequest $request,
+        string $batchId,
+    ): JsonResponse {
+        $requests = $this->regularizationService->rejectBatch(
+            $request->user(),
+            $batchId,
+            $request->validated()['notes'],
+        );
+        $count = count($requests);
+
+        return $this->success(
+            ['regularization_requests' => AttendanceRegularizationResource::collection($requests)],
+            "Attendance regularization rejected for {$count} day(s).",
         );
     }
 

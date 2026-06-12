@@ -18,7 +18,7 @@
         <div id="profileOtherManageSection" class="d-none">
             <div class="profile-info-card">
                 <h4 class="profile-info-card-title mb-1">Update Assigned Assets</h4>
-                <p class="text-muted small mb-3">Toggle which assets are assigned to this employee.</p>
+                <p class="text-muted small mb-3">Toggle assigned assets and add details of what has been given to the employee.</p>
                 <form id="profileAssetsForm" class="profile-form">
                     <ul class="profile-asset-edit-list list-unstyled mb-0" id="profileAssetEditList"></ul>
                     <div class="d-flex align-items-center gap-3 mt-3">

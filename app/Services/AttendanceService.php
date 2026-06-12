@@ -147,9 +147,12 @@ class AttendanceService
             'status' => $dayMeta['status'],
             'status_label' => $dayMeta['status_label'],
             'punch_in_label' => $dayMeta['punch_in_label'],
+            'current_punch_in_label' => $dayMeta['current_punch_in_label'] ?? null,
             'punch_out_label' => $dayMeta['punch_out_label'],
             'day_message' => $dayMeta['day_message'],
             'awaiting_punch_out' => (bool) ($dayMeta['awaiting_punch_out'] ?? false),
+            'expected_clock_out_at' => $dayMeta['expected_clock_out_at'] ?? null,
+            'expected_clock_out_label' => $dayMeta['expected_clock_out_label'] ?? null,
         ];
     }
 
@@ -265,6 +268,7 @@ class AttendanceService
             $start->toDateString(),
             $end->toDateString(),
         );
+        $joiningDate = $employee->joining_date?->toDateString();
         $days = [];
 
         for ($date = $start->copy(); $date->lte($end); $date->addDay()) {
@@ -323,6 +327,12 @@ class AttendanceService
                 'leave_approved_by_name' => $dayMeta['leave_approved_by_name'] ?? null,
                 'leave_approved_at_label' => $dayMeta['leave_approved_at_label'] ?? null,
                 'awaiting_punch_out' => (bool) ($dayMeta['awaiting_punch_out'] ?? false),
+                'expected_clock_out_at' => $dayMeta['expected_clock_out_at'] ?? null,
+                'expected_clock_out_label' => $dayMeta['expected_clock_out_label'] ?? null,
+                'is_joining_date' => $joiningDate !== null && $dateString === $joiningDate,
+                'joining_date_label' => ($joiningDate !== null && $dateString === $joiningDate)
+                    ? $employee->joining_date->format('d M Y')
+                    : null,
             ];
         }
 
@@ -337,6 +347,8 @@ class AttendanceService
             'portal_start_date' => $this->portalStartService->portalStartDate($employee->company_id),
             'employee_portal_access_date' => $this->portalStartService->effectivePortalAccessDate($employee),
             'employee_attendance_start_date' => $this->portalStartService->attendanceTrackingStartDate($employee),
+            'employee_joining_date' => $joiningDate,
+            'employee_joining_date_label' => $employee->joining_date?->format('d M Y'),
             'summary' => [
                 'present_days' => collect($days)->where('status', 'present')->count(),
                 'half_day_days' => collect($days)->where('status', 'half_day')->count(),
@@ -594,11 +606,15 @@ class AttendanceService
             'status_label' => $pendingRequest ? 'Regularization Pending' : $dayMeta['status_label'],
             'holiday_name' => $dayMeta['holiday_name'],
             'punch_in_label' => $dayMeta['punch_in_label'],
+            'current_punch_in_label' => $dayMeta['current_punch_in_label'] ?? null,
             'punch_out_label' => $dayMeta['punch_out_label'],
             'day_message' => $dayMeta['day_message'],
             'punches' => $punches->map(fn (AttendancePunch $punch) => $this->formatPunch($punch))->values()->all(),
             'segments' => $this->workSegments($punches, $this->shouldIncludeOpenSession($punches, $isToday)),
             'awaiting_punch_out' => (bool) ($dayMeta['awaiting_punch_out'] ?? false),
+            'expected_clock_out_at' => $dayMeta['expected_clock_out_at'] ?? null,
+            'expected_clock_out_label' => $dayMeta['expected_clock_out_label'] ?? null,
+            'is_joining_date' => $employee->joining_date?->toDateString() === $date,
             'regularization_request' => $latestRequest ? [
                 'id' => $latestRequest->id,
                 'status' => $latestRequest->status,
@@ -986,18 +1002,19 @@ class AttendanceService
 
         if ($this->hasUnclosedPunchSession($punches)) {
             if ($isToday) {
-                return [
+                return array_merge([
                     'status' => 'incomplete',
                     'status_label' => '',
                     'holiday_name' => null,
                     'worked_minutes' => $workedMinutes,
                     'required_minutes' => $requiredMinutes,
                     'punch_in_label' => $punchSummary['punch_in_label'],
+                    'current_punch_in_label' => $punchSummary['current_punch_in_label'],
                     'punch_out_label' => null,
                     'can_mark' => true,
                     'day_message' => null,
                     'awaiting_punch_out' => true,
-                ];
+                ], $this->expectedClockOutForPunches($punches, $requiredMinutes));
             }
 
             return [
@@ -1139,10 +1156,58 @@ class AttendanceService
     {
         $firstIn = $punches->firstWhere('punch_type', AttendancePunch::TYPE_IN);
         $lastOut = $punches->where('punch_type', AttendancePunch::TYPE_OUT)->last();
+        $currentIn = $this->hasUnclosedPunchSession($punches) ? $punches->last() : null;
 
         return [
             'punch_in_label' => $firstIn?->punched_at->format('h:i A'),
+            'current_punch_in_label' => $currentIn?->punched_at->format('h:i A'),
             'punch_out_label' => $lastOut?->punched_at->format('h:i A'),
+        ];
+    }
+
+    /**
+     * When a punch-in session is still open, estimate the clock-out time needed
+     * to complete the employee's full required working hours for the day.
+     *
+     * @return array{expected_clock_out_at: ?string, expected_clock_out_label: ?string}
+     */
+    private function expectedClockOutForPunches(Collection $punches, int $requiredMinutes): array
+    {
+        if ($requiredMinutes <= 0 || ! $this->hasUnclosedPunchSession($punches)) {
+            return [
+                'expected_clock_out_at' => null,
+                'expected_clock_out_label' => null,
+            ];
+        }
+
+        $openIn = null;
+        $closedMinutes = 0;
+
+        foreach ($punches as $punch) {
+            if ($punch->punch_type === AttendancePunch::TYPE_IN) {
+                $openIn = $punch->punched_at;
+                continue;
+            }
+
+            if ($punch->punch_type === AttendancePunch::TYPE_OUT && $openIn) {
+                $closedMinutes += $openIn->diffInMinutes($punch->punched_at);
+                $openIn = null;
+            }
+        }
+
+        if (! $openIn) {
+            return [
+                'expected_clock_out_at' => null,
+                'expected_clock_out_label' => null,
+            ];
+        }
+
+        $remainingMinutes = max($requiredMinutes - $closedMinutes, 0);
+        $expectedAt = $openIn->copy()->addMinutes($remainingMinutes);
+
+        return [
+            'expected_clock_out_at' => $expectedAt->toIso8601String(),
+            'expected_clock_out_label' => $expectedAt->format('h:i A'),
         ];
     }
 
@@ -1171,6 +1236,8 @@ class AttendanceService
             'full_name' => $employee->full_name,
             'employee_code' => $employee->employee_code,
             'department' => $employee->department?->name,
+            'joining_date' => $employee->joining_date?->toDateString(),
+            'joining_date_label' => $employee->joining_date?->format('d M Y'),
         ];
     }
 

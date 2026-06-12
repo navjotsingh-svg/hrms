@@ -19,10 +19,10 @@
         <div class="content-card-body">
             <div class="row g-3 align-items-end">
                 <div class="col-md-5">
-                    <label for="balanceEmployee" class="form-label">Employee</label>
-                    <select class="form-select" id="balanceEmployee">
-                        <option value="">Select employee</option>
-                    </select>
+                    @include('partials.employee-search-select', [
+                        'inputId' => 'balanceEmployeeInput',
+                        'hiddenId' => 'balanceEmployeeId',
+                    ])
                 </div>
                 <div class="col-md-3">
                     <label for="balanceYear" class="form-label">Year</label>

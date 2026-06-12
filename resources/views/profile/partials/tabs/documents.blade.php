@@ -63,6 +63,15 @@
                 </div>
             </div>
             <div class="form-text d-none" id="profile_document_file_hint"></div>
+            <div id="profileDocumentUploadProgress" class="upload-progress-wrap d-none mt-3" aria-live="polite">
+                <div class="d-flex justify-content-between align-items-center small mb-1">
+                    <span id="profileDocumentUploadProgressLabel">Uploading...</span>
+                    <span id="profileDocumentUploadProgressPercent" class="fw-semibold">0%</span>
+                </div>
+                <div class="progress upload-progress-bar" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
+                    <div id="profileDocumentUploadProgressBar" class="progress-bar progress-bar-striped progress-bar-animated" style="width: 0%"></div>
+                </div>
+            </div>
             <div class="invalid-feedback d-block" data-error="file"></div>
             <div class="invalid-feedback d-block" data-error="files"></div>
             <span class="text-success small d-none mt-2 d-block" id="profileDocumentStatus"></span>

@@ -14,6 +14,7 @@ class EmployeeAssetResource extends JsonResource
             'name' => $this['name'],
             'sort_order' => $this['sort_order'],
             'is_assigned' => (bool) $this['is_assigned'],
+            'description' => $this['description'] ?? null,
             'status_label' => $this['is_assigned'] ? 'Available' : 'Not Available',
         ];
     }

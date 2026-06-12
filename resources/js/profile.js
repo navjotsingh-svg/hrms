@@ -1,6 +1,7 @@
 import { Modal, Tab } from 'bootstrap';
 import api, { getErrorMessage } from './api';
-import { applyBackendErrors, setFieldError, setSubmitLoading } from './form-utils';
+import { applyBackendErrors, bindUploadProgress, setFieldError, setSubmitLoading } from './form-utils';
+import { initRichTextEditor } from './rich-text-editor';
 import { renderReviewIconActionGroup, renderViewDocumentIconButton, renderDeleteDocumentIconButton, renderReviewIconActions } from './review-actions';
 
 const PROFILE_TAB_HASHES = {
@@ -16,6 +17,13 @@ const PROFILE_TAB_HASHES = {
 let profileCanEditWithoutApproval = false;
 let profileCanManageSalary = false;
 let profileCanManageAssets = false;
+const assetDescriptionEditors = new Map();
+
+const escapeHtml = (value) => String(value ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
 let profileCanDeleteDocuments = false;
 
 const usesSectionPayload = (section) => section && (profileCanEditWithoutApproval || section.can_resubmit);
@@ -440,28 +448,92 @@ const renderAssetStatus = (isAssigned) => {
     return `<span class="profile-asset-status ${className}">${label}</span>`;
 };
 
+const buildProfileAssetDescriptionView = (asset) => {
+    if (!asset.is_assigned || !asset.description) {
+        return '';
+    }
+
+    return `
+        <div class="profile-asset-details-box">
+            <div class="profile-asset-details-box-label">Details given</div>
+            <div class="profile-asset-details-box-body">${asset.description}</div>
+        </div>
+    `;
+};
+
 const buildProfileAssetListItem = (asset) => `
     <li class="profile-asset-item">
-        <span class="profile-asset-icon" aria-hidden="true">i</span>
-        <span class="profile-asset-name">${asset.name}</span>
-        ${renderAssetStatus(asset.is_assigned)}
+        <div class="profile-asset-item-header">
+            <div class="profile-asset-item-title">
+                <span class="profile-asset-icon" aria-hidden="true">i</span>
+                <span class="profile-asset-name">${escapeHtml(asset.name)}</span>
+            </div>
+            ${renderAssetStatus(asset.is_assigned)}
+        </div>
+        ${buildProfileAssetDescriptionView(asset)}
     </li>
 `;
 
 const buildProfileAssetEditItem = (asset) => `
     <li class="profile-asset-edit-item">
-        <div class="form-check">
-            <input
-                class="form-check-input"
-                type="checkbox"
-                id="profile_asset_${asset.asset_type_id}"
-                data-asset-type-id="${asset.asset_type_id}"
-                ${asset.is_assigned ? 'checked' : ''}
-            >
-            <label class="form-check-label" for="profile_asset_${asset.asset_type_id}">${asset.name}</label>
+        <div class="profile-asset-edit-item-head">
+            <div class="form-check mb-0">
+                <input
+                    class="form-check-input"
+                    type="checkbox"
+                    id="profile_asset_${asset.asset_type_id}"
+                    data-asset-type-id="${asset.asset_type_id}"
+                    ${asset.is_assigned ? 'checked' : ''}
+                >
+                <label class="form-check-label" for="profile_asset_${asset.asset_type_id}">${escapeHtml(asset.name)}</label>
+            </div>
+        </div>
+        <div class="profile-asset-description-wrap ${asset.is_assigned ? '' : 'd-none'}" data-asset-description-wrap="${asset.asset_type_id}">
+            <label class="form-label profile-asset-description-field-label" for="profile_asset_description_${asset.asset_type_id}">
+                Details of what has been given
+            </label>
+            <div id="profile_asset_editor_${asset.asset_type_id}" class="profile-asset-editor"></div>
+            <textarea id="profile_asset_description_${asset.asset_type_id}" class="d-none">${escapeHtml(asset.description || '')}</textarea>
         </div>
     </li>
 `;
+
+const toggleAssetDescriptionField = (assetTypeId, visible) => {
+    document
+        .querySelector(`[data-asset-description-wrap="${assetTypeId}"]`)
+        ?.classList.toggle('d-none', !visible);
+};
+
+const initAssetDescriptionEditors = (assets) => {
+    assetDescriptionEditors.clear();
+
+    assets.forEach((asset) => {
+        const container = document.getElementById(`profile_asset_editor_${asset.asset_type_id}`);
+        const textarea = document.getElementById(`profile_asset_description_${asset.asset_type_id}`);
+
+        if (!container || !textarea) {
+            return;
+        }
+
+        const editor = initRichTextEditor({
+            container,
+            textarea,
+            placeholder: 'Serial number, model, accessories, condition, handover notes...',
+        });
+
+        if (editor) {
+            assetDescriptionEditors.set(asset.asset_type_id, editor);
+        }
+    });
+};
+
+const bindAssetAssignmentEditors = () => {
+    document.querySelectorAll('#profileAssetEditList [data-asset-type-id]').forEach((checkbox) => {
+        checkbox.addEventListener('change', () => {
+            toggleAssetDescriptionField(Number(checkbox.dataset.assetTypeId), checkbox.checked);
+        });
+    });
+};
 
 const renderOtherTab = (employee) => {
     const assets = employee.assets || [];
@@ -499,16 +571,30 @@ const renderOtherTab = (employee) => {
         assetEditList.innerHTML = hasAssets
             ? assets.map((asset) => buildProfileAssetEditItem(asset)).join('')
             : '<li class="text-muted small">Add asset types from Masters → Assets first.</li>';
+
+        if (hasAssets) {
+            initAssetDescriptionEditors(assets);
+            bindAssetAssignmentEditors();
+        }
     }
 };
 
 const collectProfileAssetsPayload = () => {
     const checkboxes = document.querySelectorAll('#profileAssetEditList [data-asset-type-id]');
 
-    return Array.from(checkboxes).map((checkbox) => ({
-        asset_type_id: Number(checkbox.dataset.assetTypeId),
-        is_assigned: checkbox.checked,
-    }));
+    return Array.from(checkboxes).map((checkbox) => {
+        const assetTypeId = Number(checkbox.dataset.assetTypeId);
+        const editor = assetDescriptionEditors.get(assetTypeId);
+        editor?.sync?.();
+
+        const textarea = document.getElementById(`profile_asset_description_${assetTypeId}`);
+
+        return {
+            asset_type_id: assetTypeId,
+            is_assigned: checkbox.checked,
+            description: checkbox.checked ? (textarea?.value.trim() || null) : null,
+        };
+    });
 };
 
 const collectProfileSalaryPayload = () => ({
@@ -2462,6 +2548,21 @@ document.addEventListener('DOMContentLoaded', async () => {
 
         setSubmitLoading(submitBtn, true, { submittingText: 'Uploading...' });
 
+        const uploadProgress = bindUploadProgress({
+            wrap: document.getElementById('profileDocumentUploadProgress'),
+            bar: document.getElementById('profileDocumentUploadProgressBar'),
+            percentEl: document.getElementById('profileDocumentUploadProgressPercent'),
+            labelEl: document.getElementById('profileDocumentUploadProgressLabel'),
+        });
+
+        const fileLabel = selectedFiles.length === 1
+            ? `Uploading ${selectedFiles[0].name}...`
+            : `Uploading ${selectedFiles.length} files...`;
+
+        uploadProgress.update(0, fileLabel);
+        fileInput.disabled = true;
+        typeSelect.disabled = true;
+
         try {
             const formData = new FormData();
             formData.append('document_type_id', typeSelect.value);
@@ -2474,7 +2575,10 @@ document.addEventListener('DOMContentLoaded', async () => {
 
             const { data } = await api.post(`${profileSubmitPrefix}/documents`, formData, {
                 headers: { 'Content-Type': 'multipart/form-data' },
+                onUploadProgress: uploadProgress.onUploadProgress,
             });
+
+            uploadProgress.update(100, 'Upload complete. Saving...');
 
             await refreshEmployeeProfile();
             documentForm.reset();
@@ -2484,6 +2588,9 @@ document.addEventListener('DOMContentLoaded', async () => {
             applyBackendErrors(documentForm, error.response?.data?.errors, setFieldError);
             alert(getErrorMessage(error));
         } finally {
+            uploadProgress.hide();
+            fileInput.disabled = false;
+            typeSelect.disabled = false;
             setSubmitLoading(submitBtn, false);
         }
     });

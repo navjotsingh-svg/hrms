@@ -27,13 +27,13 @@ const avatarColor = (seed = '') => {
 };
 
 const renderPersonChip = (person) => `
-    <a href="${person.url || '#'}" class="dash-person-chip text-decoration-none" title="${person.name}">
+    <div class="dash-person-chip dash-person-chip--static" title="${person.name}">
         <span class="dash-person-avatar" style="background:${avatarColor(person.name)}">${person.initials}</span>
         <span class="dash-person-meta">
             <span class="dash-person-name">${person.name}</span>
             <span class="dash-person-date">${person.date_label || person.joined_label || ''}</span>
         </span>
-    </a>
+    </div>
 `;
 
 const renderCelebrationEmpty = (title, message) => `

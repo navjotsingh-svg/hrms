@@ -6,7 +6,7 @@
     <div class="d-flex flex-wrap align-items-center justify-content-between gap-2">
         <div>
             <h1 class="page-title mb-1">Attendance</h1>
-            <p class="page-subtitle mb-0" id="attendanceSubtitle">Track punch-in, punch-out, location, and daily work hours.</p>
+            <p class="page-subtitle mb-0" id="attendanceSubtitle">View attendance calendar and daily work hours.</p>
         </div>
         <div class="d-flex flex-wrap align-items-center gap-2">
             @if (Auth::user()->canRegularizeAttendance())
@@ -24,57 +24,37 @@
 @section('content')
     <div id="attendanceAlert" class="alert alert-success alert-dismissible fade show d-none" role="alert"></div>
 
-    <div class="row g-4">
-        @if (Auth::user()->canMarkAttendance())
-        <div class="col-12 col-xl-4">
-            <div class="content-card attendance-mark-card h-100">
-                <div class="content-card-header border-bottom">
-                    <h2 class="content-card-title mb-0">Mark Attendance</h2>
-                </div>
-                <div class="content-card-body">
-                    @include('attendance.partials.punch-widget', ['prefix' => 'attendance'])
-                </div>
-            </div>
-        </div>
-        @endif
-
-        <div class="col-12 {{ Auth::user()->canMarkAttendance() ? 'col-xl-8' : '' }}">
-            <div class="content-card attendance-calendar-card">
-                <div class="content-card-body border-bottom attendance-filter-bar">
-                    <div class="row g-3 align-items-end">
-                        @if (Auth::user()->canViewAllAttendance() || Auth::user()->canViewTeamAttendance())
-                        <div class="col-md-4">
-                            <label for="filterEmployee" class="form-label">Employee</label>
-                            <select class="form-select" id="filterEmployee" required>
-                                <option value="">Select employee</option>
-                            </select>
-                        </div>
-                        <div class="col-md-3" id="filterDepartmentCol">
-                            <label for="filterDepartment" class="form-label">Department</label>
-                            <select class="form-select" id="filterDepartment">
-                                <option value="">All departments</option>
-                            </select>
-                        </div>
-                        @endif
-                        <div class="col-md-3">
-                            <label for="filterStatus" class="form-label">Day Status</label>
-                            <select class="form-select" id="filterStatus">
-                                <option value="">All days</option>
-                                <option value="present">Present</option>
-                                <option value="half_day">Half Day</option>
-                                <option value="absent">Absent</option>
-                                <option value="weekly_off">Weekly Off</option>
-                                <option value="holiday">Holiday</option>
-                                <option value="on_leave">On Leave</option>
-                            </select>
-                        </div>
-                        <div class="col-md-2 d-flex justify-content-end">
-                            <button type="button" class="btn btn-outline-secondary" id="filterReset">Reset</button>
-                        </div>
+    <div class="attendance-page-full">
+        <div class="content-card attendance-calendar-card">
+            <div class="content-card-body border-bottom attendance-filter-bar">
+                <div class="row g-3 align-items-end">
+                    @if (Auth::user()->canViewAllAttendance() || Auth::user()->canViewTeamAttendance())
+                    <div class="col-md-5">
+                        @include('partials.employee-search-select', [
+                            'inputId' => 'filterEmployeeInput',
+                            'hiddenId' => 'filterEmployeeId',
+                        ])
+                    </div>
+                    @endif
+                    <div class="col-md-4">
+                        <label for="filterStatus" class="form-label">Day Status</label>
+                        <select class="form-select" id="filterStatus">
+                            <option value="">All days</option>
+                            <option value="present">Present</option>
+                            <option value="half_day">Half Day</option>
+                            <option value="absent">Absent</option>
+                            <option value="weekly_off">Weekly Off</option>
+                            <option value="holiday">Holiday</option>
+                            <option value="on_leave">On Leave</option>
+                        </select>
+                    </div>
+                    <div class="col-md-2 d-flex justify-content-end">
+                        <button type="button" class="btn btn-outline-secondary" id="filterReset">Reset</button>
                     </div>
                 </div>
+            </div>
 
-                <div class="content-card-body">
+            <div class="content-card-body">
                     <div class="attendance-summary-row mb-3" id="attendanceSummaryRow">
                         <div class="attendance-summary-item attendance-summary-item--present">
                             <span class="attendance-summary-dot"></span>
@@ -119,6 +99,7 @@
                                     <li><span class="dropdown-item-text attendance-legend-item attendance-legend-item--holiday">Holiday</span></li>
                                     <li><span class="dropdown-item-text attendance-legend-item attendance-legend-item--on-leave">On leave</span></li>
                                     <li><span class="dropdown-item-text attendance-legend-item attendance-legend-item--regularization">Regularization pending</span></li>
+                                    <li><span class="dropdown-item-text attendance-legend-item attendance-legend-item--joining">Joining date</span></li>
                                     <li><span class="dropdown-item-text attendance-legend-item attendance-legend-item--punch">Punch in / out</span></li>
                                 </ul>
                             </div>
@@ -144,7 +125,6 @@
                                 </tbody>
                             </table>
                         </div>
-                    </div>
                 </div>
             </div>
         </div>

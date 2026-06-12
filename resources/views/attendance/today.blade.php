@@ -54,11 +54,13 @@
     <div class="content-card">
         <div class="content-card-body border-bottom">
             <div class="row g-3 align-items-end">
-                <div class="col-md-4">
-                    <label for="attendanceTodaySearch" class="form-label">Search</label>
-                    <input type="search" class="form-control" id="attendanceTodaySearch" placeholder="Name or employee code">
+                <div class="col-md-5">
+                    @include('partials.employee-search-select', [
+                        'inputId' => 'attendanceTodayEmployeeInput',
+                        'hiddenId' => 'attendanceTodayEmployeeId',
+                    ])
                 </div>
-                <div class="col-md-3">
+                <div class="col-md-2">
                     <label for="attendanceTodayDepartment" class="form-label">Department</label>
                     <select class="form-select" id="attendanceTodayDepartment">
                         <option value="">All departments</option>

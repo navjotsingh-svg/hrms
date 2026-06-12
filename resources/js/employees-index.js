@@ -1,5 +1,6 @@
 import api, { getErrorMessage } from './api';
 import { consumePageFlashMessage } from './form-utils';
+import { bindEmployeeSearchSelect } from './employee-autocomplete';
 
 const webRoutes = () => window.HRMS_WEB_ROUTES || {};
 
@@ -8,7 +9,6 @@ document.addEventListener('DOMContentLoaded', async () => {
     const alertBox = document.getElementById('employeesAlert');
     const paginationInfo = document.getElementById('employeesPaginationInfo');
     const paginationList = document.getElementById('employeesPaginationList');
-    const filterSearch = document.getElementById('filterSearch');
     const filterDepartment = document.getElementById('filterDepartment');
     const filterStatus = document.getElementById('filterStatus');
     const filterReset = document.getElementById('filterReset');
@@ -16,9 +16,10 @@ document.addEventListener('DOMContentLoaded', async () => {
     const routes = webRoutes();
 
     let currentPage = 1;
-    let searchTimeout = null;
     let canManage = false;
     let canViewProfile = false;
+    let employeeSearch = null;
+    let selectedEmployee = null;
 
     if (!tableBody) {
         return;
@@ -202,8 +203,15 @@ document.addEventListener('DOMContentLoaded', async () => {
 
         const params = { page, per_page: 10 };
 
-        if (filterSearch?.value.trim()) {
-            params.search = filterSearch.value.trim();
+        if (selectedEmployee?.employee?.employee_code) {
+            params.search = selectedEmployee.employee.employee_code;
+        } else if (selectedEmployee?.employee) {
+            const name = selectedEmployee.employee.full_name
+                || `${selectedEmployee.employee.first_name || ''} ${selectedEmployee.employee.last_name || ''}`.trim();
+
+            if (name) {
+                params.search = name;
+            }
         }
 
         if (filterDepartment?.value) {
@@ -233,18 +241,25 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
     };
 
-    filterSearch?.addEventListener('input', () => {
-        clearTimeout(searchTimeout);
-        searchTimeout = setTimeout(() => loadEmployees(1), 400);
+    employeeSearch = bindEmployeeSearchSelect({
+        inputId: 'filterEmployeeInput',
+        hiddenId: 'filterEmployeeId',
+        onSelect: (item) => {
+            selectedEmployee = item;
+            loadEmployees(1);
+        },
+        onClear: () => {
+            selectedEmployee = null;
+            loadEmployees(1);
+        },
     });
 
     filterDepartment?.addEventListener('change', () => loadEmployees(1));
     filterStatus?.addEventListener('change', () => loadEmployees(1));
 
     filterReset?.addEventListener('click', () => {
-        if (filterSearch) {
-            filterSearch.value = '';
-        }
+        selectedEmployee = null;
+        employeeSearch?.clearSelection();
 
         if (filterDepartment) {
             filterDepartment.value = '';

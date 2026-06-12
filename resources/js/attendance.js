@@ -1,6 +1,11 @@
 import { Modal } from 'bootstrap';
 import api, { getErrorMessage } from './api';
-import { initAttendancePunch } from './attendance-punch';
+import {
+    bindEmployeeSearchSelect,
+    formatEmployeeLabel,
+    matchesEmployeeSearch,
+    searchEmployees,
+} from './employee-autocomplete';
 
 const pad = (value) => String(value).padStart(2, '0');
 
@@ -122,17 +127,43 @@ const renderPunchBadges = (dayData) => (dayData.punch_entries || [])
     .map((entry) => `<span class="attendance-cal-punch-badge">${entry.label}</span>`)
     .join('');
 
-const renderDayPunchTimes = (dayData) => {
-    if (dayData.status === 'before_portal' || dayData.status === 'future') {
+const renderJoiningMarker = (dayData) => {
+    if (!dayData.is_joining_date) {
         return '';
+    }
+
+    const dateLabel = dayData.joining_date_label || '';
+
+    return `
+        <div class="attendance-cal-joining-marker">
+            <span class="attendance-cal-joining-label">Joining date</span>
+            ${dateLabel ? `<span class="attendance-cal-joining-date">${dateLabel}</span>` : ''}
+        </div>
+    `;
+};
+
+const renderDayPunchTimes = (dayData) => {
+    const joiningMarker = renderJoiningMarker(dayData);
+
+    if (dayData.status === 'before_portal' || dayData.status === 'future') {
+        return joiningMarker
+            ? `<div class="attendance-day-content">${joiningMarker}</div>`
+            : '';
     }
 
     if (dayData.awaiting_punch_out) {
         const punchBadges = renderPunchBadges(dayData);
-
-        return punchBadges
-            ? `<div class="attendance-day-content"><div class="attendance-day-punches">${punchBadges}</div></div>`
+        const expectedOut = dayData.expected_clock_out_label
+            ? `<div class="attendance-day-expected-out">Expected clock out ${dayData.expected_clock_out_label}</div>`
             : '';
+
+        return `
+            <div class="attendance-day-content">
+                ${joiningMarker}
+                ${expectedOut}
+                ${punchBadges ? `<div class="attendance-day-punches">${punchBadges}</div>` : ''}
+            </div>
+        `;
     }
 
     const badgeLabel = statusBadgeLabel(dayData);
@@ -143,6 +174,7 @@ const renderDayPunchTimes = (dayData) => {
 
     return `
         <div class="attendance-day-content">
+            ${joiningMarker}
             ${statusBadge}
             ${punchBadges ? `<div class="attendance-day-punches">${punchBadges}</div>` : ''}
         </div>
@@ -174,8 +206,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     const holidayCount = document.getElementById('attendanceHolidayCount');
     const onLeaveCount = document.getElementById('attendanceOnLeaveCount');
     const requiredHours = document.getElementById('attendanceRequiredHours');
-    const filterEmployee = document.getElementById('filterEmployee');
-    const filterDepartment = document.getElementById('filterDepartment');
+    const filterEmployeeInput = document.getElementById('filterEmployeeInput');
+    const filterEmployeeId = document.getElementById('filterEmployeeId');
     const filterStatus = document.getElementById('filterStatus');
     const filterReset = document.getElementById('filterReset');
     const dayModalElement = document.getElementById('attendanceDayModal');
@@ -186,8 +218,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     let currentMonth = currentMonthKey();
     let capabilities = { can_mark: false, can_view_all: false };
     let employees = [];
-    let departments = [];
-    let punchController = null;
+    let employeeAutocomplete = null;
     let dayModal = dayModalElement ? Modal.getOrCreateInstance(dayModalElement) : null;
 
     const showAlert = (message, type = 'success') => {
@@ -200,7 +231,35 @@ document.addEventListener('DOMContentLoaded', async () => {
         alertBox.classList.remove('d-none');
     };
 
-    const selectedEmployeeId = () => (filterEmployee?.value ? Number(filterEmployee.value) : null);
+    const selectedEmployeeId = () => {
+        if (filterEmployeeId?.value) {
+            return Number(filterEmployeeId.value);
+        }
+
+        return employeeAutocomplete?.getSelectedId?.() || null;
+    };
+
+    const employeeOption = (employee) => ({
+        id: employee.id,
+        label: formatEmployeeLabel(employee),
+        employee,
+    });
+
+    const findEmployeeById = (employeeId) => {
+        if (!employeeId) {
+            return null;
+        }
+
+        return employees.find((employee) => Number(employee.id) === Number(employeeId)) || null;
+    };
+
+    const setEmployeeSelection = (employee) => {
+        if (!employeeAutocomplete || !employee) {
+            return;
+        }
+
+        employeeAutocomplete.setSelection(employeeOption(employee));
+    };
 
     const defaultEmployeeId = () => {
         const preferSelf = capabilities.default_view_own
@@ -216,40 +275,83 @@ document.addEventListener('DOMContentLoaded', async () => {
     };
 
     const ensureEmployeeSelection = () => {
-        if (!filterEmployee) {
+        if (!employeeAutocomplete) {
             return;
         }
 
         const scopedEmployees = filteredEmployees();
         const selected = selectedEmployeeId();
 
-        if (selected && scopedEmployees.some((employee) => employee.id === selected)) {
+        if (selected && scopedEmployees.some((employee) => Number(employee.id) === selected)) {
+            setEmployeeSelection(findEmployeeById(selected));
             return;
         }
 
         const defaultId = defaultEmployeeId();
+        const defaultEmployee = scopedEmployees.find((employee) => Number(employee.id) === defaultId);
 
-        if (defaultId) {
-            filterEmployee.value = String(defaultId);
+        if (defaultEmployee) {
+            setEmployeeSelection(defaultEmployee);
         }
     };
 
     const resolveCalendarEmployeeId = () => selectedEmployeeId();
 
+    const filterLocalEmployees = (term = '') => {
+        const needle = term.trim().toLowerCase();
+        const scoped = filteredEmployees();
+
+        if (!needle) {
+            return scoped.slice(0, 50).map(employeeOption);
+        }
+
+        return scoped
+            .filter((employee) => matchesEmployeeSearch(employee, needle))
+            .slice(0, 50)
+            .map(employeeOption);
+    };
+
+    const initEmployeeFilter = () => {
+        if (!filterEmployeeInput || !filterEmployeeId) {
+            return;
+        }
+
+        employeeAutocomplete = bindEmployeeSearchSelect({
+            inputId: 'filterEmployeeInput',
+            hiddenId: 'filterEmployeeId',
+            fetchSuggestions: async (term) => {
+                if (capabilities.can_view_team && !capabilities.can_view_all) {
+                    return filterLocalEmployees(term);
+                }
+
+                return searchEmployees(term);
+            },
+            onSelect: () => {
+                loadCalendar();
+            },
+        });
+    };
+
     const loadFilters = async () => {
         if (!capabilities.can_view_all) {
-            if (capabilities.can_view_team && filterEmployee) {
-                employees = capabilities.team_employees || [];
+            if (capabilities.can_view_team && filterEmployeeInput) {
+                employees = [...(capabilities.team_employees || [])];
 
-                const selfOption = capabilities.self_employee_id
-                    ? `<option value="${capabilities.self_employee_id}">My Attendance</option>`
-                    : '';
+                if (capabilities.self_employee_id) {
+                    const selfAlreadyListed = employees.some(
+                        (employee) => Number(employee.id) === Number(capabilities.self_employee_id),
+                    );
 
-                filterEmployee.innerHTML = selfOption + employees.map((employee) => `
-                    <option value="${employee.id}">${employee.full_name} (${employee.employee_code})</option>
-                `).join('');
+                    if (!selfAlreadyListed) {
+                        employees.unshift({
+                            id: Number(capabilities.self_employee_id),
+                            full_name: 'My Attendance',
+                            employee_code: '',
+                        });
+                    }
+                }
 
-                document.getElementById('filterDepartmentCol')?.classList.add('d-none');
+                initEmployeeFilter();
                 ensureEmployeeSelection();
             }
 
@@ -257,26 +359,10 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
 
         try {
-            const [employeesResponse, departmentsResponse] = await Promise.all([
-                api.get('/employees', { params: { per_page: 100, status: 'active' } }),
-                api.get('/departments', { params: { per_page: 100 } }),
-            ]);
+            const { data } = await api.get('/employees', { params: { per_page: 100, status: 'active' } });
+            employees = data.data.employees || [];
 
-            employees = employeesResponse.data.data.employees || [];
-            departments = departmentsResponse.data.data.departments || [];
-
-            if (filterEmployee) {
-                filterEmployee.innerHTML = employees.map((employee) => `
-                    <option value="${employee.id}">${employee.full_name} (${employee.employee_code})</option>
-                `).join('');
-            }
-
-            if (filterDepartment) {
-                filterDepartment.innerHTML = '<option value="">All departments</option>' + departments.map((department) => `
-                    <option value="${department.id}">${department.name}</option>
-                `).join('');
-            }
-
+            initEmployeeFilter();
             ensureEmployeeSelection();
         } catch (error) {
             console.error(getErrorMessage(error));
@@ -298,18 +384,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             return [];
         }
 
-        const departmentId = filterDepartment?.value ? Number(filterDepartment.value) : null;
-
-        if (!departmentId) {
-            return employees;
-        }
-
-        return employees.filter((employee) => {
-            const primary = employee.department?.id;
-            const extras = (employee.departments || []).map((item) => item.id);
-
-            return primary === departmentId || extras.includes(departmentId);
-        });
+        return employees;
     };
 
     const renderPolicyInfo = (monthData) => {
@@ -319,6 +394,10 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
 
         const parts = [];
+
+        if (monthData.employee_joining_date_label) {
+            parts.push(`<span><strong>Joining date:</strong> ${monthData.employee_joining_date_label}</span>`);
+        }
 
         if (monthData.weekly_off_labels?.length) {
             parts.push(`<span><strong>Weekly off:</strong> ${monthData.weekly_off_labels.join(', ')}</span>`);
@@ -365,9 +444,11 @@ document.addEventListener('DOMContentLoaded', async () => {
             const dayNumberClass = dayData.is_today ? 'attendance-day-number attendance-day-number--today' : 'attendance-day-number';
 
             if (dayData.status === 'before_portal') {
+                const dayContent = renderDayPunchTimes(dayData);
                 cells.push(`
-                    <td class="attendance-day attendance-day--blank" data-date="${date}" title="Before portal start day">
+                    <td class="attendance-day attendance-day--blank${dayData.is_joining_date ? ' attendance-day--joining' : ''}" data-date="${date}" title="${dayData.is_joining_date ? 'Joining date' : 'Before attendance tracking'}">
                         <span class="${dayNumberClass}">${day}</span>
+                        ${dayContent}
                     </td>
                 `);
                 continue;
@@ -385,9 +466,10 @@ document.addEventListener('DOMContentLoaded', async () => {
             const approverNote = dayData.status === 'on_leave' && dayData.leave_approved_by_name
                 ? ` · Approved by ${dayData.leave_approved_by_name}`
                 : '';
+            const joiningNote = dayData.is_joining_date ? ' · Joining date' : '';
             const title = dayData.awaiting_punch_out
-                ? `Punch out pending · In ${dayData.punch_in_label || '—'}`
-                : `${dayData.status_label || dayData.status}${approverNote} · ${dayData.worked_hours_label} / ${dayData.required_hours_label}`;
+                ? `Punch out pending · In ${dayData.current_punch_in_label || dayData.punch_in_label || '—'}${dayData.expected_clock_out_label ? ` · Expected clock out ${dayData.expected_clock_out_label}` : ''}${joiningNote}`
+                : `${dayData.status_label || dayData.status}${approverNote}${joiningNote} · ${dayData.worked_hours_label} / ${dayData.required_hours_label}`;
             const dayContent = renderDayPunchTimes(dayData);
             const isInteractive = dayData.status !== 'before_portal'
                 && (dayData.status === 'on_leave' || !dayData.is_future);
@@ -397,7 +479,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                     <td
                         role="button"
                         tabindex="0"
-                        class="attendance-day attendance-day--interactive ${statusClass(dayData.status, dayData.awaiting_punch_out)}"
+                        class="attendance-day attendance-day--interactive ${statusClass(dayData.status, dayData.awaiting_punch_out)}${dayData.is_joining_date ? ' attendance-day--joining' : ''}"
                         data-date="${date}"
                         title="${title}"
                     >
@@ -407,7 +489,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                 `);
             } else {
                 cells.push(`
-                    <td class="attendance-day attendance-day--static ${statusClass(dayData.status, dayData.awaiting_punch_out)}" data-date="${date}">
+                    <td class="attendance-day attendance-day--static ${statusClass(dayData.status, dayData.awaiting_punch_out)}${dayData.is_joining_date ? ' attendance-day--joining' : ''}" data-date="${date}">
                         <span class="${dayNumberClass}">${day}</span>
                         ${dayContent}
                     </td>
@@ -484,7 +566,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                 } else if (payload.portal_start_date) {
                     subtitle.textContent = `Company portal starts ${formatTrackingDate(payload.portal_start_date)}. Days before portal access or the portal start date appear blank.`;
                 } else {
-                    subtitle.textContent = 'Track punch-in, punch-out, location, and daily work hours.';
+                    subtitle.textContent = 'View attendance calendar and daily work hours.';
                 }
             }
 
@@ -545,6 +627,15 @@ document.addEventListener('DOMContentLoaded', async () => {
             `
             : '';
 
+        const joiningSection = payload.is_joining_date
+            ? `
+                <div class="alert alert-info mb-3">
+                    <div class="fw-semibold mb-1">Joining date</div>
+                    <div>${payload.employee?.joining_date_label || payload.date_label || '—'}</div>
+                </div>
+            `
+            : '';
+
         if (!payload.punches.length) {
             const message = payload.day_message
                 || (payload.status === 'before_portal' ? 'Attendance tracking had not started on this date.' : null)
@@ -555,6 +646,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                 || 'No attendance recorded for this day.';
             dayModalBody.innerHTML = `
                 ${regularizationSection}
+                ${joiningSection}
                 ${leaveSection}
                 <div class="text-center text-muted py-4">${message}</div>
             `;
@@ -604,7 +696,9 @@ document.addEventListener('DOMContentLoaded', async () => {
         const statusSection = payload.awaiting_punch_out
             ? `
                 <div class="attendance-day-overview mb-4">
-                    <div><span class="text-muted">Punch In:</span> <strong>${payload.punch_in_label || '—'}</strong></div>
+                    <div><span class="text-muted">Punch In:</span> <strong>${payload.current_punch_in_label || payload.punch_in_label || '—'}</strong></div>
+                    <div><span class="text-muted">Expected Clock Out:</span> <strong>${payload.expected_clock_out_label || '—'}</strong></div>
+                    <div class="small text-muted mt-1">Expected time to complete full-day working hours based on your clock-in time.</div>
                 </div>
             `
             : `
@@ -620,6 +714,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
         dayModalBody.innerHTML = `
             ${regularizationSection}
+            ${joiningSection}
             ${leaveSection}
             ${statusSection}
             ${segments ? `<h6 class="mb-2">Work Sessions</h6><div class="d-flex flex-column gap-2 mb-4">${segments}</div>` : ''}
@@ -651,23 +746,6 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
     };
 
-    const initMarkPanel = () => {
-        if (!document.getElementById('attendancePunchBtn')) {
-            return;
-        }
-
-        punchController = initAttendancePunch({
-            prefix: 'attendance',
-            alertElementId: 'attendanceAlert',
-            onPunched: async () => {
-                await loadCalendar();
-            },
-            onStatus: (status) => {
-                capabilities = status.capabilities || capabilities;
-            },
-        });
-    };
-
     prevMonthBtn?.addEventListener('click', () => {
         const date = new Date(`${currentMonth}-01T00:00:00`);
         date.setMonth(date.getMonth() - 1);
@@ -682,16 +760,8 @@ document.addEventListener('DOMContentLoaded', async () => {
         loadCalendar();
     });
 
-    filterEmployee?.addEventListener('change', loadCalendar);
-    filterDepartment?.addEventListener('change', () => {
-        ensureEmployeeSelection();
-        loadCalendar();
-    });
     filterStatus?.addEventListener('change', loadCalendar);
     filterReset?.addEventListener('click', () => {
-        if (filterDepartment) {
-            filterDepartment.value = '';
-        }
         ensureEmployeeSelection();
         if (filterStatus) {
             filterStatus.value = '';
@@ -737,14 +807,6 @@ document.addEventListener('DOMContentLoaded', async () => {
         console.error(getErrorMessage(error));
     }
 
-    initMarkPanel();
     await loadFilters();
-    await Promise.all([
-        punchController?.refreshStatus?.() || Promise.resolve(),
-        loadCalendar(),
-    ]);
-
-    window.addEventListener('beforeunload', () => {
-        punchController?.destroy?.();
-    });
+    await loadCalendar();
 });

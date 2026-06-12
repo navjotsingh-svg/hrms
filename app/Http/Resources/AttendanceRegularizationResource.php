@@ -11,6 +11,7 @@ class AttendanceRegularizationResource extends JsonResource
     {
         return [
             'id' => $this->id,
+            'batch_id' => $this->batch_id,
             'attendance_date' => $this->attendance_date?->toDateString(),
             'attendance_date_label' => $this->attendance_date?->format('d M Y'),
             'requested_punch_in' => $this->requested_punch_in?->format('H:i'),

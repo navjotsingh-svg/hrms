@@ -1,4 +1,5 @@
 import api, { getErrorMessage } from './api';
+import { filterEmployeeOptions, formatEmployeeLabel, initEmployeeAutocomplete } from './employee-autocomplete';
 
 const MONTHS = [
     'January', 'February', 'March', 'April', 'May', 'June',
@@ -11,7 +12,8 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     const alertBox = document.getElementById('payrollAlert');
     const periodSelect = document.getElementById('payrollPeriodSelect');
-    const employeeSelect = document.getElementById('payrollEmployeeSelect');
+    const employeeHidden = document.getElementById('payrollEmployeeId');
+    const employeeInput = document.getElementById('payrollEmployeeInput');
     const viewBtn = document.getElementById('payrollViewBtn');
     const downloadBtn = document.getElementById('payrollDownloadBtn');
     const viewerEmpty = document.getElementById('payrollViewerEmpty');
@@ -48,6 +50,28 @@ document.addEventListener('DOMContentLoaded', async () => {
     let payslipsByPeriod = new Map();
     let myPayslips = [];
     let previewUrl = null;
+    let currentPayslipOptions = [];
+    let employeeSearch = null;
+
+    if (isManageMode && employeeInput && employeeHidden) {
+        employeeSearch = initEmployeeAutocomplete({
+            input: employeeInput,
+            menu: document.getElementById('payrollEmployeeInputMenu'),
+            hiddenInput: employeeHidden,
+            wrap: document.getElementById('payrollEmployeeInputWrap'),
+            toggleButton: document.getElementById('payrollEmployeeInputToggle'),
+            fetchSuggestions: async (term) => filterEmployeeOptions(currentPayslipOptions, term),
+            onSelect: () => {
+                clearPreview();
+                updateActionButtons();
+            },
+            onClear: () => {
+                clearPreview();
+                updateActionButtons();
+            },
+        });
+        employeeSearch.setDisabled(true);
+    }
 
     const showAlert = (message, type = 'success') => {
         if (!alertBox) {
@@ -75,7 +99,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     const selectedPayslipId = () => {
         if (isManageMode) {
-            return employeeSelect?.value || '';
+            return employeeSearch?.getSelectedId?.() || employeeHidden?.value || '';
         }
 
         const periodId = periodSelect?.value;
@@ -194,24 +218,28 @@ document.addEventListener('DOMContentLoaded', async () => {
     };
 
     const renderEmployeeOptions = (payslips) => {
-        if (!employeeSelect) {
-            return;
-        }
-
-        if (!payslips.length) {
-            employeeSelect.innerHTML = '<option value="">No payslips found</option>';
-            employeeSelect.disabled = true;
+        if (!employeeSearch || !employeeInput) {
             updateActionButtons();
             return;
         }
 
-        employeeSelect.disabled = false;
-        employeeSelect.innerHTML = payslips.map((payslip) => `
-            <option value="${payslip.id}">
-                ${payslip.employee_name} (${payslip.employee_code || payslip.employee_id})
-            </option>
-        `).join('');
+        currentPayslipOptions = payslips.map((payslip) => ({
+            id: payslip.id,
+            label: formatEmployeeLabel(payslip),
+            employee: payslip,
+        }));
 
+        if (!payslips.length) {
+            employeeSearch.clearSelection();
+            employeeInput.placeholder = 'No payslips found';
+            employeeSearch.setDisabled(true);
+            updateActionButtons();
+            return;
+        }
+
+        employeeInput.placeholder = 'Select or search employee...';
+        employeeSearch.setDisabled(false);
+        employeeSearch.setSelection(currentPayslipOptions[0]);
         updateActionButtons();
     };
 
@@ -307,9 +335,10 @@ document.addEventListener('DOMContentLoaded', async () => {
         const periodId = periodSelect.value;
 
         if (!periodId) {
-            if (employeeSelect) {
-                employeeSelect.innerHTML = '<option value="">Select period first...</option>';
-                employeeSelect.disabled = true;
+            if (employeeSearch) {
+                employeeSearch.clearSelection();
+                employeeInput.placeholder = 'Select period first...';
+                employeeSearch.setDisabled(true);
             }
 
             hideSummary();
@@ -324,22 +353,22 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
     });
 
-    employeeSelect?.addEventListener('change', () => {
-        clearPreview();
-        updateActionButtons();
-    });
-
     viewBtn?.addEventListener('click', viewPayslip);
     downloadBtn?.addEventListener('click', downloadPayslip);
 
     summaryBody?.addEventListener('click', async (event) => {
         const trigger = event.target.closest('[data-summary-view]');
 
-        if (!trigger || !employeeSelect) {
+        if (!trigger || !employeeSearch) {
             return;
         }
 
-        employeeSelect.value = String(trigger.dataset.summaryView);
+        const payslip = currentPayslipOptions.find((item) => String(item.id) === String(trigger.dataset.summaryView));
+
+        if (payslip) {
+            employeeSearch.setSelection(payslip);
+        }
+
         updateActionButtons();
         await viewPayslip();
         viewerWrap?.scrollIntoView({ behavior: 'smooth', block: 'start' });
@@ -444,9 +473,10 @@ document.addEventListener('DOMContentLoaded', async () => {
             hideSummary();
             await loadPeriods();
 
-            if (employeeSelect) {
-                employeeSelect.innerHTML = '<option value="">Select period first...</option>';
-                employeeSelect.disabled = true;
+            if (employeeSearch) {
+                employeeSearch.clearSelection();
+                employeeInput.placeholder = 'Select period first...';
+                employeeSearch.setDisabled(true);
             }
 
             updateActionButtons();

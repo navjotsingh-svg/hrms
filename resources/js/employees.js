@@ -19,6 +19,10 @@ import {
     setSubmitLoading,
     toDateInputValue,
 } from './form-utils';
+import {
+    bindEmployeeSearchSelect,
+    formatEmployeeLabel,
+} from './employee-autocomplete';
 
 const webRoutes = () => window.HRMS_WEB_ROUTES || {};
 const EXCLUDED_ROLE_SLUGS = ['super_admin', 'company_admin'];
@@ -79,6 +83,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     let shiftOptions = [];
     let roleOptions = [];
     let managerOptions = [];
+    let managerSearch = null;
     let departmentSelect = null;
 
     const today = new Date();
@@ -99,6 +104,10 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     const getValue = (id) => form.querySelector(`#${id}`)?.value?.trim() ?? '';
     const getSelectText = (id) => {
+        if (id === 'manager_id') {
+            return form.querySelector('#manager_id_input')?.value?.trim() || 'No manager';
+        }
+
         const select = form.querySelector(`#${id}`);
         return select?.options[select.selectedIndex]?.text?.trim() || '—';
     };
@@ -733,12 +742,42 @@ document.addEventListener('DOMContentLoaded', async () => {
         setSelectOptions('role_id', roleOptions, 'Select role');
     };
 
+    const setManagerSelection = (managerId) => {
+        if (!managerSearch) {
+            return;
+        }
+
+        if (!managerId) {
+            managerSearch.clearSelection();
+            return;
+        }
+
+        const manager = managerOptions.find((employee) => Number(employee.id) === Number(managerId));
+
+        if (manager) {
+            managerSearch.setSelection({
+                id: manager.id,
+                label: formatEmployeeLabel(manager),
+            });
+        }
+    };
+
+    const initManagerSearch = () => {
+        if (!form.querySelector('#manager_id_input')) {
+            return;
+        }
+
+        managerSearch = bindEmployeeSearchSelect({
+            inputId: 'manager_id_input',
+            hiddenId: 'manager_id',
+            excludeEmployeeId: employeeId || null,
+        });
+    };
+
     const loadManagers = async (excludeId = null) => {
         const { data } = await api.get('/employees', { params: { per_page: 100, status: 'active' } });
         managerOptions = (data.data.employees || [])
-            .filter((employee) => String(employee.id) !== String(excludeId))
-            .map((employee) => ({ value: employee.id, label: `${employee.full_name} (${employee.employee_code})` }));
-        setSelectOptions('manager_id', managerOptions, 'No manager');
+            .filter((employee) => String(employee.id) !== String(excludeId ?? employeeId));
     };
 
     const updatePortalAccessUi = () => {
@@ -866,7 +905,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         await loadShifts(employee.shift_id || null);
 
         setSelectValue('role_id', employee.role_id);
-        setSelectValue('manager_id', employee.manager_id);
+        setManagerSelection(employee.manager_id);
         setInputValue('designation', employee.designation);
         setDateInput('joining_date', employee.joining_date);
         setSelectValue('employment_type', employee.employment_type || 'full_time');
@@ -1051,6 +1090,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     try {
         setupDateConstraints();
+        initManagerSearch();
         await Promise.all([loadRoles(), loadShifts()]);
         if (employeeId) {
             await loadManagers(employeeId);

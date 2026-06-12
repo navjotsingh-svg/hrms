@@ -181,10 +181,13 @@
                     <div class="invalid-feedback d-block" data-error="designation"></div>
                 </div>
                 <div class="col-md-6">
-                    <label for="manager_id" class="form-label">Reporting Manager</label>
-                    <select class="form-select" id="manager_id" name="manager_id">
-                        <option value="">No manager</option>
-                    </select>
+                    @include('partials.employee-search-select', [
+                        'inputId' => 'manager_id_input',
+                        'hiddenId' => 'manager_id',
+                        'hiddenName' => 'manager_id',
+                        'label' => 'Reporting Manager',
+                        'placeholder' => 'Select or search manager...',
+                    ])
                     <div class="invalid-feedback d-block" data-error="manager_id"></div>
                 </div>
             </div>

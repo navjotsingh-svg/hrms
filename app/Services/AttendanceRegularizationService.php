@@ -10,6 +10,7 @@ use Carbon\Carbon;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
 use Symfony\Component\HttpKernel\Exception\AccessDeniedHttpException;
 use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
@@ -74,12 +75,94 @@ class AttendanceRegularizationService
             ->values();
     }
 
+    public function pendingGroupsForReviewer(User $user): array
+    {
+        $requests = $this->pendingForReviewer($user);
+        $groups = [];
+
+        foreach ($requests as $request) {
+            $groupKey = $request->batch_id ?: ('single-' . $request->id);
+
+            if (! isset($groups[$groupKey])) {
+                $groups[$groupKey] = [
+                    'batch_id' => $request->batch_id,
+                    'employee' => $request->employee ? [
+                        'id' => $request->employee->id,
+                        'full_name' => $request->employee->full_name,
+                        'employee_code' => $request->employee->employee_code,
+                    ] : null,
+                    'applied_by' => $request->appliedBy ? [
+                        'id' => $request->appliedBy->id,
+                        'name' => $request->appliedBy->name,
+                    ] : null,
+                    'reason' => $request->reason,
+                    'requested_punch_in' => $request->requested_punch_in?->format('H:i'),
+                    'requested_punch_out' => $request->requested_punch_out?->format('H:i'),
+                    'requested_punch_in_label' => $request->requested_punch_in?->format('h:i A'),
+                    'requested_punch_out_label' => $request->requested_punch_out?->format('h:i A'),
+                    'created_at_label' => $request->created_at?->format('d M Y, h:i A'),
+                    'dates' => [],
+                    'request_ids' => [],
+                    'can_review' => true,
+                ];
+            }
+
+            $groups[$groupKey]['dates'][] = [
+                'id' => $request->id,
+                'attendance_date' => $request->attendance_date?->toDateString(),
+                'attendance_date_label' => $request->attendance_date?->format('D, d M Y'),
+                'attendance_date_short_label' => $request->attendance_date?->format('D, d M'),
+            ];
+            $groups[$groupKey]['request_ids'][] = $request->id;
+        }
+
+        $grouped = array_values($groups);
+
+        foreach ($grouped as &$group) {
+            usort($group['dates'], fn (array $left, array $right) => strcmp($left['attendance_date'], $right['attendance_date']));
+            $group['day_count'] = count($group['dates']);
+            $group['is_batch'] = $group['day_count'] > 1 || ! empty($group['batch_id']);
+        }
+        unset($group);
+
+        usort($grouped, function (array $left, array $right) {
+            $leftDate = $left['dates'][0]['attendance_date'] ?? '';
+            $rightDate = $right['dates'][0]['attendance_date'] ?? '';
+
+            return strcmp($rightDate, $leftDate);
+        });
+
+        return $grouped;
+    }
+
     public function pendingCountForCompany(int $companyId, User $user): int
     {
         return $this->pendingForReviewer($user)->count();
     }
 
     public function create(User $user, array $data): AttendanceRegularizationRequest
+    {
+        return DB::transaction(fn () => $this->createRequest($user, $data));
+    }
+
+    public function createBulk(User $user, array $data): array
+    {
+        $dates = array_values(array_unique($data['dates'] ?? []));
+        $batchId = (string) Str::uuid();
+
+        return DB::transaction(function () use ($user, $data, $dates, $batchId) {
+            return array_map(
+                fn (string $date) => $this->createRequest($user, [
+                    ...$data,
+                    'attendance_date' => $date,
+                    'batch_id' => $batchId,
+                ]),
+                $dates,
+            );
+        });
+    }
+
+    private function createRequest(User $user, array $data): AttendanceRegularizationRequest
     {
         $employee = $this->resolveTargetEmployee(
             $user,
@@ -103,20 +186,19 @@ class AttendanceRegularizationService
 
         $this->assertCanRequestForDate($user, $employee, $date);
 
-        return DB::transaction(function () use ($user, $employee, $date, $punchIn, $punchOut, $data) {
-            $request = AttendanceRegularizationRequest::create([
-                'company_id' => $employee->company_id,
-                'employee_id' => $employee->id,
-                'attendance_date' => $date,
-                'requested_punch_in' => $punchIn,
-                'requested_punch_out' => $punchOut,
-                'reason' => trim($data['reason']),
-                'status' => AttendanceRegularizationRequest::STATUS_PENDING,
-                'applied_by_user_id' => $user->id,
-            ]);
+        $request = AttendanceRegularizationRequest::create([
+            'company_id' => $employee->company_id,
+            'employee_id' => $employee->id,
+            'batch_id' => $data['batch_id'] ?? null,
+            'attendance_date' => $date,
+            'requested_punch_in' => $punchIn,
+            'requested_punch_out' => $punchOut,
+            'reason' => trim($data['reason']),
+            'status' => AttendanceRegularizationRequest::STATUS_PENDING,
+            'applied_by_user_id' => $user->id,
+        ]);
 
-            return $request->load(['employee', 'appliedBy']);
-        });
+        return $request->load(['employee', 'appliedBy']);
     }
 
     public function approve(User $user, AttendanceRegularizationRequest $request): AttendanceRegularizationRequest
@@ -183,6 +265,53 @@ class AttendanceRegularizationService
         ]);
 
         return $request->fresh(['employee', 'appliedBy', 'reviewedBy']);
+    }
+
+    public function approveBatch(User $user, string $batchId): array
+    {
+        $requests = $this->pendingRequestsForBatch($user, $batchId);
+
+        return DB::transaction(function () use ($user, $requests) {
+            return $requests
+                ->map(fn (AttendanceRegularizationRequest $request) => $this->approve($user, $request))
+                ->all();
+        });
+    }
+
+    public function rejectBatch(User $user, string $batchId, string $notes): array
+    {
+        $requests = $this->pendingRequestsForBatch($user, $batchId);
+
+        return DB::transaction(function () use ($user, $requests, $notes) {
+            return $requests
+                ->map(fn (AttendanceRegularizationRequest $request) => $this->reject($user, $request, $notes))
+                ->all();
+        });
+    }
+
+    private function pendingRequestsForBatch(User $user, string $batchId): Collection
+    {
+        $requests = AttendanceRegularizationRequest::query()
+            ->with(['employee.user', 'appliedBy'])
+            ->where('company_id', $user->company_id)
+            ->where('batch_id', $batchId)
+            ->where('status', AttendanceRegularizationRequest::STATUS_PENDING)
+            ->orderBy('attendance_date')
+            ->get();
+
+        if ($requests->isEmpty()) {
+            throw ValidationException::withMessages([
+                'batch_id' => 'No pending regularization requests found for this batch.',
+            ]);
+        }
+
+        foreach ($requests as $request) {
+            if (! $user->canReviewRegularizationRequest($request)) {
+                throw new AccessDeniedHttpException('You are not allowed to review one or more requests in this batch.');
+            }
+        }
+
+        return $requests;
     }
 
     public function cancel(User $user, AttendanceRegularizationRequest $request): AttendanceRegularizationRequest
@@ -316,6 +445,7 @@ class AttendanceRegularizationService
         return [
             'date' => $dateString,
             'date_label' => $date->format('l, d M Y'),
+            'date_short_label' => $date->format('D, d M'),
             'status' => $dayMeta['status'],
             'status_label' => $this->statusLabel($dayMeta['status']),
             'punch_in_label' => $dayMeta['punch_in_label'],

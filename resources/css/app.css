@@ -1355,6 +1355,68 @@ html.sidebar-collapsed .topbar-sidebar-toggle .topbar-toggle-icon {
     font-size: 0.875rem;
 }
 
+.employee-search-select {
+    position: relative;
+}
+
+.employee-search-select-input {
+    padding-right: 2.75rem;
+    cursor: text;
+}
+
+.employee-search-select-toggle {
+    position: absolute;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    width: 2.75rem;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border: none;
+    background: transparent;
+    color: #64748b;
+    padding: 0;
+    cursor: pointer;
+}
+
+.employee-search-select-toggle svg {
+    width: 1rem;
+    height: 1rem;
+    transition: transform 0.15s ease;
+}
+
+.employee-search-select.is-open .employee-search-select-toggle svg {
+    transform: rotate(180deg);
+}
+
+.employee-search-select-menu {
+    max-height: 280px;
+}
+
+.employee-search-select-item.is-selected {
+    background: #f8fafc;
+    color: #0f172a;
+    font-weight: 600;
+}
+
+.employee-search-select-item.is-selected:hover,
+.employee-search-select-item.is-selected.active {
+    background: var(--hrms-brand-light);
+    color: var(--hrms-brand);
+}
+
+.employee-search-select-input.form-control-sm {
+    min-height: calc(1.5em + 0.5rem + 2px);
+    padding-top: 0.25rem;
+    padding-bottom: 0.25rem;
+    font-size: 0.875rem;
+}
+
+.employee-search-select-input.form-control-sm + .employee-search-select-toggle {
+    width: 2.25rem;
+}
+
 .company-table-logo-default,
 .company-detail-logo-default {
     width: 40px;
@@ -2408,15 +2470,95 @@ body.logo-lightbox-open .modal-backdrop {
 .profile-asset-edit-list {
     display: flex;
     flex-direction: column;
-    gap: 0.75rem;
+    gap: 0.85rem;
 }
 
 .profile-asset-item,
 .profile-asset-edit-item {
     display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0.75rem;
+    padding: 0.95rem 1rem;
+    border: 1px solid #e2e8f0;
+    border-radius: 0.75rem;
+    background: #fff;
+}
+
+.profile-asset-item-header,
+.profile-asset-edit-item-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+}
+
+.profile-asset-item-title {
+    display: flex;
     align-items: center;
     gap: 0.65rem;
-    padding: 0.35rem 0;
+    min-width: 0;
+}
+
+.profile-asset-description-wrap {
+    padding-top: 0.15rem;
+}
+
+.profile-asset-description-field-label {
+    font-size: 0.8125rem;
+    color: #64748b;
+    margin-bottom: 0.35rem;
+}
+
+.profile-asset-editor {
+    background: #fff;
+    border-radius: 0.5rem;
+}
+
+.profile-asset-editor .ql-toolbar {
+    border-top-left-radius: 0.5rem;
+    border-top-right-radius: 0.5rem;
+}
+
+.profile-asset-editor .ql-container {
+    min-height: 110px;
+    border-bottom-left-radius: 0.5rem;
+    border-bottom-right-radius: 0.5rem;
+}
+
+.profile-asset-details-box {
+    padding: 0.75rem 0.85rem;
+    background: #f8fafc;
+    border: 1px solid #e2e8f0;
+    border-radius: 0.55rem;
+}
+
+.profile-asset-details-box-label {
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: #64748b;
+    margin-bottom: 0.4rem;
+}
+
+.profile-asset-details-box-body {
+    font-size: 0.875rem;
+    color: #334155;
+    line-height: 1.6;
+    word-break: break-word;
+}
+
+.profile-asset-details-box-body p {
+    margin-bottom: 0.35rem;
+}
+
+.profile-asset-details-box-body p:last-child {
+    margin-bottom: 0;
+}
+
+.profile-asset-details-box-body ul,
+.profile-asset-details-box-body ol {
+    margin-bottom: 0.35rem;
+    padding-left: 1.25rem;
 }
 
 .profile-asset-icon {
@@ -2436,21 +2578,29 @@ body.logo-lightbox-open .modal-backdrop {
 
 .profile-asset-name {
     flex: 1;
-    color: #334155;
+    color: #0f172a;
     font-size: 0.95rem;
+    font-weight: 600;
 }
 
 .profile-asset-status {
-    font-size: 0.875rem;
+    flex-shrink: 0;
+    display: inline-flex;
+    align-items: center;
+    padding: 0.2rem 0.65rem;
+    border-radius: 999px;
+    font-size: 0.75rem;
     font-weight: 600;
 }
 
 .profile-asset-status--available {
-    color: #16a34a;
+    color: #15803d;
+    background: #ecfdf5;
 }
 
 .profile-asset-status--unavailable {
-    color: #dc2626;
+    color: #b91c1c;
+    background: #fef2f2;
 }
 
 .profile-tab-subsection-title {
@@ -2648,6 +2798,20 @@ body.logo-lightbox-open .modal-backdrop {
     color: #64748b;
 }
 
+.upload-progress-wrap {
+    max-width: 100%;
+}
+
+.upload-progress-bar {
+    height: 0.55rem;
+    border-radius: 999px;
+    background: #e2e8f0;
+}
+
+.upload-progress-bar .progress-bar {
+    background-color: #2563eb;
+}
+
 .document-lightbox {
     position: fixed;
     inset: 0;
@@ -2804,6 +2968,18 @@ body.document-lightbox-open {
 
 .attendance-punch-stat {
     white-space: nowrap;
+}
+
+.attendance-punch-stat--expected-out {
+    color: #1d4ed8;
+    font-weight: 600;
+}
+
+.attendance-day-expected-out {
+    font-size: 0.72rem;
+    font-weight: 600;
+    color: #1d4ed8;
+    line-height: 1.3;
 }
 
 .attendance-punch-location {
@@ -3025,6 +3201,10 @@ body.document-lightbox-open {
     background-color: #ffd666;
 }
 
+.attendance-cal-legends-menu .attendance-legend-item--joining::before {
+    background-color: #9333ea;
+}
+
 .regularize-employee-filter {
     min-width: 220px;
 }
@@ -3046,10 +3226,33 @@ body.document-lightbox-open {
     border-radius: 0.85rem;
     background: #fff;
     text-align: left;
-    transition: transform 0.15s ease, box-shadow 0.15s ease;
+    transition: transform 0.15s ease, box-shadow 0.15s ease, border-color 0.15s ease;
+    cursor: pointer;
 }
 
-button.regularize-eligible-card:hover {
+.regularize-eligible-card-top {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 0.75rem;
+    width: 100%;
+}
+
+.regularize-eligible-card-check {
+    width: 1rem;
+    height: 1rem;
+    margin-top: 0.15rem;
+    flex-shrink: 0;
+}
+
+.regularize-eligible-card--selected {
+    border-color: #2563eb;
+    box-shadow: 0 0 0 1px #2563eb;
+    background: #eff6ff;
+}
+
+button.regularize-eligible-card:hover,
+label.regularize-eligible-card:hover {
     transform: translateY(-2px);
     box-shadow: 0 8px 20px rgba(15, 23, 42, 0.08);
 }
@@ -3108,6 +3311,98 @@ button.regularize-eligible-card:hover {
     background: #f8fafc;
 }
 
+.regularize-request-modal .modal-footer {
+    flex-wrap: wrap;
+}
+
+.regularize-dates-panel {
+    border: 1px solid #e2e8f0;
+    border-radius: 0.75rem;
+    overflow: hidden;
+    background: #fff;
+}
+
+.regularize-dates-panel-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0.65rem 1rem;
+    border-bottom: 1px solid #e2e8f0;
+    background: #f8fafc;
+    font-size: 0.875rem;
+}
+
+.regularize-dates-list {
+    max-height: 220px;
+    overflow-y: auto;
+}
+
+.regularize-dates-list-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+    padding: 0.75rem 1rem;
+    border-bottom: 1px solid #f1f5f9;
+}
+
+.regularize-dates-list-item:last-child {
+    border-bottom: 0;
+}
+
+.regularize-dates-list-item-label {
+    font-weight: 600;
+    color: #0f172a;
+}
+
+.regularize-dates-list-item-meta {
+    font-size: 0.75rem;
+    color: #64748b;
+    margin-top: 0.15rem;
+}
+
+.regularize-dates-remove-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 2rem;
+    height: 2rem;
+    padding: 0;
+    border: 0;
+    border-radius: 0.5rem;
+    background: transparent;
+    color: #dc2626;
+}
+
+.regularize-dates-remove-btn:hover {
+    background: #fef2f2;
+}
+
+.regularize-dates-empty {
+    text-align: center;
+}
+
+.regularize-pending-group {
+    background: #fff;
+}
+
+.regularize-pending-dates {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.4rem;
+}
+
+.regularize-pending-date-chip {
+    display: inline-flex;
+    align-items: center;
+    padding: 0.2rem 0.55rem;
+    border-radius: 999px;
+    background: #eff6ff;
+    color: #1d4ed8;
+    font-size: 0.75rem;
+    font-weight: 600;
+}
+
 .attendance-summary-row {
     display: flex;
     flex-wrap: wrap;
@@ -3164,6 +3459,20 @@ button.regularize-eligible-card:hover {
     max-width: 920px;
     margin: 0 auto;
     overflow-x: auto;
+}
+
+.attendance-page-full .attendance-calendar-grid {
+    max-width: none;
+    margin: 0;
+}
+
+.attendance-page-full .attendance-cal-shell .attendance-calendar-table tbody tr {
+    height: 92px;
+}
+
+.attendance-page-full .attendance-cal-shell .attendance-calendar-table td.attendance-day {
+    height: 92px;
+    max-height: 92px;
 }
 
 .attendance-cal-shell .attendance-calendar-table {
@@ -3386,6 +3695,38 @@ button.regularize-eligible-card:hover {
     box-shadow: none;
 }
 
+.attendance-cal-shell .attendance-calendar-table .attendance-cal-joining-marker {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.1rem;
+    margin-top: 0.15rem;
+    max-width: 100%;
+}
+
+.attendance-cal-shell .attendance-calendar-table .attendance-cal-joining-label {
+    display: block;
+    color: #7e22ce;
+    font-size: 0.52rem;
+    font-weight: 700;
+    line-height: 1.15;
+    text-transform: uppercase;
+    letter-spacing: 0.02em;
+}
+
+.attendance-cal-shell .attendance-calendar-table .attendance-cal-joining-date {
+    display: block;
+    color: #6b21a8;
+    font-size: 0.58rem;
+    font-weight: 600;
+    line-height: 1.15;
+    white-space: nowrap;
+}
+
+.attendance-cal-shell .attendance-calendar-table td.attendance-day--joining {
+    box-shadow: inset 0 0 0 1px #c084fc;
+}
+
 .attendance-day-status-label {
     font-size: 0.68rem;
     font-weight: 700;
@@ -3575,6 +3916,14 @@ button.regularize-eligible-card:hover {
 
 .dash-person-chip:hover {
     color: var(--hrms-brand);
+}
+
+.dash-person-chip--static {
+    cursor: default;
+}
+
+.dash-person-chip--static:hover {
+    color: inherit;
 }
 
 .dash-person-avatar {

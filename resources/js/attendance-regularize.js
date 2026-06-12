@@ -3,6 +3,7 @@ import api, { getErrorMessage } from './api';
 import { renderActionGroup, renderCancelIconButton } from './action-icons';
 import { renderApproveIconButton, renderRejectIconButton } from './review-actions';
 import { setSubmitLoading } from './form-utils';
+import { bindEmployeeSearchSelect, formatEmployeeLabel } from './employee-autocomplete';
 
 const statusClass = (status) => ({
     pending: 'company-status-pill--inactive',
@@ -18,12 +19,22 @@ const eligibleStatusClass = (status) => ({
     incomplete: 'regularize-eligible-card--incomplete',
 }[status] || 'regularize-eligible-card--default');
 
+const formatTimezoneLabel = () => {
+    const parts = new Intl.DateTimeFormat('en-IN', {
+        timeZoneName: 'shortOffset',
+    }).formatToParts(new Date());
+    const offset = parts.find((part) => part.type === 'timeZoneName')?.value || '';
+    const zone = Intl.DateTimeFormat().resolvedOptions().timeZone || 'Local';
+
+    return `Timezone (${offset}) ${zone.replace('_', ' ')}`;
+};
+
 document.addEventListener('DOMContentLoaded', async () => {
     const tableBody = document.getElementById('regularizeTableBody');
     const alertBox = document.getElementById('regularizeAlert');
     const pendingContainer = document.getElementById('pendingRegularizeContainer');
     const eligibleDatesContainer = document.getElementById('eligibleDatesContainer');
-    const eligibleEmployee = document.getElementById('eligibleEmployee');
+    const eligibleEmployeeId = document.getElementById('eligibleEmployeeId');
     const filterStatus = document.getElementById('filterStatus');
     const filterYear = document.getElementById('filterYear');
     const filterReset = document.getElementById('filterReset');
@@ -31,19 +42,47 @@ document.addEventListener('DOMContentLoaded', async () => {
     const paginationList = document.getElementById('regularizePaginationList');
     const regularizeForm = document.getElementById('regularizeForm');
     const regularizeModalEl = document.getElementById('regularizeModal');
-    const regularizeModalTitle = document.getElementById('regularizeModalTitle');
-    const regularizeSelectedDaySummary = document.getElementById('regularizeSelectedDaySummary');
+    const regularizeModalTimezone = document.getElementById('regularizeModalTimezone');
+    const regularizeSelectedDatesList = document.getElementById('regularizeSelectedDatesList');
     const regularizeSubmitBtn = document.getElementById('regularizeSubmitBtn');
+    const openRegularizeRequestBtn = document.getElementById('openRegularizeRequestBtn');
+    const selectAllEligibleBtn = document.getElementById('selectAllEligibleBtn');
+    const clearEligibleSelectionBtn = document.getElementById('clearEligibleSelectionBtn');
+    const addRegularizeDateBtn = document.getElementById('addRegularizeDateBtn');
+    const addRegularizeRangeBtn = document.getElementById('addRegularizeRangeBtn');
+    const pickRegularizeDateModalEl = document.getElementById('pickRegularizeDateModal');
+    const pickRegularizeDateSelect = document.getElementById('pickRegularizeDateSelect');
+    const confirmPickRegularizeDateBtn = document.getElementById('confirmPickRegularizeDateBtn');
+    const pickRegularizeRangeModalEl = document.getElementById('pickRegularizeRangeModal');
+    const regularizeRangeFrom = document.getElementById('regularizeRangeFrom');
+    const regularizeRangeTo = document.getElementById('regularizeRangeTo');
+    const confirmRegularizeRangeBtn = document.getElementById('confirmRegularizeRangeBtn');
+
     const regularizeModal = regularizeModalEl ? Modal.getOrCreateInstance(regularizeModalEl) : null;
+    const pickRegularizeDateModal = pickRegularizeDateModalEl
+        ? Modal.getOrCreateInstance(pickRegularizeDateModalEl)
+        : null;
+    const pickRegularizeRangeModal = pickRegularizeRangeModalEl
+        ? Modal.getOrCreateInstance(pickRegularizeRangeModalEl)
+        : null;
 
     let currentPage = 1;
     const currentYear = new Date().getFullYear();
     let canViewAll = false;
     let eligibleDatesByKey = {};
+    let employeeSearch = null;
+    let selectedDates = [];
+    let selectedEligibleDates = new Set();
+
+    const selectedEmployeeId = () => employeeSearch?.getSelectedId?.() || eligibleEmployeeId?.value || null;
 
     if (filterYear) {
         filterYear.innerHTML = Array.from({ length: 3 }, (_, i) => currentYear - 1 + i)
             .map((year) => `<option value="${year}" ${year === currentYear ? 'selected' : ''}>${year}</option>`).join('');
+    }
+
+    if (regularizeModalTimezone) {
+        regularizeModalTimezone.textContent = formatTimezoneLabel();
     }
 
     const showAlert = (message, type = 'success') => {
@@ -60,34 +99,204 @@ document.addEventListener('DOMContentLoaded', async () => {
         return parts.join(' · ') || '—';
     };
 
-    const openRegularizeModal = (item, employeeId = null) => {
-        document.getElementById('attendance_date').value = item.date;
-        document.getElementById('punch_in_time').value = item.suggested_punch_in || '';
-        document.getElementById('punch_out_time').value = item.suggested_punch_out || '';
-        document.getElementById('reason').value = '';
+    const selectableEligibleDates = () => Object.values(eligibleDatesByKey)
+        .filter((item) => !item.has_pending_request)
+        .map((item) => item.date);
+
+    const updateEligibleSelectionUi = () => {
+        const count = selectedEligibleDates.size;
+
+        if (openRegularizeRequestBtn) {
+            openRegularizeRequestBtn.disabled = count === 0;
+            openRegularizeRequestBtn.textContent = count
+                ? `Regularize selected (${count})`
+                : 'Regularize selected (0)';
+        }
+
+        clearEligibleSelectionBtn?.classList.toggle('d-none', count === 0);
+
+        eligibleDatesContainer?.querySelectorAll('[data-eligible-date]').forEach((card) => {
+            const date = card.dataset.eligibleDate;
+            const isSelected = selectedEligibleDates.has(date);
+            card.classList.toggle('regularize-eligible-card--selected', isSelected);
+            card.setAttribute('aria-pressed', isSelected ? 'true' : 'false');
+
+            const checkbox = card.querySelector('.regularize-eligible-card-check');
+            if (checkbox) {
+                checkbox.checked = isSelected;
+            }
+        });
+    };
+
+    const toggleEligibleDate = (date) => {
+        if (!eligibleDatesByKey[date] || eligibleDatesByKey[date].has_pending_request) {
+            return;
+        }
+
+        if (selectedEligibleDates.has(date)) {
+            selectedEligibleDates.delete(date);
+        } else {
+            selectedEligibleDates.add(date);
+        }
+
+        updateEligibleSelectionUi();
+    };
+
+    const setEligibleSelection = (dates) => {
+        selectedEligibleDates = new Set(
+            dates.filter((date) => eligibleDatesByKey[date] && !eligibleDatesByKey[date].has_pending_request),
+        );
+        updateEligibleSelectionUi();
+    };
+
+    const clearEligibleSelection = () => {
+        selectedEligibleDates.clear();
+        updateEligibleSelectionUi();
+    };
+
+    const availableEligibleDates = () => Object.values(eligibleDatesByKey)
+        .filter((item) => !item.has_pending_request && !selectedDates.includes(item.date));
+
+    const applySuggestedTimes = () => {
+        const firstSelected = selectedDates
+            .map((date) => eligibleDatesByKey[date])
+            .find(Boolean);
+
+        if (!firstSelected) {
+            return;
+        }
+
+        const punchInField = document.getElementById('punch_in_time');
+        const punchOutField = document.getElementById('punch_out_time');
+
+        if (punchInField && !punchInField.value) {
+            punchInField.value = firstSelected.suggested_punch_in || '';
+        }
+
+        if (punchOutField && !punchOutField.value) {
+            punchOutField.value = firstSelected.suggested_punch_out || '';
+        }
+    };
+
+    const updateSelectedDatesUi = () => {
+        if (!regularizeSelectedDatesList) return;
+
+        if (!selectedDates.length) {
+            regularizeSelectedDatesList.innerHTML = `
+                <li class="regularize-dates-empty text-muted small py-3 px-3">Add at least one date to continue.</li>
+            `;
+        } else {
+            regularizeSelectedDatesList.innerHTML = selectedDates.map((date) => {
+                const item = eligibleDatesByKey[date];
+                const label = item?.date_short_label || item?.date_label || date;
+                const meta = item
+                    ? `${item.status_label} · In ${item.punch_in_label || '—'} · Out ${item.punch_out_label || '—'}`
+                    : '';
+
+                return `
+                    <li class="regularize-dates-list-item">
+                        <div>
+                            <div class="regularize-dates-list-item-label">${label}</div>
+                            ${meta ? `<div class="regularize-dates-list-item-meta">${meta}</div>` : ''}
+                        </div>
+                        <button
+                            type="button"
+                            class="regularize-dates-remove-btn"
+                            data-remove-regularize-date="${date}"
+                            aria-label="Remove ${label}"
+                            title="Remove date"
+                        >
+                            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16" aria-hidden="true">
+                                <path d="M5.5 5.5A.5.5 0 0 1 6 6v6a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5m2.5 0a.5.5 0 0 1 .5.5v6a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5m3 .5a.5.5 0 0 0-1 0v6a.5.5 0 0 0 1 0z"/>
+                                <path d="M14.5 3a1 1 0 0 1-1 1H13v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V4h-.5a1 1 0 0 1-1-1V2a1 1 0 0 1 1-1H6a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1h3.5a1 1 0 0 1 1 1zM4.118 4 4 4.059V13a1 1 0 0 0 1 1h6a1 1 0 0 0 1-1V4.059L11.882 4zM2.5 3h11V2h-11z"/>
+                            </svg>
+                        </button>
+                    </li>
+                `;
+            }).join('');
+        }
+
+        if (regularizeSubmitBtn) {
+            const count = selectedDates.length;
+            regularizeSubmitBtn.disabled = count === 0;
+            regularizeSubmitBtn.textContent = `Submit for ${count} day(s)`;
+        }
+    };
+
+    const addSelectedDate = (date) => {
+        if (!date || !eligibleDatesByKey[date] || eligibleDatesByKey[date].has_pending_request) {
+            return false;
+        }
+
+        if (selectedDates.includes(date)) {
+            return false;
+        }
+
+        selectedDates.push(date);
+        selectedDates.sort();
+        updateSelectedDatesUi();
+        applySuggestedTimes();
+        return true;
+    };
+
+    const addSelectedDates = (dates) => {
+        const added = dates.filter((date) => addSelectedDate(date));
+        return added.length;
+    };
+
+    const removeSelectedDate = (date) => {
+        selectedDates = selectedDates.filter((item) => item !== date);
+        updateSelectedDatesUi();
+    };
+
+    const resetRegularizeForm = () => {
+        selectedDates = [];
+        regularizeForm?.reset();
+        updateSelectedDatesUi();
+    };
+
+    const openRegularizeModal = (initialDates = [], employeeId = null) => {
+        resetRegularizeForm();
 
         const employeeField = document.getElementById('regularize_employee_id');
         if (employeeField) {
-            employeeField.value = employeeId || eligibleEmployee?.value || '';
+            employeeField.value = employeeId || selectedEmployeeId() || '';
         }
 
-        if (regularizeModalTitle) {
-            regularizeModalTitle.textContent = `Regularize · ${item.date_label}`;
-        }
-
-        if (regularizeSelectedDaySummary) {
-            regularizeSelectedDaySummary.innerHTML = `
-                <div class="regularize-selected-day-status ${eligibleStatusClass(item.status)}">
-                    <div class="fw-semibold">${item.status_label}</div>
-                    <div class="small text-muted mt-1">
-                        Recorded: In ${item.punch_in_label || '—'} · Out ${item.punch_out_label || '—'}
-                        · Worked ${item.worked_hours_label} / Required ${item.required_hours_label}
-                    </div>
-                </div>
-            `;
-        }
-
+        addSelectedDates(initialDates);
         regularizeModal?.show();
+    };
+
+    const openPickDateModal = () => {
+        const available = availableEligibleDates();
+
+        if (!available.length) {
+            showAlert('No more eligible dates available to add.', 'warning');
+            return;
+        }
+
+        if (pickRegularizeDateSelect) {
+            pickRegularizeDateSelect.innerHTML = available
+                .map((item) => `<option value="${item.date}">${item.date_label}</option>`)
+                .join('');
+        }
+
+        pickRegularizeDateModal?.show();
+    };
+
+    const openPickRangeModal = () => {
+        const available = availableEligibleDates();
+
+        if (!available.length) {
+            showAlert('No more eligible dates available to add.', 'warning');
+            return;
+        }
+
+        const sortedDates = available.map((item) => item.date).sort();
+        if (regularizeRangeFrom) regularizeRangeFrom.value = sortedDates[0] || '';
+        if (regularizeRangeTo) regularizeRangeTo.value = sortedDates[sortedDates.length - 1] || '';
+
+        pickRegularizeRangeModal?.show();
     };
 
     const renderEligibleDates = (payload) => {
@@ -95,9 +304,13 @@ document.addEventListener('DOMContentLoaded', async () => {
 
         const dates = payload.dates || [];
         eligibleDatesByKey = Object.fromEntries(dates.map((item) => [item.date, item]));
+        selectedEligibleDates = new Set(
+            [...selectedEligibleDates].filter((date) => eligibleDatesByKey[date] && !eligibleDatesByKey[date].has_pending_request),
+        );
 
         if (!dates.length) {
             eligibleDatesContainer.innerHTML = '<div class="text-muted py-3">No dates need regularization.</div>';
+            updateEligibleSelectionUi();
             return;
         }
 
@@ -113,41 +326,57 @@ document.addEventListener('DOMContentLoaded', async () => {
                 `;
             }
 
+            const isSelected = selectedEligibleDates.has(item.date);
+
             return `
-                <button
-                    type="button"
-                    class="regularize-eligible-card ${eligibleStatusClass(item.status)}"
-                    data-eligible-date="${item.date}"
-                >
-                    <div class="regularize-eligible-card-date">${item.date_label}</div>
-                    <div class="regularize-eligible-card-status">${item.status_label}</div>
+                <div class="regularize-eligible-card ${eligibleStatusClass(item.status)} ${isSelected ? 'regularize-eligible-card--selected' : ''}" data-eligible-date="${item.date}" role="button" tabindex="0" aria-pressed="${isSelected ? 'true' : 'false'}">
+                    <div class="regularize-eligible-card-top">
+                        <div>
+                            <div class="regularize-eligible-card-date">${item.date_short_label || item.date_label}</div>
+                            <div class="regularize-eligible-card-status">${item.status_label}</div>
+                        </div>
+                        <input type="checkbox" class="form-check-input regularize-eligible-card-check" ${isSelected ? 'checked' : ''} tabindex="-1" aria-hidden="true" readonly>
+                    </div>
                     <div class="regularize-eligible-card-meta">
                         In ${item.punch_in_label || '—'} · Out ${item.punch_out_label || '—'}
                     </div>
                     <div class="regularize-eligible-card-meta">Worked ${item.worked_hours_label} / ${item.required_hours_label}</div>
-                    <span class="regularize-eligible-card-action">Request regularization</span>
-                </button>
+                </div>
             `;
         }).join('');
+
+        updateEligibleSelectionUi();
     };
 
-    const loadEligibleEmployees = async () => {
-        if (!eligibleEmployee) return;
+    const initEmployeeFilter = async () => {
+        if (!document.getElementById('eligibleEmployeeInput')) {
+            return;
+        }
 
         try {
             const { data } = await api.get('/employees', { params: { per_page: 100, status: 'active' } });
             const employees = data.data.employees || [];
             canViewAll = true;
             const defaultId = window.REGULARIZE_DEFAULT_EMPLOYEE_ID;
-            eligibleEmployee.innerHTML = employees.map((employee) => `
-                <option value="${employee.id}" ${String(employee.id) === String(defaultId) ? 'selected' : ''}>${employee.full_name} (${employee.employee_code})</option>
-            `).join('');
+            const defaultEmployee = employees.find((employee) => String(employee.id) === String(defaultId))
+                || employees[0]
+                || null;
 
-            if (!eligibleEmployee.value && employees[0]) {
-                eligibleEmployee.value = String(employees[0].id);
+            employeeSearch = bindEmployeeSearchSelect({
+                inputId: 'eligibleEmployeeInput',
+                hiddenId: 'eligibleEmployeeId',
+                onSelect: () => {
+                    loadEligibleDates();
+                },
+            });
+
+            if (defaultEmployee) {
+                employeeSearch.setSelection({
+                    id: defaultEmployee.id,
+                    label: formatEmployeeLabel(defaultEmployee),
+                });
             }
         } catch (error) {
-            eligibleEmployee.innerHTML = '<option value="">Unable to load employees</option>';
             console.error(getErrorMessage(error));
         }
     };
@@ -159,8 +388,10 @@ document.addEventListener('DOMContentLoaded', async () => {
 
         try {
             const params = {};
-            if (eligibleEmployee?.value) {
-                params.employee_id = eligibleEmployee.value;
+            const employeeId = selectedEmployeeId();
+
+            if (employeeId) {
+                params.employee_id = employeeId;
             }
 
             const { data } = await api.get('/attendance-regularizations/eligible-dates', { params });
@@ -170,29 +401,51 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
     };
 
-    const renderPending = (requests) => {
+    const renderPending = (groups) => {
         if (!pendingContainer) return;
-        if (!requests.length) {
+        if (!groups.length) {
             pendingContainer.innerHTML = '<div class="text-muted">No pending regularization requests.</div>';
             return;
         }
-        pendingContainer.innerHTML = requests.map((item) => `
-            <div class="border rounded p-3 mb-3">
-                <div class="d-flex flex-wrap justify-content-between gap-2">
-                    <div>
-                        <div class="fw-semibold">${item.employee?.full_name || 'Employee'} · ${item.attendance_date_label}</div>
-                        <div class="small text-muted">${formatTimes(item)}</div>
-                        <div class="small mt-1">${item.reason}</div>
-                    </div>
-                    <div class="table-action-group">
-                        ${item.can_review ? `
-                            ${renderApproveIconButton('data-approve-regularize', item.id, 'Approve regularization')}
-                            ${renderRejectIconButton('data-reject-regularize', item.id, 'Reject regularization')}
-                        ` : ''}
+
+        pendingContainer.innerHTML = groups.map((group) => {
+            const employeeName = group.employee?.full_name || 'Employee';
+            const employeeCode = group.employee?.employee_code || '';
+            const dayCount = group.day_count || group.dates?.length || 0;
+            const isBatch = dayCount > 1 && group.batch_id;
+            const title = isBatch
+                ? `${employeeName} · ${dayCount} day(s)`
+                : `${employeeName} · ${group.dates?.[0]?.attendance_date_label || '—'}`;
+            const times = formatTimes(group);
+            const dateList = (group.dates || [])
+                .map((date) => `<span class="regularize-pending-date-chip">${date.attendance_date_short_label || date.attendance_date_label}</span>`)
+                .join('');
+            const reviewActions = group.can_review ? (isBatch && group.batch_id ? `
+                ${renderApproveIconButton('data-approve-regularize-batch', group.batch_id, `Approve ${dayCount} day(s)`)}
+                ${renderRejectIconButton('data-reject-regularize-batch', group.batch_id, `Reject ${dayCount} day(s)`)}
+            ` : `
+                ${renderApproveIconButton('data-approve-regularize', group.request_ids?.[0], 'Approve regularization')}
+                ${renderRejectIconButton('data-reject-regularize', group.request_ids?.[0], 'Reject regularization')}
+            `) : '';
+
+            return `
+                <div class="regularize-pending-group border rounded p-3 mb-3">
+                    <div class="d-flex flex-wrap justify-content-between gap-2">
+                        <div class="flex-grow-1">
+                            <div class="fw-semibold">${title}</div>
+                            ${employeeCode ? `<div class="small text-muted">${employeeCode}</div>` : ''}
+                            <div class="small text-muted mt-1">${times}</div>
+                            ${group.created_at_label ? `<div class="small text-muted">Submitted ${group.created_at_label}</div>` : ''}
+                            <div class="regularize-pending-dates mt-2">${dateList}</div>
+                            <div class="small mt-2">${group.reason || ''}</div>
+                        </div>
+                        <div class="table-action-group">
+                            ${reviewActions}
+                        </div>
                     </div>
                 </div>
-            </div>
-        `).join('');
+            `;
+        }).join('');
     };
 
     const renderRow = (item, index, pagination) => {
@@ -204,7 +457,10 @@ document.addEventListener('DOMContentLoaded', async () => {
         return `<tr>
             <td>${serial}</td>
             <td>${item.employee?.full_name || '—'}<div class="small text-muted">${item.employee?.employee_code || ''}</div></td>
-            <td>${item.attendance_date_label || '—'}</td>
+            <td>
+                ${item.attendance_date_label || '—'}
+                ${item.batch_id ? '<div><span class="badge text-bg-light border mt-1">Multi-day request</span></div>' : ''}
+            </td>
             <td>${formatTimes(item)}</td>
             <td class="text-truncate" style="max-width:220px">${item.reason}</td>
             <td><span class="company-status-pill ${statusClass(item.status)}">${item.status_label}</span></td>
@@ -212,11 +468,72 @@ document.addEventListener('DOMContentLoaded', async () => {
         </tr>`;
     };
 
+    const groupHistoryRows = (requests) => {
+        const groups = [];
+        const seenBatchIds = new Set();
+
+        requests.forEach((item) => {
+            if (item.batch_id) {
+                if (seenBatchIds.has(item.batch_id)) {
+                    return;
+                }
+
+                const batchItems = requests.filter((request) => request.batch_id === item.batch_id);
+                seenBatchIds.add(item.batch_id);
+
+                if (batchItems.length > 1) {
+                    groups.push({ type: 'batch', items: batchItems });
+                    return;
+                }
+            }
+
+            groups.push({ type: 'single', items: [item] });
+        });
+
+        return groups;
+    };
+
+    const renderBatchRow = (items, index, pagination) => {
+        const serial = ((pagination.current_page - 1) * pagination.per_page) + index + 1;
+        const first = items[0];
+        const dateChips = items
+            .map((item) => `<span class="regularize-pending-date-chip">${item.attendance_date_label || '—'}</span>`)
+            .join('');
+        const actions = items
+            .filter((item) => item.can_cancel && item.status === 'pending')
+            .map((item) => renderCancelIconButton('data-cancel-regularize', item.id, `Cancel ${item.attendance_date_label}`));
+
+        return `<tr>
+            <td>${serial}</td>
+            <td>${first.employee?.full_name || '—'}<div class="small text-muted">${first.employee?.employee_code || ''}</div></td>
+            <td>
+                <div class="regularize-pending-dates">${dateChips}</div>
+                <div><span class="badge text-bg-light border mt-1">${items.length} day(s)</span></div>
+            </td>
+            <td>${formatTimes(first)}</td>
+            <td class="text-truncate" style="max-width:220px">${first.reason}</td>
+            <td><span class="company-status-pill ${statusClass(first.status)}">${first.status_label}</span></td>
+            <td>${actions.length ? renderActionGroup(actions.join('')) : '—'}</td>
+        </tr>`;
+    };
+
+    const renderHistoryRows = (requests, pagination) => {
+        let rowIndex = 0;
+
+        return groupHistoryRows(requests).map((group) => {
+            const row = group.type === 'batch'
+                ? renderBatchRow(group.items, rowIndex, pagination)
+                : renderRow(group.items[0], rowIndex, pagination);
+            rowIndex += 1;
+            return row;
+        }).join('');
+    };
+
     const loadPending = async () => {
         if (!pendingContainer) return;
         try {
             const { data } = await api.get('/attendance-regularizations/pending');
-            renderPending(data.data.regularization_requests || []);
+            renderPending(data.data.pending_groups || []);
         } catch {
             pendingContainer.innerHTML = '<div class="text-danger">Unable to load pending requests.</div>';
         }
@@ -231,7 +548,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             const requests = data.data.regularization_requests || [];
             const pagination = data.data.pagination;
             tableBody.innerHTML = requests.length
-                ? requests.map((item, i) => renderRow(item, i, pagination)).join('')
+                ? renderHistoryRows(requests, pagination)
                 : '<tr><td colspan="7" class="text-center text-muted py-5">No regularization requests found.</td></tr>';
             paginationInfo.textContent = pagination?.total
                 ? `Showing ${pagination.from} to ${pagination.to} of ${pagination.total}`
@@ -264,6 +581,23 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
     };
 
+    const handleBatchReview = async (batchId, action) => {
+        try {
+            if (action === 'approve') {
+                const { data } = await api.patch(`/attendance-regularizations/batch/${batchId}/approve`);
+                showAlert(data.message || 'Regularization requests approved.');
+            } else {
+                const notes = prompt('Rejection reason:');
+                if (!notes?.trim()) return;
+                const { data } = await api.patch(`/attendance-regularizations/batch/${batchId}/reject`, { notes: notes.trim() });
+                showAlert(data.message || 'Regularization requests rejected.');
+            }
+            await Promise.all([loadPending(), loadRequests(currentPage), loadEligibleDates()]);
+        } catch (error) {
+            showAlert(getErrorMessage(error), 'danger');
+        }
+    };
+
     const handleCancel = async (id) => {
         if (!window.confirm('Cancel this regularization request?')) return;
         try {
@@ -275,19 +609,80 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
     };
 
-    eligibleDatesContainer?.addEventListener('click', (event) => {
-        const button = event.target.closest('[data-eligible-date]');
+    openRegularizeRequestBtn?.addEventListener('click', () => {
+        if (!selectedEligibleDates.size) {
+            showAlert('Select at least one date to regularize.', 'warning');
+            return;
+        }
+
+        openRegularizeModal([...selectedEligibleDates].sort(), selectedEmployeeId());
+    });
+
+    selectAllEligibleBtn?.addEventListener('click', () => {
+        setEligibleSelection(selectableEligibleDates());
+    });
+
+    clearEligibleSelectionBtn?.addEventListener('click', clearEligibleSelection);
+
+    addRegularizeDateBtn?.addEventListener('click', openPickDateModal);
+    addRegularizeRangeBtn?.addEventListener('click', openPickRangeModal);
+
+    confirmPickRegularizeDateBtn?.addEventListener('click', () => {
+        const date = pickRegularizeDateSelect?.value;
+        if (!date) return;
+
+        addSelectedDate(date);
+        pickRegularizeDateModal?.hide();
+    });
+
+    confirmRegularizeRangeBtn?.addEventListener('click', () => {
+        const from = regularizeRangeFrom?.value;
+        const to = regularizeRangeTo?.value;
+
+        if (!from || !to) {
+            showAlert('Select both start and end dates.', 'warning');
+            return;
+        }
+
+        if (from > to) {
+            showAlert('End date must be on or after start date.', 'warning');
+            return;
+        }
+
+        const eligibleInRange = availableEligibleDates()
+            .filter((item) => item.date >= from && item.date <= to)
+            .map((item) => item.date);
+
+        if (!eligibleInRange.length) {
+            showAlert('No eligible dates found in the selected range.', 'warning');
+            return;
+        }
+
+        addSelectedDates(eligibleInRange);
+        pickRegularizeRangeModal?.hide();
+    });
+
+    regularizeSelectedDatesList?.addEventListener('click', (event) => {
+        const button = event.target.closest('[data-remove-regularize-date]');
         if (!button) return;
+        removeSelectedDate(button.dataset.removeRegularizeDate);
+    });
 
-        const item = eligibleDatesByKey[button.dataset.eligibleDate];
-        if (!item) return;
+    eligibleDatesContainer?.addEventListener('click', (event) => {
+        const card = event.target.closest('[data-eligible-date]');
+        if (!card) return;
 
-        openRegularizeModal(item, eligibleEmployee?.value || null);
+        toggleEligibleDate(card.dataset.eligibleDate);
     });
 
     pendingContainer?.addEventListener('click', (event) => {
+        const approveBatch = event.target.closest('[data-approve-regularize-batch]');
+        const rejectBatch = event.target.closest('[data-reject-regularize-batch]');
         const approve = event.target.closest('[data-approve-regularize]');
         const reject = event.target.closest('[data-reject-regularize]');
+
+        if (approveBatch) handleBatchReview(approveBatch.dataset.approveRegularizeBatch, 'approve');
+        if (rejectBatch) handleBatchReview(rejectBatch.dataset.rejectRegularizeBatch, 'reject');
         if (approve) handleReview(approve.dataset.approveRegularize, 'approve');
         if (reject) handleReview(reject.dataset.rejectRegularize, 'reject');
     });
@@ -299,10 +694,16 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     regularizeForm?.addEventListener('submit', async (event) => {
         event.preventDefault();
+
+        if (!selectedDates.length) {
+            showAlert('Add at least one date before submitting.', 'warning');
+            return;
+        }
+
         setSubmitLoading(regularizeSubmitBtn, true, { submittingText: 'Submitting...' });
         try {
             const payload = {
-                attendance_date: document.getElementById('attendance_date')?.value,
+                dates: selectedDates,
                 punch_in_time: document.getElementById('punch_in_time')?.value || null,
                 punch_out_time: document.getElementById('punch_out_time')?.value || null,
                 reason: document.getElementById('reason')?.value?.trim(),
@@ -313,9 +714,10 @@ document.addEventListener('DOMContentLoaded', async () => {
                 payload.employee_id = Number(employeeId);
             }
 
-            await api.post('/attendance-regularizations', payload);
-            showAlert('Regularization request submitted.');
-            regularizeForm.reset();
+            const { data } = await api.post('/attendance-regularizations', payload);
+            showAlert(data.message || `Regularization submitted for ${selectedDates.length} day(s).`);
+            resetRegularizeForm();
+            clearEligibleSelection();
             regularizeModal?.hide();
             await Promise.all([loadPending(), loadRequests(1), loadEligibleDates()]);
         } catch (error) {
@@ -325,7 +727,16 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
     });
 
-    eligibleEmployee?.addEventListener('change', loadEligibleDates);
+    regularizeModalEl?.addEventListener('hidden.bs.modal', () => {
+        resetRegularizeForm();
+    });
+
+    if (document.getElementById('eligibleEmployeeInput')) {
+        await initEmployeeFilter();
+    }
+
+    const urlDate = new URLSearchParams(window.location.search).get('date');
+    await Promise.all([loadPending(), loadRequests(), loadEligibleDates()]);
 
     filterStatus?.addEventListener('change', () => loadRequests(1));
     filterYear?.addEventListener('change', () => loadRequests(1));
@@ -339,14 +750,10 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (btn) loadRequests(Number(btn.dataset.page));
     });
 
-    if (eligibleEmployee) {
-        await loadEligibleEmployees();
-    }
-
-    const urlDate = new URLSearchParams(window.location.search).get('date');
-    await Promise.all([loadPending(), loadRequests(), loadEligibleDates()]);
-
-    if (urlDate && eligibleDatesByKey[urlDate]) {
-        openRegularizeModal(eligibleDatesByKey[urlDate], eligibleEmployee?.value || null);
+    if (urlDate && eligibleDatesByKey[urlDate] && !eligibleDatesByKey[urlDate].has_pending_request) {
+        setEligibleSelection([urlDate]);
+        openRegularizeModal([urlDate], selectedEmployeeId());
+    } else {
+        updateEligibleSelectionUi();
     }
 });

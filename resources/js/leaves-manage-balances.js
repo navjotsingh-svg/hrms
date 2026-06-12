@@ -1,7 +1,8 @@
 import api, { getErrorMessage } from './api';
+import { bindEmployeeSearchSelect } from './employee-autocomplete';
 
 document.addEventListener('DOMContentLoaded', async () => {
-    const employeeSelect = document.getElementById('balanceEmployee');
+    const employeeHidden = document.getElementById('balanceEmployeeId');
     const yearSelect = document.getElementById('balanceYear');
     const loadBtn = document.getElementById('loadBalancesBtn');
     const tableBody = document.getElementById('manageBalancesTableBody');
@@ -14,11 +15,17 @@ document.addEventListener('DOMContentLoaded', async () => {
     const alertBox = document.getElementById('manageBalancesAlert');
     const currentYear = new Date().getFullYear();
     let compOffBalanceId = null;
+    let employeeSearch = null;
 
-    if (!employeeSelect) return;
+    if (!employeeHidden) {
+        return;
+    }
 
     const showAlert = (message, type = 'success') => {
-        if (!alertBox) return;
+        if (!alertBox) {
+            return;
+        }
+
         alertBox.className = `alert alert-${type} alert-dismissible fade show`;
         alertBox.innerHTML = `${message}<button type="button" class="btn-close" data-bs-dismiss="alert"></button>`;
         alertBox.classList.remove('d-none');
@@ -30,17 +37,17 @@ document.addEventListener('DOMContentLoaded', async () => {
             .join('');
     }
 
-    const loadEmployees = async () => {
-        try {
-            const { data } = await api.get('/employees', { params: { per_page: 100, status: 'active' } });
-            const employees = data.data.employees || [];
-            employeeSelect.innerHTML = '<option value="">Select employee</option>' + employees.map((emp) => `
-                <option value="${emp.id}">${emp.full_name}${emp.employee_code ? ` (${emp.employee_code})` : ''}</option>
-            `).join('');
-        } catch (error) {
-            showAlert(getErrorMessage(error), 'danger');
-        }
-    };
+    employeeSearch = bindEmployeeSearchSelect({
+        inputId: 'balanceEmployeeInput',
+        hiddenId: 'balanceEmployeeId',
+        onSelect: () => {
+            loadBalances();
+        },
+        onClear: () => {
+            balancesCard?.classList.add('d-none');
+            grantCompOffCard?.classList.add('d-none');
+        },
+    });
 
     const quotaLabel = (item) => {
         if (item.is_comp_off || item.leave_type?.is_comp_off) {
@@ -90,7 +97,9 @@ document.addEventListener('DOMContentLoaded', async () => {
         const compOff = balances.find((item) => item.is_comp_off || item.leave_type?.is_comp_off);
         compOffBalanceId = compOff?.id || null;
 
-        if (!compOffSummary) return;
+        if (!compOffSummary) {
+            return;
+        }
 
         if (!compOff) {
             compOffSummary.textContent = 'Comp off leave type is not configured.';
@@ -103,7 +112,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     };
 
     const loadBalances = async () => {
-        const employeeId = employeeSelect.value;
+        const employeeId = employeeSearch?.getSelectedId?.() || employeeHidden.value;
         const year = yearSelect?.value || currentYear;
 
         if (!employeeId) {
@@ -142,7 +151,9 @@ document.addEventListener('DOMContentLoaded', async () => {
         const saveUsedBtn = event.target.closest('.save-used-btn');
         const saveAdjustedBtn = event.target.closest('.save-adjusted-btn');
 
-        if (!saveUsedBtn && !saveAdjustedBtn) return;
+        if (!saveUsedBtn && !saveAdjustedBtn) {
+            return;
+        }
 
         const row = event.target.closest('tr');
         const balanceId = row?.dataset.balanceId;
@@ -156,7 +167,9 @@ document.addEventListener('DOMContentLoaded', async () => {
             payload.adjusted = Number(row.querySelector('.adjusted-input')?.value);
         }
 
-        if (!balanceId || Number.isNaN(payload.used ?? 0) && payload.adjusted === undefined) return;
+        if (!balanceId || Number.isNaN(payload.used ?? 0) && payload.adjusted === undefined) {
+            return;
+        }
 
         const button = saveUsedBtn || saveAdjustedBtn;
         button.disabled = true;
@@ -201,14 +214,4 @@ document.addEventListener('DOMContentLoaded', async () => {
     });
 
     loadBtn?.addEventListener('click', loadBalances);
-    employeeSelect.addEventListener('change', () => {
-        if (employeeSelect.value) {
-            loadBalances();
-        } else {
-            balancesCard?.classList.add('d-none');
-            grantCompOffCard?.classList.add('d-none');
-        }
-    });
-
-    await loadEmployees();
 });

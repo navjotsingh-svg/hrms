@@ -11,6 +11,7 @@ class EmployeeAsset extends Model
         'employee_id',
         'asset_type_id',
         'is_assigned',
+        'description',
     ];
 
     protected function casts(): array

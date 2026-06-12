@@ -382,6 +382,19 @@ document.addEventListener('DOMContentLoaded', async () => {
         return `<span class="profile-asset-status ${className}">${label}</span>`;
     };
 
+    const buildAssetDescriptionView = (asset) => {
+        if (!asset.is_assigned || !asset.description) {
+            return '';
+        }
+
+        return `
+            <div class="profile-asset-details-box">
+                <div class="profile-asset-details-box-label">Details given</div>
+                <div class="profile-asset-details-box-body">${asset.description}</div>
+            </div>
+        `;
+    };
+
     const renderOtherTab = (employee) => {
         const assets = employee.assets || [];
         const hasAssets = assets.length > 0;
@@ -402,9 +415,14 @@ document.addEventListener('DOMContentLoaded', async () => {
 
         assetList.innerHTML = assets.map((asset) => `
             <li class="profile-asset-item">
-                <span class="profile-asset-icon" aria-hidden="true">i</span>
-                <span class="profile-asset-name">${asset.name}</span>
-                ${renderAssetStatus(asset.is_assigned)}
+                <div class="profile-asset-item-header">
+                    <div class="profile-asset-item-title">
+                        <span class="profile-asset-icon" aria-hidden="true">i</span>
+                        <span class="profile-asset-name">${asset.name}</span>
+                    </div>
+                    ${renderAssetStatus(asset.is_assigned)}
+                </div>
+                ${buildAssetDescriptionView(asset)}
             </li>
         `).join('');
     };

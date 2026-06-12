@@ -19,6 +19,7 @@ class AttendanceRegularizationRequest extends Model
     protected $fillable = [
         'company_id',
         'employee_id',
+        'batch_id',
         'attendance_date',
         'requested_punch_in',
         'requested_punch_out',

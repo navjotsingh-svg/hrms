@@ -136,6 +136,49 @@ export const applyBackendErrors = (form, errors, setError = setFieldError) => {
     });
 };
 
+export const bindUploadProgress = ({
+    wrap,
+    bar,
+    percentEl,
+    labelEl,
+} = {}) => {
+    const update = (percent, label) => {
+        const value = Math.max(0, Math.min(100, Math.round(percent)));
+
+        wrap?.classList.remove('d-none');
+
+        if (bar) {
+            bar.style.width = `${value}%`;
+            bar.setAttribute('aria-valuenow', String(value));
+            bar.classList.toggle('progress-bar-animated', value < 100);
+            bar.classList.toggle('progress-bar-striped', value < 100);
+        }
+
+        if (percentEl) {
+            percentEl.textContent = `${value}%`;
+        }
+
+        if (labelEl) {
+            labelEl.textContent = label || (value >= 100 ? 'Processing on server...' : 'Uploading...');
+        }
+    };
+
+    const hide = () => {
+        wrap?.classList.add('d-none');
+        update(0, 'Uploading...');
+    };
+
+    const onUploadProgress = (event) => {
+        if (!event.total) {
+            return;
+        }
+
+        update((event.loaded / event.total) * 100);
+    };
+
+    return { update, hide, onUploadProgress };
+};
+
 const FLASH_STORAGE_KEY = 'hrms_flash_message';
 
 export const flashMessageType = (message) => (

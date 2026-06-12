@@ -246,6 +246,12 @@ Route::prefix('v1')->name('api.')->group(function () {
             Route::middleware('company.permission:attendance.approve')->group(function () {
                 Route::get('attendance-regularizations/pending', [\App\Http\Controllers\Api\V1\AttendanceRegularizationController::class, 'pending'])
                     ->name('attendance-regularizations.pending');
+                Route::patch('attendance-regularizations/batch/{batchId}/approve', [\App\Http\Controllers\Api\V1\AttendanceRegularizationController::class, 'approveBatch'])
+                    ->name('attendance-regularizations.batch.approve')
+                    ->whereUuid('batchId');
+                Route::patch('attendance-regularizations/batch/{batchId}/reject', [\App\Http\Controllers\Api\V1\AttendanceRegularizationController::class, 'rejectBatch'])
+                    ->name('attendance-regularizations.batch.reject')
+                    ->whereUuid('batchId');
                 Route::patch('attendance-regularizations/{attendance_regularization}/approve', [\App\Http\Controllers\Api\V1\AttendanceRegularizationController::class, 'approve'])
                     ->name('attendance-regularizations.approve')
                     ->whereNumber('attendance_regularization');

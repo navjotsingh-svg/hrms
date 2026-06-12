@@ -77,8 +77,14 @@ export function initAttendancePunch({
 
         if (todaySummary) {
             if (status.awaiting_punch_out) {
+                const punchInLabel = status.current_punch_in_label || status.punch_in_label || '—';
+                const expectedOut = status.expected_clock_out_label
+                    ? `<span class="attendance-punch-stat attendance-punch-stat--expected-out">Expected clock out ${status.expected_clock_out_label}</span>`
+                    : '';
+
                 todaySummary.innerHTML = `
-                    <span class="attendance-punch-stat">In ${status.punch_in_label || '—'}</span>
+                    <span class="attendance-punch-stat">In ${punchInLabel}</span>
+                    ${expectedOut}
                 `;
             } else {
                 const worked = status.today_worked_minutes || 0;

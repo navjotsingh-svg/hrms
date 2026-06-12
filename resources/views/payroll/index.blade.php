@@ -44,10 +44,11 @@
                     </select>
                 </div>
                 <div class="col-md-4">
-                    <label for="payrollEmployeeSelect" class="form-label">Employee</label>
-                    <select class="form-select" id="payrollEmployeeSelect" disabled>
-                        <option value="">Select period first...</option>
-                    </select>
+                    @include('partials.employee-search-select', [
+                        'inputId' => 'payrollEmployeeInput',
+                        'hiddenId' => 'payrollEmployeeId',
+                        'placeholder' => 'Select period first...',
+                    ])
                 </div>
                 <div class="col-md-4 d-flex flex-wrap gap-2">
                     <button type="button" class="btn btn-primary" id="payrollViewBtn" disabled>View Payslip</button>

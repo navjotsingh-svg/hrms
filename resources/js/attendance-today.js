@@ -1,4 +1,5 @@
 import api, { getErrorMessage } from './api';
+import { bindEmployeeSearchSelect } from './employee-autocomplete';
 
 const pad = (value) => String(value).padStart(2, '0');
 
@@ -48,7 +49,6 @@ document.addEventListener('DOMContentLoaded', () => {
     const dateInput = document.getElementById('attendanceTodayDate');
     const refreshBtn = document.getElementById('attendanceTodayRefresh');
     const resetBtn = document.getElementById('attendanceTodayReset');
-    const searchInput = document.getElementById('attendanceTodaySearch');
     const departmentSelect = document.getElementById('attendanceTodayDepartment');
     const statusSelect = document.getElementById('attendanceTodayStatus');
     const markedSelect = document.getElementById('attendanceTodayMarkedFilter');
@@ -66,11 +66,23 @@ document.addEventListener('DOMContentLoaded', () => {
     };
 
     let employees = [];
+    let employeeSearch = null;
 
     if (dateInput) {
         dateInput.value = todayInputValue();
         dateInput.max = todayInputValue();
     }
+
+    employeeSearch = bindEmployeeSearchSelect({
+        inputId: 'attendanceTodayEmployeeInput',
+        hiddenId: 'attendanceTodayEmployeeId',
+        onSelect: () => {
+            renderTable();
+        },
+        onClear: () => {
+            renderTable();
+        },
+    });
 
     const showAlert = (message, type = 'success') => {
         if (!alertBox) {
@@ -113,12 +125,16 @@ document.addEventListener('DOMContentLoaded', () => {
     };
 
     const filteredRows = () => {
-        const query = (searchInput?.value || '').trim().toLowerCase();
+        const selectedEmployeeId = employeeSearch?.getSelectedId?.() || null;
         const department = departmentSelect?.value || '';
         const status = statusSelect?.value || '';
         const marked = markedSelect?.value || '';
 
         return employees.filter((row) => {
+            if (selectedEmployeeId && Number(row.employee_id) !== Number(selectedEmployeeId)) {
+                return false;
+            }
+
             if (department && row.department !== department) {
                 return false;
             }
@@ -139,18 +155,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 return false;
             }
 
-            if (!query) {
-                return true;
-            }
-
-            const haystack = [
-                row.employee_name,
-                row.employee_code,
-                row.department,
-                row.designation,
-            ].filter(Boolean).join(' ').toLowerCase();
-
-            return haystack.includes(query);
+            return true;
         });
     };
 
@@ -222,9 +227,7 @@ document.addEventListener('DOMContentLoaded', () => {
     };
 
     const resetFilters = () => {
-        if (searchInput) {
-            searchInput.value = '';
-        }
+        employeeSearch?.clearSelection();
 
         if (departmentSelect) {
             departmentSelect.value = '';
@@ -241,8 +244,7 @@ document.addEventListener('DOMContentLoaded', () => {
         renderTable();
     };
 
-    [searchInput, departmentSelect, statusSelect, markedSelect].forEach((element) => {
-        element?.addEventListener('input', renderTable);
+    [departmentSelect, statusSelect, markedSelect].forEach((element) => {
         element?.addEventListener('change', renderTable);
     });
 

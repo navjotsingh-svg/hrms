@@ -14,7 +14,7 @@
 
             <h1 class="page-title mb-1">Attendance Regularization</h1>
 
-            <p class="page-subtitle mb-0">Select a date with incomplete attendance and submit a correction request.</p>
+            <p class="page-subtitle mb-0">Select one or more dates with incomplete attendance and submit a correction request.</p>
 
         </div>
 
@@ -46,25 +46,27 @@
 
                 <h2 class="content-card-title mb-0">Dates Needing Regularization</h2>
 
-                <p class="small text-muted mb-0">Last 30 working days where attendance is not fully present.</p>
+                <p class="small text-muted mb-0">Select multiple dates below, then submit one regularization request for all of them.</p>
 
             </div>
 
             @if (Auth::user()->canViewAllAttendance())
 
             <div class="regularize-employee-filter">
-
-                <label for="eligibleEmployee" class="form-label small mb-1">Employee</label>
-
-                <select class="form-select form-select-sm" id="eligibleEmployee">
-
-                    <option value="">Loading...</option>
-
-                </select>
-
+                @include('partials.employee-search-select', [
+                    'inputId' => 'eligibleEmployeeInput',
+                    'hiddenId' => 'eligibleEmployeeId',
+                    'inputClass' => 'form-control-sm',
+                ])
             </div>
 
             @endif
+
+            <div class="d-flex flex-wrap align-items-center gap-2">
+                <button type="button" class="btn btn-outline-secondary btn-sm" id="selectAllEligibleBtn">Select all</button>
+                <button type="button" class="btn btn-outline-secondary btn-sm d-none" id="clearEligibleSelectionBtn">Clear</button>
+                <button type="button" class="btn btn-primary btn-sm" id="openRegularizeRequestBtn" disabled>Regularize selected (0)</button>
+            </div>
 
         </div>
 
@@ -90,7 +92,13 @@
 
         <div class="content-card-header border-bottom">
 
-            <h2 class="content-card-title mb-0">Pending Approvals</h2>
+            <div>
+
+                <h2 class="content-card-title mb-0">Pending Approvals</h2>
+
+                <p class="small text-muted mb-0">Review single-day or multi-day attendance correction requests.</p>
+
+            </div>
 
         </div>
 
@@ -210,31 +218,55 @@
 
     <div class="modal fade" id="regularizeModal" tabindex="-1" aria-hidden="true">
 
-        <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-dialog modal-dialog-centered modal-lg">
 
-            <div class="modal-content">
+            <div class="modal-content regularize-request-modal">
 
                 <form id="regularizeForm">
 
-                    <div class="modal-header">
+                    <div class="modal-header border-0 pb-0">
 
-                        <h5 class="modal-title" id="regularizeModalTitle">Request Regularization</h5>
+                        <div>
+
+                            <h5 class="modal-title mb-1" id="regularizeModalTitle">Attendance Request</h5>
+
+                            <div class="regularize-modal-timezone small text-muted" id="regularizeModalTimezone">—</div>
+
+                        </div>
 
                         <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
 
                     </div>
 
-                    <div class="modal-body">
-
-                        <input type="hidden" id="attendance_date" name="attendance_date">
+                    <div class="modal-body pt-3">
 
                         <input type="hidden" id="regularize_employee_id" name="employee_id">
 
+                        <p class="small text-muted mb-2">Want to regularize for a different date?</p>
 
+                        <div class="d-flex flex-wrap gap-2 mb-3">
 
-                        <div class="regularize-selected-day mb-3" id="regularizeSelectedDaySummary">—</div>
+                            <button type="button" class="btn btn-outline-primary btn-sm" id="addRegularizeDateBtn">+ New Date</button>
 
+                            <button type="button" class="btn btn-outline-primary btn-sm" id="addRegularizeRangeBtn">+ Date Range</button>
 
+                        </div>
+
+                        <div class="regularize-dates-panel mb-3">
+
+                            <div class="regularize-dates-panel-header">
+
+                                <span class="fw-semibold">Workday Date</span>
+
+                            </div>
+
+                            <ul class="regularize-dates-list list-unstyled mb-0" id="regularizeSelectedDatesList">
+
+                                <li class="regularize-dates-empty text-muted small py-3 px-3">Add at least one date to continue.</li>
+
+                            </ul>
+
+                        </div>
 
                         <div class="row g-3 mb-3">
 
@@ -256,7 +288,7 @@
 
                         </div>
 
-                        <div class="mb-3">
+                        <div class="mb-0">
 
                             <label for="reason" class="form-label">Reason</label>
 
@@ -266,15 +298,103 @@
 
                     </div>
 
-                    <div class="modal-footer">
+                    <div class="modal-footer border-0 pt-0">
 
                         <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
 
-                        <button type="submit" class="btn btn-primary" id="regularizeSubmitBtn">Submit Request</button>
+                        <button type="submit" class="btn btn-primary w-100 w-sm-auto" id="regularizeSubmitBtn" disabled>Submit for 0 day(s)</button>
 
                     </div>
 
                 </form>
+
+            </div>
+
+        </div>
+
+    </div>
+
+
+
+    <div class="modal fade" id="pickRegularizeDateModal" tabindex="-1" aria-hidden="true">
+
+        <div class="modal-dialog modal-dialog-centered modal-sm">
+
+            <div class="modal-content">
+
+                <div class="modal-header">
+
+                    <h5 class="modal-title">Add Date</h5>
+
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+
+                </div>
+
+                <div class="modal-body">
+
+                    <label for="pickRegularizeDateSelect" class="form-label">Select a workday</label>
+
+                    <select class="form-select" id="pickRegularizeDateSelect"></select>
+
+                </div>
+
+                <div class="modal-footer">
+
+                    <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+
+                    <button type="button" class="btn btn-primary" id="confirmPickRegularizeDateBtn">Add Date</button>
+
+                </div>
+
+            </div>
+
+        </div>
+
+    </div>
+
+
+
+    <div class="modal fade" id="pickRegularizeRangeModal" tabindex="-1" aria-hidden="true">
+
+        <div class="modal-dialog modal-dialog-centered modal-sm">
+
+            <div class="modal-content">
+
+                <div class="modal-header">
+
+                    <h5 class="modal-title">Add Date Range</h5>
+
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+
+                </div>
+
+                <div class="modal-body">
+
+                    <div class="mb-3">
+
+                        <label for="regularizeRangeFrom" class="form-label">From</label>
+
+                        <input type="date" class="form-control" id="regularizeRangeFrom">
+
+                    </div>
+
+                    <div class="mb-0">
+
+                        <label for="regularizeRangeTo" class="form-label">To</label>
+
+                        <input type="date" class="form-control" id="regularizeRangeTo">
+
+                    </div>
+
+                </div>
+
+                <div class="modal-footer">
+
+                    <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+
+                    <button type="button" class="btn btn-primary" id="confirmRegularizeRangeBtn">Add Dates</button>
+
+                </div>
 
             </div>
 

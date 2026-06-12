@@ -50,7 +50,6 @@ class EmployeeService
                 $builder
                     ->where('first_name', 'like', "%{$search}%")
                     ->orWhere('last_name', 'like', "%{$search}%")
-                    ->orWhere('email', 'like', "%{$search}%")
                     ->orWhere('employee_code', 'like', "%{$search}%");
             });
         }

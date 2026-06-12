@@ -29,6 +29,7 @@ class EmployeeAssetService
                 'name' => $assetType->name,
                 'sort_order' => $assetType->sort_order,
                 'is_assigned' => (bool) ($record?->is_assigned),
+                'description' => $record?->is_assigned ? $record?->description : null,
             ];
         });
     }
@@ -53,6 +54,9 @@ class EmployeeAssetService
                     ],
                     [
                         'is_assigned' => (bool) ($payload->get($assetTypeId)['is_assigned'] ?? false),
+                        'description' => ($payload->get($assetTypeId)['is_assigned'] ?? false)
+                            ? ($payload->get($assetTypeId)['description'] ?? null)
+                            : null,
                     ],
                 );
             }

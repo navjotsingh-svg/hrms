@@ -26,6 +26,7 @@ class StoreEmployeeAssetsRequest extends FormRequest
                     ->where('status', 'active')),
             ],
             'assets.*.is_assigned' => ['required', 'boolean'],
+            'assets.*.description' => ['nullable', 'string', 'max:10000'],
         ];
     }
 }

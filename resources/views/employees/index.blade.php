@@ -22,11 +22,13 @@
     <div class="content-card companies-list-card">
         <div class="content-card-body companies-filter-bar border-bottom">
             <div class="row g-3 align-items-end">
-                <div class="col-md-4">
-                    <label for="filterSearch" class="form-label">Search</label>
-                    <input type="text" class="form-control" id="filterSearch" placeholder="Name, email, or employee code...">
+                <div class="col-md-5">
+                    @include('partials.employee-search-select', [
+                        'inputId' => 'filterEmployeeInput',
+                        'hiddenId' => 'filterEmployeeId',
+                    ])
                 </div>
-                <div class="col-md-3">
+                <div class="col-md-2">
                     <label for="filterDepartment" class="form-label">Department</label>
                     <select class="form-select" id="filterDepartment">
                         <option value="">All departments</option>
