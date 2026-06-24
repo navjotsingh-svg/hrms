@@ -9,6 +9,8 @@ class PublicUploadDirectoryService
         'images/employee-documents',
         'images/attendance/selfies',
         'images/leave-attachments',
+        'images/expense-receipts',
+        'images/moment-attachments',
     ];
 
     public function ensure(string $relativePath): string

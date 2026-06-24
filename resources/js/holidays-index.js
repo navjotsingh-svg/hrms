@@ -1,13 +1,8 @@
 import api, { getErrorMessage } from './api';
 import { consumePageFlashMessage } from './form-utils';
+import { frequencyLabels, typeLabels } from './holidays';
 
 const webRoutes = () => window.HRMS_WEB_ROUTES || {};
-
-const typeLabels = {
-    public: 'Public',
-    company: 'Company',
-    optional: 'Optional',
-};
 
 document.addEventListener('DOMContentLoaded', async () => {
     const tableBody = document.getElementById('holidaysTableBody');
@@ -66,8 +61,9 @@ document.addEventListener('DOMContentLoaded', async () => {
                         ${holiday.description ? `<span class="companies-company-meta">${holiday.description}</span>` : ''}
                     </div>
                 </td>
-                <td>${holiday.date_label || holiday.date}</td>
-                <td>${typeLabels[holiday.type] || holiday.type}</td>
+                <td>${holiday.date_label || holiday.from_date || holiday.date || '—'}</td>
+                <td>${frequencyLabels[holiday.frequency] || holiday.frequency || '—'}</td>
+                <td>${typeLabels[holiday.type] || holiday.type_label || holiday.type}</td>
                 <td>${renderStatusPill(holiday.status)}</td>
                 <td class="companies-td-actions">
                     <div class="table-action-group">
@@ -132,14 +128,14 @@ document.addEventListener('DOMContentLoaded', async () => {
             const pagination = data.data.pagination;
 
             if (holidays.length === 0) {
-                tableBody.innerHTML = '<tr><td colspan="6" class="text-center text-muted py-5">No holidays found.</td></tr>';
+                tableBody.innerHTML = '<tr><td colspan="7" class="text-center text-muted py-5">No holidays found.</td></tr>';
             } else {
                 tableBody.innerHTML = holidays.map((holiday, index) => renderRow(holiday, index, pagination)).join('');
             }
 
             renderPagination(pagination);
         } catch (error) {
-            tableBody.innerHTML = `<tr><td colspan="6" class="text-center text-danger py-5">${getErrorMessage(error)}</td></tr>`;
+            tableBody.innerHTML = `<tr><td colspan="7" class="text-center text-danger py-5">${getErrorMessage(error)}</td></tr>`;
         }
     };
 

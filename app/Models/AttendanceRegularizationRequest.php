@@ -23,6 +23,8 @@ class AttendanceRegularizationRequest extends Model
         'attendance_date',
         'requested_punch_in',
         'requested_punch_out',
+        'original_punch_in',
+        'original_punch_out',
         'reason',
         'status',
         'applied_by_user_id',
@@ -37,6 +39,8 @@ class AttendanceRegularizationRequest extends Model
             'attendance_date' => 'date',
             'requested_punch_in' => 'datetime',
             'requested_punch_out' => 'datetime',
+            'original_punch_in' => 'datetime',
+            'original_punch_out' => 'datetime',
             'reviewed_at' => 'datetime',
         ];
     }

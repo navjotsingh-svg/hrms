@@ -122,7 +122,7 @@ class LeaveRequestController extends Controller
 
         return $this->success(
             ['leave_request' => new LeaveRequestResource($leaveRequest)],
-            'Leave request cancelled.',
+            'Leave request has been cancelled.',
         );
     }
 

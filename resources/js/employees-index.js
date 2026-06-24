@@ -4,6 +4,12 @@ import { bindEmployeeSearchSelect } from './employee-autocomplete';
 
 const webRoutes = () => window.HRMS_WEB_ROUTES || {};
 
+const escapeHtml = (value) => String(value ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+
 document.addEventListener('DOMContentLoaded', async () => {
     const tableBody = document.getElementById('employeesTableBody');
     const alertBox = document.getElementById('employeesAlert');
@@ -18,6 +24,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     let currentPage = 1;
     let canManage = false;
     let canViewProfile = false;
+    let canAssignAdmin = false;
     let employeeSearch = null;
     let selectedEmployee = null;
 
@@ -37,18 +44,12 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     const renderStatusCell = (employee) => {
         const isActive = employee.status === 'active';
-        const pillClass = isActive ? 'company-status-pill--active' : 'company-status-pill--inactive';
-        const label = isActive ? 'Active' : 'Inactive';
-
-        if (!canManage) {
-            return `<span class="company-status-pill ${pillClass}">${label}</span>`;
-        }
-
         const switchId = `employee-status-${employee.id}`;
+        const disabled = canManage ? '' : 'disabled';
 
         return `
             <div class="company-status-cell">
-                <div class="form-check form-switch company-status-switch mb-0">
+                <div class="form-check form-switch company-status-switch company-status-switch--solo mb-0">
                     <input
                         class="form-check-input"
                         type="checkbox"
@@ -56,44 +57,44 @@ document.addEventListener('DOMContentLoaded', async () => {
                         id="${switchId}"
                         data-status-toggle="${employee.id}"
                         ${isActive ? 'checked' : ''}
+                        ${disabled}
+                        aria-label="Toggle employee status"
                     >
-                    <label
-                        class="form-check-label company-status-pill ${pillClass}"
-                        for="${switchId}"
-                        data-status-label="${employee.id}"
-                    >
-                        ${label}
-                    </label>
                 </div>
             </div>
         `;
     };
 
-    const setStatusLabel = (employeeId, status) => {
-        const label = tableBody.querySelector(`[data-status-label="${employeeId}"]`);
+    const setStatusToggle = (employeeId, status) => {
+        const toggle = tableBody.querySelector(`[data-status-toggle="${employeeId}"]`);
 
-        if (label) {
-            label.textContent = status === 'active' ? 'Active' : 'Inactive';
-            label.classList.remove('company-status-pill--active', 'company-status-pill--inactive');
-            label.classList.add(status === 'active' ? 'company-status-pill--active' : 'company-status-pill--inactive');
+        if (toggle) {
+            toggle.checked = status === 'active';
         }
     };
 
     const renderPortalBadge = (employee) => {
         return employee.has_portal_access
-            ? '<span class="badge text-bg-success">Active</span>'
-            : '<span class="badge text-bg-light text-muted">None</span>';
+            ? '<span class="company-status-pill company-status-pill--active">Active</span>'
+            : '<span class="company-status-pill company-status-pill--inactive">None</span>';
     };
 
     const MAIL_ICON = '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16"><path d="M0 4a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H2a2 2 0 0 1-2-2zm2-1a1 1 0 0 0-1 1v.217l7 4.2 7-4.2V4a1 1 0 0 0-1-1zm13 2.383-4.708 2.825L15 11.105zm-.034 6.876-5.64-3.471L8 9.583l-1.326-.795-5.64 3.47A1 1 0 0 0 2 13h12a1 1 0 0 0 .966-.741M1 11.105l4.708-2.897L1 5.383z"/></svg>';
 
+    const ADMIN_ICON = '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 1.5 2 4v4.5c0 3.1 2.5 5.5 6 6.5 3.5-1 6-3.4 6-6.5V4L8 1.5Z"/></svg>';
+
+    const REMOVE_ADMIN_ICON = '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 1.5 2 4v4.5c0 3.1 2.5 5.5 6 6.5 3.5-1 6-3.4 6-6.5V4L8 1.5Z"/><path d="m4.5 5.5 7 7M11.5 5.5l-7 7" stroke="currentColor" stroke-width="1.5"/></svg>';
+
     const renderActions = (employee) => {
-        if (!canManage && !canViewProfile) {
+        if (!canManage && !canViewProfile && !canAssignAdmin) {
             return '';
         }
 
         const editUrl = `${routes.employeeEdit || '/employees'}/${employee.id}/edit`;
         const profileUrl = `${routes.employeeShow || '/employees'}/${employee.id}`;
+        const portalHint = employee.has_portal_access
+            ? ''
+            : ' Portal access will be enabled automatically.';
 
         return `
             <td class="companies-td-actions">
@@ -102,6 +103,16 @@ document.addEventListener('DOMContentLoaded', async () => {
                     <a href="${profileUrl}" class="table-action-btn table-action-btn--view" title="View Profile" aria-label="View profile for ${employee.full_name}">
                         <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16"><path d="M16 8s-3-5.5-8-5.5S0 8 0 8s3 5.5 8 5.5S16 8 16 8M1.173 8a13 13 0 0 1 1.66-2.043C4.12 4.668 5.88 3.5 8 3.5s3.879 1.168 5.168 2.457A13 13 0 0 1 14.828 8q-.086.13-.195.288c-.335.48-.83 1.12-1.465 1.755C11.879 11.332 10.119 12.5 8 12.5s-3.879-1.168-5.168-2.457A13 13 0 0 1 1.172 8z"/><path d="M8 5.5a2.5 2.5 0 1 0 0 5 2.5 2.5 0 0 0 0-5M4.5 8a3.5 3.5 0 1 1 7 0 3.5 3.5 0 0 1-7 0"/></svg>
                     </a>
+                    ` : ''}
+                    ${canAssignAdmin && employee.is_company_admin ? `
+                    <button type="button" class="table-action-btn table-action-btn--reject" title="Remove Company Admin" aria-label="Remove company administrator access from ${employee.full_name}" data-remove-admin="${employee.id}" data-employee-name="${String(employee.full_name || '').replace(/"/g, '&quot;')}">
+                        ${REMOVE_ADMIN_ICON}
+                    </button>
+                    ` : ''}
+                    ${canAssignAdmin && !employee.is_company_admin ? `
+                    <button type="button" class="table-action-btn table-action-btn--approve" title="Make Company Admin${portalHint}" aria-label="Make ${employee.full_name} a company administrator" data-make-admin="${employee.id}" data-employee-name="${String(employee.full_name || '').replace(/"/g, '&quot;')}">
+                        ${ADMIN_ICON}
+                    </button>
                     ` : ''}
                     ${canManage ? `
                     ${employee.has_portal_access ? `
@@ -121,14 +132,16 @@ document.addEventListener('DOMContentLoaded', async () => {
         `;
     };
 
-    const columnCount = () => (canManage || canViewProfile ? 8 : 7);
+    const columnCount = () => (canManage || canViewProfile || canAssignAdmin ? 8 : 7);
 
     const renderRow = (employee, index, pagination) => {
         const serial = ((pagination.current_page - 1) * pagination.per_page) + index + 1;
         const departmentName = employee.departments?.length
             ? employee.departments.map((department) => department.name).join(', ')
             : (employee.department?.name || '—');
-        const roleName = employee.role?.name || '—';
+        const roleName = employee.is_company_admin
+            ? `${escapeHtml(employee.role?.name || 'Company Admin')} <span class="badge text-bg-primary ms-1">Admin</span>`
+            : escapeHtml(employee.role?.name || '—');
 
         return `
             <tr class="companies-data-row">
@@ -178,7 +191,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     const applyCapabilities = (capabilities = {}) => {
         canManage = Boolean(capabilities.can_manage);
         canViewProfile = Boolean(capabilities.can_view_profile);
-        actionsHeader?.classList.toggle('d-none', !canManage && !canViewProfile);
+        canAssignAdmin = Boolean(capabilities.can_assign_admin);
+        actionsHeader?.classList.toggle('d-none', !canManage && !canViewProfile && !canAssignAdmin);
     };
 
     const loadDepartments = async () => {
@@ -297,11 +311,11 @@ document.addEventListener('DOMContentLoaded', async () => {
 
         try {
             const { data } = await api.patch(`/employees/${employeeId}/status`, { status });
-            setStatusLabel(employeeId, data.data.employee.status);
+            setStatusToggle(employeeId, data.data.employee.status);
             showAlert(data.message || 'Employee status updated successfully.');
         } catch (error) {
             toggle.checked = previousChecked;
-            setStatusLabel(employeeId, previousChecked ? 'active' : 'inactive');
+            setStatusToggle(employeeId, previousChecked ? 'active' : 'inactive');
             showAlert(getErrorMessage(error), 'danger');
         } finally {
             toggle.disabled = false;
@@ -309,6 +323,57 @@ document.addEventListener('DOMContentLoaded', async () => {
     });
 
     tableBody.addEventListener('click', async (event) => {
+        const makeAdminButton = event.target.closest('[data-make-admin]');
+
+        if (makeAdminButton && canAssignAdmin) {
+            const employeeId = makeAdminButton.dataset.makeAdmin;
+            const employeeName = makeAdminButton.dataset.employeeName || 'this employee';
+            const portalNote = makeAdminButton.title.includes('Portal access')
+                ? ' Portal access will be enabled and a welcome email will be sent.'
+                : '';
+
+            if (!window.confirm(`Make "${employeeName}" a Company Administrator? They will get full access to all modules.${portalNote}`)) {
+                return;
+            }
+
+            makeAdminButton.disabled = true;
+
+            try {
+                const { data } = await api.patch(`/employees/${employeeId}/make-admin`);
+                showAlert(data.message || 'Employee is now a company administrator.');
+                await loadEmployees(currentPage);
+            } catch (error) {
+                showAlert(getErrorMessage(error), 'danger');
+                makeAdminButton.disabled = false;
+            }
+
+            return;
+        }
+
+        const removeAdminButton = event.target.closest('[data-remove-admin]');
+
+        if (removeAdminButton && canAssignAdmin) {
+            const employeeId = removeAdminButton.dataset.removeAdmin;
+            const employeeName = removeAdminButton.dataset.employeeName || 'this employee';
+
+            if (!window.confirm(`Remove company administrator access from "${employeeName}"? They will be changed to the Employee role.`)) {
+                return;
+            }
+
+            removeAdminButton.disabled = true;
+
+            try {
+                const { data } = await api.patch(`/employees/${employeeId}/remove-admin`);
+                showAlert(data.message || 'Administrator access removed.');
+                await loadEmployees(currentPage);
+            } catch (error) {
+                showAlert(getErrorMessage(error), 'danger');
+                removeAdminButton.disabled = false;
+            }
+
+            return;
+        }
+
         const resendButton = event.target.closest('[data-resend-welcome-email]');
 
         if (resendButton && canManage) {

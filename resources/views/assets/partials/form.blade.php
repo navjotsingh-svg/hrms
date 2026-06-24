@@ -4,11 +4,4 @@
     <div class="invalid-feedback d-block" data-error="name"></div>
 </div>
 
-<div class="col-md-6">
-    <label for="status" class="form-label">Status <span class="text-danger">*</span></label>
-    <select class="form-select" id="status" name="status" required>
-        <option value="active">Active</option>
-        <option value="inactive">Inactive</option>
-    </select>
-    <div class="invalid-feedback d-block" data-error="status"></div>
-</div>
+@include('partials.status-toggle')

@@ -3,13 +3,17 @@ import api, { getErrorMessage } from './api';
 import { renderActionGroup, renderCancelIconButton } from './action-icons';
 import { renderApproveIconButton, renderRejectIconButton } from './review-actions';
 import { setSubmitLoading } from './form-utils';
-import { bindEmployeeSearchSelect, formatEmployeeLabel } from './employee-autocomplete';
+import { bindEmployeeSearchSelect } from './employee-autocomplete';
+
+const pad = (value) => String(value).padStart(2, '0');
+
+const currentMonthValue = (date = new Date()) => `${date.getFullYear()}-${pad(date.getMonth() + 1)}`;
 
 const statusClass = (status) => ({
     pending: 'company-status-pill--inactive',
     approved: 'company-status-pill--active',
-    rejected: 'text-bg-danger',
-    cancelled: 'text-bg-secondary',
+    rejected: 'company-status-pill--rejected',
+    cancelled: 'company-status-pill--cancelled',
 }[status] || '');
 
 const eligibleStatusClass = (status) => ({
@@ -30,19 +34,39 @@ const formatTimezoneLabel = () => {
 };
 
 document.addEventListener('DOMContentLoaded', async () => {
+    const pageConfig = window.regularizePageConfig || {};
+    const isHrView = Boolean(pageConfig.isHrView);
+
     const tableBody = document.getElementById('regularizeTableBody');
+    const myRequestsTableBody = document.getElementById('myRequestsTableBody');
     const alertBox = document.getElementById('regularizeAlert');
     const pendingContainer = document.getElementById('pendingRegularizeContainer');
+    const pendingBadge = document.getElementById('regularizePendingBadge');
+    const myPendingCard = document.getElementById('myPendingRegularizeCard');
+    const myPendingContainer = document.getElementById('myPendingRegularizeContainer');
     const eligibleDatesContainer = document.getElementById('eligibleDatesContainer');
-    const eligibleEmployeeId = document.getElementById('eligibleEmployeeId');
+    const filterMonth = document.getElementById('filterMonth');
     const filterStatus = document.getElementById('filterStatus');
-    const filterYear = document.getElementById('filterYear');
     const filterReset = document.getElementById('filterReset');
+    const summaryTotal = document.getElementById('regularizeSummaryTotal');
+    const summaryPending = document.getElementById('regularizeSummaryPending');
+    const summaryApproved = document.getElementById('regularizeSummaryApproved');
+    const summaryRejected = document.getElementById('regularizeSummaryRejected');
+    const summaryMonthLabel = document.getElementById('regularizeSummaryMonthLabel');
     const paginationInfo = document.getElementById('regularizePaginationInfo');
     const paginationList = document.getElementById('regularizePaginationList');
+    const myRequestsPaginationInfo = document.getElementById('myRequestsPaginationInfo');
+    const myRequestsPaginationList = document.getElementById('myRequestsPaginationList');
+    const tabButtons = Array.from(document.querySelectorAll('[data-regularize-tab]'));
+    const tabPanels = {
+        'my-requests': document.getElementById('regularizeTabMyRequests'),
+        'pending-approvals': document.getElementById('regularizeTabPendingApprovals'),
+        history: document.getElementById('regularizeTabHistory'),
+    };
     const regularizeForm = document.getElementById('regularizeForm');
     const regularizeModalEl = document.getElementById('regularizeModal');
     const regularizeModalTimezone = document.getElementById('regularizeModalTimezone');
+    const regularizeOriginalTimes = document.getElementById('regularizeOriginalTimes');
     const regularizeSelectedDatesList = document.getElementById('regularizeSelectedDatesList');
     const regularizeSubmitBtn = document.getElementById('regularizeSubmitBtn');
     const openRegularizeRequestBtn = document.getElementById('openRegularizeRequestBtn');
@@ -67,19 +91,38 @@ document.addEventListener('DOMContentLoaded', async () => {
         : null;
 
     let currentPage = 1;
-    const currentYear = new Date().getFullYear();
-    let canViewAll = false;
+    let myRequestsPage = 1;
+    let activeTab = pageConfig.defaultTab || 'my-requests';
     let eligibleDatesByKey = {};
     let employeeSearch = null;
     let selectedDates = [];
     let selectedEligibleDates = new Set();
+    let pendingGroupsCache = [];
+    const urlDate = new URLSearchParams(window.location.search).get('date');
 
-    const selectedEmployeeId = () => employeeSearch?.getSelectedId?.() || eligibleEmployeeId?.value || null;
-
-    if (filterYear) {
-        filterYear.innerHTML = Array.from({ length: 3 }, (_, i) => currentYear - 1 + i)
-            .map((year) => `<option value="${year}" ${year === currentYear ? 'selected' : ''}>${year}</option>`).join('');
+    if (filterMonth) {
+        filterMonth.value = currentMonthValue();
+        filterMonth.max = currentMonthValue();
     }
+
+    const selectedEmployeeId = () => employeeSearch?.getSelectedId?.()
+        || document.getElementById('regularizeEmployeeId')?.value
+        || null;
+
+    const filterParams = () => {
+        const params = {};
+
+        if (filterMonth?.value) {
+            params.month = filterMonth.value;
+        }
+
+        const employeeId = selectedEmployeeId();
+        if (employeeId) {
+            params.employee_id = Number(employeeId);
+        }
+
+        return params;
+    };
 
     if (regularizeModalTimezone) {
         regularizeModalTimezone.textContent = formatTimezoneLabel();
@@ -92,16 +135,28 @@ document.addEventListener('DOMContentLoaded', async () => {
         alertBox.classList.remove('d-none');
     };
 
-    const formatTimes = (item) => {
-        const parts = [];
-        if (item.requested_punch_in_label) parts.push(`In ${item.requested_punch_in_label}`);
-        if (item.requested_punch_out_label) parts.push(`Out ${item.requested_punch_out_label}`);
-        return parts.join(' · ') || '—';
-    };
+const formatTimes = (item) => {
+    const parts = [];
+    if (item.requested_punch_in_label) parts.push(`In ${item.requested_punch_in_label}`);
+    if (item.requested_punch_out_label) parts.push(`Out ${item.requested_punch_out_label}`);
+    return parts.join(' · ') || '—';
+};
 
-    const selectableEligibleDates = () => Object.values(eligibleDatesByKey)
-        .filter((item) => !item.has_pending_request)
-        .map((item) => item.date);
+const formatOriginalTimes = (item) => {
+    const parts = [];
+    if (item.original_punch_in_label) parts.push(`In ${item.original_punch_in_label}`);
+    if (item.original_punch_out_label) parts.push(`Out ${item.original_punch_out_label}`);
+    return parts.join(' · ') || '—';
+};
+
+const formatOriginalTimesFromEligible = (item) => {
+    const parts = [];
+    if (item.punch_in_label && item.punch_in_label !== '—') parts.push(`In ${item.punch_in_label}`);
+    if (item.punch_out_label && item.punch_out_label !== '—') parts.push(`Out ${item.punch_out_label}`);
+    return parts.join(' · ') || '—';
+};
+
+    const selectableEligibleDates = () => Object.values(eligibleDatesByKey).map((item) => item.date);
 
     const updateEligibleSelectionUi = () => {
         const count = selectedEligibleDates.size;
@@ -129,7 +184,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     };
 
     const toggleEligibleDate = (date) => {
-        if (!eligibleDatesByKey[date] || eligibleDatesByKey[date].has_pending_request) {
+        if (!eligibleDatesByKey[date]) {
             return;
         }
 
@@ -144,7 +199,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     const setEligibleSelection = (dates) => {
         selectedEligibleDates = new Set(
-            dates.filter((date) => eligibleDatesByKey[date] && !eligibleDatesByKey[date].has_pending_request),
+            dates.filter((date) => eligibleDatesByKey[date]),
         );
         updateEligibleSelectionUi();
     };
@@ -155,7 +210,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     };
 
     const availableEligibleDates = () => Object.values(eligibleDatesByKey)
-        .filter((item) => !item.has_pending_request && !selectedDates.includes(item.date));
+        .filter((item) => !selectedDates.includes(item.date));
 
     const applySuggestedTimes = () => {
         const firstSelected = selectedDates
@@ -178,6 +233,31 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
     };
 
+    const updateOriginalTimesUi = () => {
+        if (!regularizeOriginalTimes) {
+            return;
+        }
+
+        const selectedItems = selectedDates
+            .map((date) => eligibleDatesByKey[date])
+            .filter(Boolean);
+
+        if (!selectedItems.length) {
+            regularizeOriginalTimes.textContent = '—';
+            return;
+        }
+
+        if (selectedItems.length === 1) {
+            regularizeOriginalTimes.textContent = formatOriginalTimesFromEligible(selectedItems[0]);
+            return;
+        }
+
+        regularizeOriginalTimes.innerHTML = selectedItems.map((item) => {
+            const label = item.date_short_label || item.date_label || item.date;
+            return `<div>${label}: ${formatOriginalTimesFromEligible(item)}</div>`;
+        }).join('');
+    };
+
     const updateSelectedDatesUi = () => {
         if (!regularizeSelectedDatesList) return;
 
@@ -190,7 +270,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                 const item = eligibleDatesByKey[date];
                 const label = item?.date_short_label || item?.date_label || date;
                 const meta = item
-                    ? `${item.status_label} · In ${item.punch_in_label || '—'} · Out ${item.punch_out_label || '—'}`
+                    ? `Current: ${formatOriginalTimesFromEligible(item)}`
                     : '';
 
                 return `
@@ -221,10 +301,12 @@ document.addEventListener('DOMContentLoaded', async () => {
             regularizeSubmitBtn.disabled = count === 0;
             regularizeSubmitBtn.textContent = `Submit for ${count} day(s)`;
         }
+
+        updateOriginalTimesUi();
     };
 
     const addSelectedDate = (date) => {
-        if (!date || !eligibleDatesByKey[date] || eligibleDatesByKey[date].has_pending_request) {
+        if (!date || !eligibleDatesByKey[date]) {
             return false;
         }
 
@@ -260,7 +342,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
         const employeeField = document.getElementById('regularize_employee_id');
         if (employeeField) {
-            employeeField.value = employeeId || selectedEmployeeId() || '';
+            employeeField.value = employeeId || '';
         }
 
         addSelectedDates(initialDates);
@@ -299,33 +381,66 @@ document.addEventListener('DOMContentLoaded', async () => {
         pickRegularizeRangeModal?.show();
     };
 
-    const renderEligibleDates = (payload) => {
-        if (!eligibleDatesContainer) return;
+    const renderMyPendingRequests = (requests) => {
+        if (!myPendingContainer) {
+            return;
+        }
+
+        if (!requests.length) {
+            myPendingCard?.classList.add('d-none');
+            myPendingContainer.innerHTML = '<div class="text-muted">No pending requests.</div>';
+            return;
+        }
+
+        myPendingCard?.classList.remove('d-none');
+        myPendingContainer.innerHTML = requests.map((item) => {
+            const cancelAction = item.can_cancel
+                ? renderCancelIconButton('data-cancel-regularize', item.id, `Cancel ${item.date_label}`)
+                : '';
+
+            return `
+                <div class="regularize-pending-group border rounded p-3 mb-3">
+                    <div class="d-flex flex-wrap justify-content-between gap-2">
+                        <div class="flex-grow-1">
+                            <div class="fw-semibold">${item.date_label}</div>
+                            <div class="small text-muted">${item.status_label}</div>
+                            <div class="small text-muted mt-1">Current: ${formatOriginalTimes(item)}</div>
+                            <div class="small text-muted">Requested: ${formatTimes(item)}</div>
+                            ${item.submitted_at_label ? `<div class="small text-muted">Submitted ${item.submitted_at_label}</div>` : ''}
+                            <div class="small mt-2">${item.reason || ''}</div>
+                        </div>
+                        <div class="table-action-group">${cancelAction}</div>
+                    </div>
+                </div>
+            `;
+        }).join('');
+    };
+
+    const renderEligibleDates = (payload, showSubmitGrid = true) => {
+        if (!eligibleDatesContainer) {
+            renderMyPendingRequests(payload.pending_requests || []);
+            return;
+        }
+
+        renderMyPendingRequests(payload.pending_requests || []);
+
+        if (!showSubmitGrid) {
+            return;
+        }
 
         const dates = payload.dates || [];
         eligibleDatesByKey = Object.fromEntries(dates.map((item) => [item.date, item]));
         selectedEligibleDates = new Set(
-            [...selectedEligibleDates].filter((date) => eligibleDatesByKey[date] && !eligibleDatesByKey[date].has_pending_request),
+            [...selectedEligibleDates].filter((date) => eligibleDatesByKey[date]),
         );
 
         if (!dates.length) {
-            eligibleDatesContainer.innerHTML = '<div class="text-muted py-3">No dates need regularization.</div>';
+            eligibleDatesContainer.innerHTML = '<div class="text-muted py-3">This date is not eligible for regularization.</div>';
             updateEligibleSelectionUi();
             return;
         }
 
         eligibleDatesContainer.innerHTML = dates.map((item) => {
-            if (item.has_pending_request) {
-                return `
-                    <div class="regularize-eligible-card regularize-eligible-card--pending ${eligibleStatusClass(item.status)}">
-                        <div class="regularize-eligible-card-date">${item.date_label}</div>
-                        <div class="regularize-eligible-card-status">${item.status_label}</div>
-                        <div class="regularize-eligible-card-meta">In ${item.punch_in_label || '—'} · Out ${item.punch_out_label || '—'}</div>
-                        <span class="badge text-bg-warning mt-2">Pending approval</span>
-                    </div>
-                `;
-            }
-
             const isSelected = selectedEligibleDates.has(item.date);
 
             return `
@@ -348,67 +463,51 @@ document.addEventListener('DOMContentLoaded', async () => {
         updateEligibleSelectionUi();
     };
 
-    const initEmployeeFilter = async () => {
-        if (!document.getElementById('eligibleEmployeeInput')) {
-            return;
-        }
-
-        try {
-            const { data } = await api.get('/employees', { params: { per_page: 100, status: 'active' } });
-            const employees = data.data.employees || [];
-            canViewAll = true;
-            const defaultId = window.REGULARIZE_DEFAULT_EMPLOYEE_ID;
-            const defaultEmployee = employees.find((employee) => String(employee.id) === String(defaultId))
-                || employees[0]
-                || null;
-
-            employeeSearch = bindEmployeeSearchSelect({
-                inputId: 'eligibleEmployeeInput',
-                hiddenId: 'eligibleEmployeeId',
-                onSelect: () => {
-                    loadEligibleDates();
-                },
-            });
-
-            if (defaultEmployee) {
-                employeeSearch.setSelection({
-                    id: defaultEmployee.id,
-                    label: formatEmployeeLabel(defaultEmployee),
-                });
-            }
-        } catch (error) {
-            console.error(getErrorMessage(error));
-        }
-    };
-
-    const loadEligibleDates = async () => {
+    const loadEligibleDates = async (date = null) => {
         if (!eligibleDatesContainer) return;
 
-        eligibleDatesContainer.innerHTML = '<div class="text-muted py-3">Loading eligible dates...</div>';
+        eligibleDatesContainer.innerHTML = '<div class="text-muted py-3">Loading...</div>';
 
         try {
             const params = {};
-            const employeeId = selectedEmployeeId();
-
-            if (employeeId) {
-                params.employee_id = employeeId;
+            if (date) {
+                params.date = date;
             }
 
             const { data } = await api.get('/attendance-regularizations/eligible-dates', { params });
-            renderEligibleDates(data.data || {});
+            renderEligibleDates(data.data || {}, Boolean(date));
         } catch (error) {
             eligibleDatesContainer.innerHTML = `<div class="text-danger py-3">${getErrorMessage(error)}</div>`;
         }
     };
 
+    const loadMyPending = async () => {
+        if (!myPendingContainer) {
+            return;
+        }
+
+        try {
+            const { data } = await api.get('/attendance-regularizations/eligible-dates');
+            renderMyPendingRequests(data.data?.pending_requests || []);
+        } catch {
+            myPendingContainer.innerHTML = '<div class="text-danger py-3">Unable to load your pending requests.</div>';
+        }
+    };
+
     const renderPending = (groups) => {
         if (!pendingContainer) return;
-        if (!groups.length) {
+
+        const employeeId = selectedEmployeeId();
+        const filtered = employeeId
+            ? groups.filter((group) => Number(group.employee?.id) === Number(employeeId))
+            : groups;
+
+        if (!filtered.length) {
             pendingContainer.innerHTML = '<div class="text-muted">No pending regularization requests.</div>';
             return;
         }
 
-        pendingContainer.innerHTML = groups.map((group) => {
+        pendingContainer.innerHTML = filtered.map((group) => {
             const employeeName = group.employee?.full_name || 'Employee';
             const employeeCode = group.employee?.employee_code || '';
             const dayCount = group.day_count || group.dates?.length || 0;
@@ -417,8 +516,24 @@ document.addEventListener('DOMContentLoaded', async () => {
                 ? `${employeeName} · ${dayCount} day(s)`
                 : `${employeeName} · ${group.dates?.[0]?.attendance_date_label || '—'}`;
             const times = formatTimes(group);
+            const originalTimes = formatOriginalTimes(group);
             const dateList = (group.dates || [])
-                .map((date) => `<span class="regularize-pending-date-chip">${date.attendance_date_short_label || date.attendance_date_label}</span>`)
+                .map((date) => {
+                    const label = date.attendance_date_short_label || date.attendance_date_label;
+                    if ((group.day_count || 1) <= 1) {
+                        return `<span class="regularize-pending-date-chip">${label}</span>`;
+                    }
+
+                    const original = formatOriginalTimes(date);
+                    const requested = formatTimes(date);
+
+                    return `
+                        <div class="regularize-pending-date-chip">
+                            <div>${label}</div>
+                            <div class="small text-muted">Current ${original} → New ${requested}</div>
+                        </div>
+                    `;
+                })
                 .join('');
             const reviewActions = group.can_review ? (isBatch && group.batch_id ? `
                 ${renderApproveIconButton('data-approve-regularize-batch', group.batch_id, `Approve ${dayCount} day(s)`)}
@@ -434,7 +549,8 @@ document.addEventListener('DOMContentLoaded', async () => {
                         <div class="flex-grow-1">
                             <div class="fw-semibold">${title}</div>
                             ${employeeCode ? `<div class="small text-muted">${employeeCode}</div>` : ''}
-                            <div class="small text-muted mt-1">${times}</div>
+                            <div class="small text-muted mt-1">Current: ${originalTimes}</div>
+                            <div class="small text-muted">Requested: ${times}</div>
                             ${group.created_at_label ? `<div class="small text-muted">Submitted ${group.created_at_label}</div>` : ''}
                             <div class="regularize-pending-dates mt-2">${dateList}</div>
                             <div class="small mt-2">${group.reason || ''}</div>
@@ -448,8 +564,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         }).join('');
     };
 
-    const renderRow = (item, index, pagination) => {
-        const serial = ((pagination.current_page - 1) * pagination.per_page) + index + 1;
+    const renderRow = (item, serial) => {
         const actions = [];
         if (item.can_cancel && item.status === 'pending') {
             actions.push(renderCancelIconButton('data-cancel-regularize', item.id, 'Cancel request'));
@@ -459,8 +574,9 @@ document.addEventListener('DOMContentLoaded', async () => {
             <td>${item.employee?.full_name || '—'}<div class="small text-muted">${item.employee?.employee_code || ''}</div></td>
             <td>
                 ${item.attendance_date_label || '—'}
-                ${item.batch_id ? '<div><span class="badge text-bg-light border mt-1">Multi-day request</span></div>' : ''}
+                ${item.batch_id ? '<div class="small text-muted mt-1">Part of a multi-day request</div>' : ''}
             </td>
+            <td>${formatOriginalTimes(item)}</td>
             <td>${formatTimes(item)}</td>
             <td class="text-truncate" style="max-width:220px">${item.reason}</td>
             <td><span class="company-status-pill ${statusClass(item.status)}">${item.status_label}</span></td>
@@ -468,100 +584,252 @@ document.addEventListener('DOMContentLoaded', async () => {
         </tr>`;
     };
 
-    const groupHistoryRows = (requests) => {
-        const groups = [];
-        const seenBatchIds = new Set();
-
-        requests.forEach((item) => {
-            if (item.batch_id) {
-                if (seenBatchIds.has(item.batch_id)) {
-                    return;
-                }
-
-                const batchItems = requests.filter((request) => request.batch_id === item.batch_id);
-                seenBatchIds.add(item.batch_id);
-
-                if (batchItems.length > 1) {
-                    groups.push({ type: 'batch', items: batchItems });
-                    return;
-                }
-            }
-
-            groups.push({ type: 'single', items: [item] });
-        });
-
-        return groups;
-    };
-
-    const renderBatchRow = (items, index, pagination) => {
-        const serial = ((pagination.current_page - 1) * pagination.per_page) + index + 1;
-        const first = items[0];
-        const dateChips = items
-            .map((item) => `<span class="regularize-pending-date-chip">${item.attendance_date_label || '—'}</span>`)
-            .join('');
-        const actions = items
-            .filter((item) => item.can_cancel && item.status === 'pending')
-            .map((item) => renderCancelIconButton('data-cancel-regularize', item.id, `Cancel ${item.attendance_date_label}`));
-
-        return `<tr>
-            <td>${serial}</td>
-            <td>${first.employee?.full_name || '—'}<div class="small text-muted">${first.employee?.employee_code || ''}</div></td>
-            <td>
-                <div class="regularize-pending-dates">${dateChips}</div>
-                <div><span class="badge text-bg-light border mt-1">${items.length} day(s)</span></div>
-            </td>
-            <td>${formatTimes(first)}</td>
-            <td class="text-truncate" style="max-width:220px">${first.reason}</td>
-            <td><span class="company-status-pill ${statusClass(first.status)}">${first.status_label}</span></td>
-            <td>${actions.length ? renderActionGroup(actions.join('')) : '—'}</td>
-        </tr>`;
-    };
-
     const renderHistoryRows = (requests, pagination) => {
-        let rowIndex = 0;
+        const offset = pagination ? ((pagination.current_page - 1) * pagination.per_page) : 0;
 
-        return groupHistoryRows(requests).map((group) => {
-            const row = group.type === 'batch'
-                ? renderBatchRow(group.items, rowIndex, pagination)
-                : renderRow(group.items[0], rowIndex, pagination);
-            rowIndex += 1;
-            return row;
-        }).join('');
+        return requests.map((item, index) => renderRow(item, offset + index + 1)).join('');
     };
 
-    const loadPending = async () => {
-        if (!pendingContainer) return;
+    const loadSummary = async () => {
+        if (!summaryTotal) {
+            return;
+        }
+
         try {
-            const { data } = await api.get('/attendance-regularizations/pending');
-            renderPending(data.data.pending_groups || []);
+            const { data } = await api.get('/attendance-regularizations/summary', { params: filterParams() });
+            const summary = data.data || {};
+
+            summaryTotal.textContent = String(summary.total ?? 0);
+            summaryPending.textContent = String(summary.pending ?? 0);
+            summaryApproved.textContent = String(summary.approved ?? 0);
+            summaryRejected.textContent = String(summary.rejected ?? 0);
+
+            if (summaryMonthLabel) {
+                summaryMonthLabel.textContent = summary.month_label || filterMonth?.value || '—';
+            }
         } catch {
-            pendingContainer.innerHTML = '<div class="text-danger">Unable to load pending requests.</div>';
+            summaryTotal.textContent = '—';
+            summaryPending.textContent = '—';
+            summaryApproved.textContent = '—';
+            summaryRejected.textContent = '—';
         }
     };
 
+    const updatePendingBadge = (groups) => {
+        if (!pendingBadge) {
+            return;
+        }
+
+        const count = groups?.length || 0;
+        pendingBadge.textContent = String(count);
+        pendingBadge.classList.toggle('d-none', count === 0);
+    };
+
+    const loadPending = async () => {
+        if (!pendingContainer && !isHrView) {
+            return;
+        }
+
+        try {
+            const { data } = await api.get('/attendance-regularizations/pending');
+            pendingGroupsCache = data.data.pending_groups || [];
+            updatePendingBadge(pendingGroupsCache);
+
+            if (pendingContainer) {
+                renderPending(pendingGroupsCache);
+            }
+        } catch {
+            if (pendingContainer) {
+                pendingContainer.innerHTML = '<div class="text-danger">Unable to load pending requests.</div>';
+            }
+            updatePendingBadge([]);
+        }
+    };
+
+    const renderPagination = (pagination, infoEl, listEl, onPage) => {
+        if (!infoEl || !listEl) {
+            return;
+        }
+
+        if (!pagination?.total) {
+            infoEl.textContent = 'No requests found';
+            listEl.innerHTML = '';
+            return;
+        }
+
+        const page = pagination.current_page;
+        const lastPage = pagination.last_page;
+
+        infoEl.textContent = lastPage > 1
+            ? `Showing ${pagination.from} to ${pagination.to} of ${pagination.total}`
+            : `${pagination.total} request(s)`;
+
+        listEl.innerHTML = '';
+
+        if (lastPage <= 1) {
+            return;
+        }
+
+        const addItem = (label, targetPage, disabled = false, active = false) => {
+            listEl.insertAdjacentHTML('beforeend', `
+                <li class="page-item${disabled ? ' disabled' : ''}${active ? ' active' : ''}">
+                    <button type="button" class="page-link" data-page="${targetPage}" ${disabled ? 'disabled' : ''}>${label}</button>
+                </li>
+            `);
+        };
+
+        addItem('Prev', page - 1, page <= 1);
+
+        for (let i = 1; i <= lastPage; i += 1) {
+            if (i === 1 || i === lastPage || Math.abs(i - page) <= 1) {
+                addItem(String(i), i, false, i === page);
+            } else if (i === 2 && page > 3) {
+                addItem('…', page, true);
+            } else if (i === lastPage - 1 && page < lastPage - 2) {
+                addItem('…', page, true);
+            }
+        }
+
+        addItem('Next', page + 1, page >= lastPage);
+
+        listEl.querySelectorAll('[data-page]').forEach((btn) => {
+            btn.addEventListener('click', () => {
+                const targetPage = Number(btn.dataset.page);
+                if (!targetPage || targetPage === page) {
+                    return;
+                }
+
+                onPage(targetPage);
+            }, { once: true });
+        });
+    };
+
+    const loadMyRequests = async (page = 1) => {
+        if (!myRequestsTableBody) {
+            return;
+        }
+
+        myRequestsPage = page;
+        const params = {
+            page,
+            per_page: 10,
+            scope: 'mine',
+        };
+
+        if (filterMonth?.value) {
+            params.month = filterMonth.value;
+        }
+
+        try {
+            const { data } = await api.get('/attendance-regularizations', { params });
+            const requests = data.data.regularization_requests || [];
+            const pagination = data.data.pagination;
+
+            myRequestsTableBody.innerHTML = requests.length
+                ? renderHistoryRows(requests, pagination)
+                : '<tr><td colspan="8" class="text-center text-muted py-5">No requests found.</td></tr>';
+
+            renderPagination(pagination, myRequestsPaginationInfo, myRequestsPaginationList, loadMyRequests);
+        } catch (error) {
+            myRequestsTableBody.innerHTML = `<tr><td colspan="8" class="text-center text-danger py-5">${getErrorMessage(error)}</td></tr>`;
+        }
+    };
+
+    const setActiveTab = (tab) => {
+        if (!isHrView) {
+            return;
+        }
+
+        activeTab = tab;
+        tabButtons.forEach((button) => {
+            button.classList.toggle('active', button.dataset.regularizeTab === tab);
+        });
+
+        Object.entries(tabPanels).forEach(([key, panel]) => {
+            panel?.classList.toggle('d-none', key !== tab);
+        });
+
+        loadActiveTabData();
+    };
+
+    const loadActiveTabData = async (page = 1) => {
+        if (!isHrView) {
+            return;
+        }
+
+        if (activeTab === 'my-requests') {
+            await loadMyRequests(page);
+            if (urlDate && eligibleDatesContainer) {
+                await loadEligibleDates(urlDate);
+            }
+            return;
+        }
+
+        if (activeTab === 'pending-approvals') {
+            await loadPending();
+            return;
+        }
+
+        await loadRequests(page);
+    };
+
     const loadRequests = async (page = 1) => {
+        if (!tableBody) {
+            return;
+        }
+
         currentPage = page;
-        const params = { page, per_page: 10, year: filterYear?.value || currentYear };
-        if (filterStatus?.value) params.status = filterStatus.value;
+        const params = { page, per_page: 10, ...filterParams() };
+
+        if (isHrView) {
+            params.scope = 'history';
+        }
+
+        if (filterStatus?.value) {
+            params.status = filterStatus.value;
+        }
+
         try {
             const { data } = await api.get('/attendance-regularizations', { params });
             const requests = data.data.regularization_requests || [];
             const pagination = data.data.pagination;
             tableBody.innerHTML = requests.length
                 ? renderHistoryRows(requests, pagination)
-                : '<tr><td colspan="7" class="text-center text-muted py-5">No regularization requests found.</td></tr>';
-            paginationInfo.textContent = pagination?.total
-                ? `Showing ${pagination.from} to ${pagination.to} of ${pagination.total}`
-                : 'No requests found';
-            paginationList.innerHTML = pagination?.last_page
-                ? Array.from({ length: pagination.last_page }, (_, i) => {
-                    const p = i + 1;
-                    return `<li class="page-item ${p === pagination.current_page ? 'active' : ''}"><button type="button" class="page-link" data-page="${p}">${p}</button></li>`;
-                }).join('')
-                : '';
+                : '<tr><td colspan="8" class="text-center text-muted py-5">No regularization requests found.</td></tr>';
+            renderPagination(pagination, paginationInfo, paginationList, loadRequests);
         } catch (error) {
-            tableBody.innerHTML = `<tr><td colspan="7" class="text-center text-danger py-5">${getErrorMessage(error)}</td></tr>`;
+            tableBody.innerHTML = `<tr><td colspan="8" class="text-center text-danger py-5">${getErrorMessage(error)}</td></tr>`;
         }
+    };
+
+    const reloadDashboard = async (page = 1) => {
+        await loadSummary();
+
+        if (isHrView) {
+            await loadPending();
+            await loadActiveTabData(page);
+            return;
+        }
+
+        await Promise.all([
+            loadRequests(page),
+            loadPending(),
+            loadMyPending(),
+            urlDate ? loadEligibleDates(urlDate) : Promise.resolve(),
+        ]);
+    };
+
+    const initEmployeeFilter = () => {
+        if (!document.getElementById('regularizeEmployeeInput')) {
+            return;
+        }
+
+        employeeSearch = bindEmployeeSearchSelect({
+            inputId: 'regularizeEmployeeInput',
+            hiddenId: 'regularizeEmployeeId',
+            onSelect: () => reloadDashboard(1),
+            onClear: () => reloadDashboard(1),
+        });
     };
 
     const handleReview = async (id, action) => {
@@ -575,7 +843,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                 await api.patch(`/attendance-regularizations/${id}/reject`, { notes: notes.trim() });
                 showAlert('Regularization request rejected.');
             }
-            await Promise.all([loadPending(), loadRequests(currentPage), loadEligibleDates()]);
+            await reloadDashboard(currentPage);
         } catch (error) {
             showAlert(getErrorMessage(error), 'danger');
         }
@@ -592,7 +860,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                 const { data } = await api.patch(`/attendance-regularizations/batch/${batchId}/reject`, { notes: notes.trim() });
                 showAlert(data.message || 'Regularization requests rejected.');
             }
-            await Promise.all([loadPending(), loadRequests(currentPage), loadEligibleDates()]);
+            await reloadDashboard(currentPage);
         } catch (error) {
             showAlert(getErrorMessage(error), 'danger');
         }
@@ -603,7 +871,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         try {
             await api.patch(`/attendance-regularizations/${id}/cancel`);
             showAlert('Regularization request cancelled.');
-            await Promise.all([loadPending(), loadRequests(currentPage), loadEligibleDates()]);
+            await reloadDashboard(currentPage);
         } catch (error) {
             showAlert(getErrorMessage(error), 'danger');
         }
@@ -615,7 +883,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             return;
         }
 
-        openRegularizeModal([...selectedEligibleDates].sort(), selectedEmployeeId());
+        openRegularizeModal([...selectedEligibleDates].sort());
     });
 
     selectAllEligibleBtn?.addEventListener('click', () => {
@@ -675,6 +943,16 @@ document.addEventListener('DOMContentLoaded', async () => {
         toggleEligibleDate(card.dataset.eligibleDate);
     });
 
+    myPendingContainer?.addEventListener('click', (event) => {
+        const cancel = event.target.closest('[data-cancel-regularize]');
+        if (cancel) handleCancel(cancel.dataset.cancelRegularize);
+    });
+
+    myRequestsTableBody?.addEventListener('click', (event) => {
+        const cancel = event.target.closest('[data-cancel-regularize]');
+        if (cancel) handleCancel(cancel.dataset.cancelRegularize);
+    });
+
     pendingContainer?.addEventListener('click', (event) => {
         const approveBatch = event.target.closest('[data-approve-regularize-batch]');
         const rejectBatch = event.target.closest('[data-reject-regularize-batch]');
@@ -709,17 +987,12 @@ document.addEventListener('DOMContentLoaded', async () => {
                 reason: document.getElementById('reason')?.value?.trim(),
             };
 
-            const employeeId = document.getElementById('regularize_employee_id')?.value;
-            if (canViewAll && employeeId) {
-                payload.employee_id = Number(employeeId);
-            }
-
             const { data } = await api.post('/attendance-regularizations', payload);
             showAlert(data.message || `Regularization submitted for ${selectedDates.length} day(s).`);
             resetRegularizeForm();
             clearEligibleSelection();
             regularizeModal?.hide();
-            await Promise.all([loadPending(), loadRequests(1), loadEligibleDates()]);
+            await reloadDashboard(1);
         } catch (error) {
             showAlert(getErrorMessage(error), 'danger');
         } finally {
@@ -731,28 +1004,43 @@ document.addEventListener('DOMContentLoaded', async () => {
         resetRegularizeForm();
     });
 
-    if (document.getElementById('eligibleEmployeeInput')) {
-        await initEmployeeFilter();
+    initEmployeeFilter();
+
+    tabButtons.forEach((button) => {
+        button.addEventListener('click', () => {
+            setActiveTab(button.dataset.regularizeTab);
+        });
+    });
+
+    if (isHrView) {
+        setActiveTab(activeTab);
+        await loadSummary();
+    } else {
+        await reloadDashboard();
     }
 
-    const urlDate = new URLSearchParams(window.location.search).get('date');
-    await Promise.all([loadPending(), loadRequests(), loadEligibleDates()]);
+    filterMonth?.addEventListener('change', () => reloadDashboard(1));
+    filterStatus?.addEventListener('change', () => {
+        if (isHrView && activeTab !== 'history') {
+            return;
+        }
 
-    filterStatus?.addEventListener('change', () => loadRequests(1));
-    filterYear?.addEventListener('change', () => loadRequests(1));
-    filterReset?.addEventListener('click', () => {
-        if (filterStatus) filterStatus.value = '';
-        if (filterYear) filterYear.value = String(currentYear);
         loadRequests(1);
+    });
+    filterReset?.addEventListener('click', () => {
+        employeeSearch?.clearSelection?.();
+        if (filterStatus) filterStatus.value = '';
+        if (filterMonth) filterMonth.value = currentMonthValue();
+        reloadDashboard(1);
     });
     paginationList?.addEventListener('click', (e) => {
         const btn = e.target.closest('[data-page]');
         if (btn) loadRequests(Number(btn.dataset.page));
     });
 
-    if (urlDate && eligibleDatesByKey[urlDate] && !eligibleDatesByKey[urlDate].has_pending_request) {
+    if (urlDate && eligibleDatesByKey[urlDate]) {
         setEligibleSelection([urlDate]);
-        openRegularizeModal([urlDate], selectedEmployeeId());
+        openRegularizeModal([urlDate]);
     } else {
         updateEligibleSelectionUi();
     }

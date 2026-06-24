@@ -3,8 +3,10 @@ import {
     applyBackendErrors,
     clearFormErrors,
     focusFirstInvalidField,
+    getStatusValue,
     setFieldError,
     setFlashMessage,
+    setStatusValue,
     setSubmitLoading,
 } from './form-utils';
 
@@ -38,7 +40,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         name: form.querySelector('#name')?.value.trim() || '',
         code: form.querySelector('#code')?.value.trim() || null,
         description: form.querySelector('#description')?.value.trim() || null,
-        status: form.querySelector('#status')?.value || 'active',
+        status: getStatusValue(form),
     });
 
     const validateForm = () => {
@@ -62,7 +64,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             form.querySelector('#name').value = department.name || '';
             form.querySelector('#code').value = department.code || '';
             form.querySelector('#description').value = department.description || '';
-            form.querySelector('#status').value = department.status || 'active';
+            setStatusValue(form, department.status || 'active');
         } catch (error) {
             showAlert(getErrorMessage(error));
         }

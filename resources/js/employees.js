@@ -16,6 +16,7 @@ import {
     normalizeMobile,
     setFlashMessage,
     setFieldError,
+    setStatusValue,
     setSubmitLoading,
     toDateInputValue,
 } from './form-utils';
@@ -38,9 +39,19 @@ const EMPLOYMENT_LABELS = {
 
 const PROBATION_STATUS_LABELS = {
     on_probation: 'On Probation',
-    confirmed: 'Confirmed',
+    confirmed: 'Completed',
     extended: 'Extended',
     not_applicable: 'Not Applicable',
+};
+
+const WEEKDAY_LABELS = {
+    0: 'Sunday',
+    1: 'Monday',
+    2: 'Tuesday',
+    3: 'Wednesday',
+    4: 'Thursday',
+    5: 'Friday',
+    6: 'Saturday',
 };
 
 const formatCurrency = (value) => new Intl.NumberFormat('en-IN', {
@@ -85,6 +96,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     let managerOptions = [];
     let managerSearch = null;
     let departmentSelect = null;
+    let companyWeeklyOffWeekdays = [0];
+    let leaveTypeOptions = [];
 
     const today = new Date();
     const maxJoiningDate = toDateInputValue(today);
@@ -145,6 +158,155 @@ document.addEventListener('DOMContentLoaded', async () => {
     };
 
     const getShiftLabel = () => getSelectText('shift_id');
+
+    const formatWeekdayLabels = (weekdays) => {
+        const labels = (weekdays || [])
+            .map((weekday) => WEEKDAY_LABELS[Number(weekday)])
+            .filter(Boolean);
+
+        return labels.length ? labels.join(', ') : '—';
+    };
+
+    const getSelectedEmployeeWeeklyOffDays = () => Array.from(
+        form.querySelectorAll('.employee-weekly-off-day:checked'),
+    ).map((input) => Number(input.value));
+
+    const setEmployeeWeeklyOffDays = (weekdays) => {
+        const selected = new Set((weekdays || []).map(Number));
+
+        form.querySelectorAll('.employee-weekly-off-day').forEach((input) => {
+            input.checked = selected.has(Number(input.value));
+        });
+    };
+
+    const updateCompanyWeeklyOffHint = () => {
+        const hint = form.querySelector('#companyWeeklyOffHint');
+        if (!hint) {
+            return;
+        }
+
+        const labels = formatWeekdayLabels(companyWeeklyOffWeekdays);
+        hint.textContent = labels === '—'
+            ? 'Company weekly off is not configured yet (defaults to Sunday).'
+            : `Company default: ${labels}`;
+    };
+
+    const updateWeeklyOffModeUi = () => {
+        const mode = getValue('weekly_off_mode') || 'company_default';
+        const isCompanyDefault = mode === 'company_default';
+        const customWrap = form.querySelector('#employeeWeeklyOffCustomWrap');
+
+        form.querySelectorAll('.employee-weekly-off-day').forEach((input) => {
+            input.disabled = isCompanyDefault;
+
+            if (isCompanyDefault) {
+                input.checked = false;
+            }
+        });
+
+        customWrap?.classList.toggle('opacity-50', isCompanyDefault);
+        updateCompanyWeeklyOffHint();
+    };
+
+    const getWeeklyOffReviewText = () => {
+        const mode = getValue('weekly_off_mode') || 'company_default';
+
+        if (mode === 'company_default') {
+            return `Company default (${formatWeekdayLabels(companyWeeklyOffWeekdays)})`;
+        }
+
+        const selected = getSelectedEmployeeWeeklyOffDays();
+
+        return selected.length
+            ? formatWeekdayLabels(selected)
+            : '—';
+    };
+
+    const loadCompanyWeeklyOff = async () => {
+        try {
+            const { data } = await api.get('/weekly-off');
+            companyWeeklyOffWeekdays = data.data?.weekdays?.length
+                ? data.data.weekdays
+                : [0];
+        } catch {
+            companyWeeklyOffWeekdays = [0];
+        }
+
+        updateWeeklyOffModeUi();
+    };
+
+    const getSelectedLeaveTypeIds = () => Array.from(
+        form.querySelectorAll('.employee-leave-type:checked'),
+    ).map((input) => Number(input.value));
+
+    const setEmployeeLeaveTypes = (leaveTypeIds) => {
+        const selected = new Set((leaveTypeIds || []).map(Number));
+
+        form.querySelectorAll('.employee-leave-type').forEach((input) => {
+            input.checked = selected.has(Number(input.value));
+        });
+    };
+
+    const getLeaveTypesReviewText = () => {
+        const selected = getSelectedLeaveTypeIds();
+
+        if (!selected.length) {
+            return '—';
+        }
+
+        const labels = leaveTypeOptions
+            .filter((type) => selected.includes(Number(type.id)))
+            .map((type) => `${type.name} (${type.code})`);
+
+        return labels.length ? labels.join(', ') : '—';
+    };
+
+    const renderLeaveTypeOptions = () => {
+        const container = form.querySelector('#employeeLeaveTypeOptions');
+
+        if (!container) {
+            return;
+        }
+
+        if (!leaveTypeOptions.length) {
+            container.innerHTML = '<div class="col-12 text-muted small">No active leave types found. Configure them under Leave Types master first.</div>';
+
+            return;
+        }
+
+        container.innerHTML = leaveTypeOptions.map((type) => `
+            <div class="col-sm-6 col-md-4 col-lg-3">
+                <div class="form-check">
+                    <input class="form-check-input employee-leave-type" type="checkbox" value="${type.id}" id="employeeLeaveType${type.id}" name="leave_type_ids[]">
+                    <label class="form-check-label" for="employeeLeaveType${type.id}">${type.name} <span class="text-muted">(${type.code})</span></label>
+                </div>
+            </div>
+        `).join('');
+
+        form.querySelectorAll('.employee-leave-type').forEach((input) => {
+            input.addEventListener('change', () => {
+                setFieldError(form, 'leave_type_ids', '');
+
+                if (currentStep === TOTAL_STEPS) {
+                    buildReviewSummary();
+                }
+            });
+        });
+    };
+
+    const loadLeaveTypes = async (selectedIds = null) => {
+        try {
+            const { data } = await api.get('/leave-types', { params: { per_page: 50, status: 'active' } });
+            leaveTypeOptions = data.data.leave_types || [];
+        } catch {
+            leaveTypeOptions = [];
+        }
+
+        renderLeaveTypeOptions();
+
+        const idsToSelect = selectedIds ?? leaveTypeOptions.map((type) => Number(type.id));
+        setEmployeeLeaveTypes(idsToSelect);
+    };
 
     const updateShiftPreview = () => {
         const preview = document.getElementById('shiftTimingPreview');
@@ -463,7 +625,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             return ['first_name', 'email', 'phone', 'employee_code', 'gender', 'date_of_birth'];
         }
         if (step === 2) {
-            const fields = ['role_id', 'shift_id', 'joining_date', 'employment_type', 'status'];
+            const fields = ['role_id', 'shift_id', 'joining_date', 'employment_type', 'status', 'weekly_off_mode'];
 
             if (isProbationApplicable()) {
                 fields.push('probation_period_months', 'probation_end_date');
@@ -498,6 +660,16 @@ document.addEventListener('DOMContentLoaded', async () => {
                     valid = false;
                 }
             }
+        }
+
+        if (step === 2 && getValue('weekly_off_mode') === 'custom' && getSelectedEmployeeWeeklyOffDays().length === 0) {
+            setFieldError(form, 'weekly_off_weekdays', 'Select at least one weekly off day.');
+            valid = false;
+        }
+
+        if (step === 2 && getSelectedLeaveTypeIds().length === 0) {
+            setFieldError(form, 'leave_type_ids', 'Select at least one leave type.');
+            valid = false;
         }
 
         return valid;
@@ -567,6 +739,8 @@ document.addEventListener('DOMContentLoaded', async () => {
                 rows: [
                     ['Department', getDepartmentLabels()],
                     ['Shift', getShiftLabel()],
+                    ['Weekly Off', getWeeklyOffReviewText()],
+                    ['Leave Types', getLeaveTypesReviewText()],
                     ['Role', getSelectText('role_id')],
                     ['Designation', getValue('designation') || '—'],
                     ['Manager', getSelectText('manager_id')],
@@ -842,6 +1016,11 @@ document.addEventListener('DOMContentLoaded', async () => {
             department_ids: getDepartmentIds(),
             role_id: Number(getValue('role_id')),
             shift_id: Number(getValue('shift_id')),
+            weekly_off_mode: getValue('weekly_off_mode') || 'company_default',
+            weekly_off_weekdays: getValue('weekly_off_mode') === 'custom'
+                ? getSelectedEmployeeWeeklyOffDays()
+                : [],
+            leave_type_ids: getSelectedLeaveTypeIds(),
             manager_id: optionalInt(getValue('manager_id')),
             designation: nullable(getValue('designation')),
             joining_date: getValue('joining_date'),
@@ -904,12 +1083,17 @@ document.addEventListener('DOMContentLoaded', async () => {
         await loadDepartments(departmentIds.map(Number));
         await loadShifts(employee.shift_id || null);
 
+        setSelectValue('weekly_off_mode', employee.weekly_off_mode || 'company_default');
+        setEmployeeWeeklyOffDays(employee.weekly_off_weekdays || []);
+        updateWeeklyOffModeUi();
+        await loadLeaveTypes(employee.leave_type_ids?.map(Number) ?? []);
+
         setSelectValue('role_id', employee.role_id);
         setManagerSelection(employee.manager_id);
         setInputValue('designation', employee.designation);
         setDateInput('joining_date', employee.joining_date);
         setSelectValue('employment_type', employee.employment_type || 'full_time');
-        setSelectValue('status', employee.status || 'active');
+        setStatusValue(form, employee.status || 'active');
 
         const probationCheckbox = form.querySelector('#probation_applicable');
         if (probationCheckbox) {
@@ -1017,6 +1201,25 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
     });
 
+    form.querySelector('#weekly_off_mode')?.addEventListener('change', () => {
+        setFieldError(form, 'weekly_off_weekdays', '');
+        updateWeeklyOffModeUi();
+
+        if (currentStep === TOTAL_STEPS) {
+            buildReviewSummary();
+        }
+    });
+
+    form.querySelectorAll('.employee-weekly-off-day').forEach((input) => {
+        input.addEventListener('change', () => {
+            setFieldError(form, 'weekly_off_weekdays', '');
+
+            if (currentStep === TOTAL_STEPS) {
+                buildReviewSummary();
+            }
+        });
+    });
+
     form.querySelector('#give_portal_access')?.addEventListener('change', buildReviewSummary);
     form.querySelector('#grant_portal_access')?.addEventListener('change', buildReviewSummary);
 
@@ -1091,7 +1294,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     try {
         setupDateConstraints();
         initManagerSearch();
-        await Promise.all([loadRoles(), loadShifts()]);
+        await Promise.all([loadRoles(), loadShifts(), loadCompanyWeeklyOff(), loadLeaveTypes()]);
         if (employeeId) {
             await loadManagers(employeeId);
             const { data } = await api.get(`/employees/${employeeId}`);

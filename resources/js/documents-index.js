@@ -33,11 +33,10 @@ document.addEventListener('DOMContentLoaded', async () => {
     const renderStatusToggle = (documentType) => {
         const isActive = documentType.status === 'active';
         const switchId = `document-status-${documentType.id}`;
-        const pillClass = isActive ? 'company-status-pill--active' : 'company-status-pill--inactive';
 
         return `
             <div class="company-status-cell">
-                <div class="form-check form-switch company-status-switch mb-0">
+                <div class="form-check form-switch company-status-switch company-status-switch--solo mb-0">
                     <input
                         class="form-check-input"
                         type="checkbox"
@@ -45,26 +44,18 @@ document.addEventListener('DOMContentLoaded', async () => {
                         id="${switchId}"
                         data-status-toggle="${documentType.id}"
                         ${isActive ? 'checked' : ''}
+                        aria-label="Toggle document type status"
                     >
-                    <label
-                        class="form-check-label company-status-pill ${pillClass}"
-                        for="${switchId}"
-                        data-status-label="${documentType.id}"
-                    >
-                        ${isActive ? 'Active' : 'Inactive'}
-                    </label>
                 </div>
             </div>
         `;
     };
 
-    const setStatusLabel = (documentTypeId, status) => {
-        const label = tableBody.querySelector(`[data-status-label="${documentTypeId}"]`);
+    const setStatusToggle = (documentTypeId, status) => {
+        const toggle = tableBody.querySelector(`[data-status-toggle="${documentTypeId}"]`);
 
-        if (label) {
-            label.textContent = status === 'active' ? 'Active' : 'Inactive';
-            label.classList.remove('company-status-pill--active', 'company-status-pill--inactive');
-            label.classList.add(status === 'active' ? 'company-status-pill--active' : 'company-status-pill--inactive');
+        if (toggle) {
+            toggle.checked = status === 'active';
         }
     };
 
@@ -205,11 +196,11 @@ document.addEventListener('DOMContentLoaded', async () => {
 
         try {
             const { data } = await api.patch(`/document-types/${documentTypeId}/status`, { status });
-            setStatusLabel(documentTypeId, data.data.document_type.status);
+            setStatusToggle(documentTypeId, data.data.document_type.status);
             showAlert(data.message || 'Document type status updated successfully.');
         } catch (error) {
             toggle.checked = previousChecked;
-            setStatusLabel(documentTypeId, previousChecked ? 'active' : 'inactive');
+            setStatusToggle(documentTypeId, previousChecked ? 'active' : 'inactive');
             showAlert(getErrorMessage(error), 'danger');
         } finally {
             toggle.disabled = false;

@@ -3,8 +3,10 @@ import {
     applyBackendErrors,
     clearFormErrors,
     focusFirstInvalidField,
+    getStatusValue,
     setFieldError,
     setFlashMessage,
+    setStatusValue,
     setSubmitLoading,
 } from './form-utils';
 
@@ -36,7 +38,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     const getPayload = () => ({
         name: form.querySelector('#name')?.value.trim() || '',
-        status: form.querySelector('#status')?.value || 'active',
+        status: getStatusValue(form),
     });
 
     const validateForm = () => {
@@ -58,7 +60,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             const assetType = data.data.asset_type;
 
             form.querySelector('#name').value = assetType.name || '';
-            form.querySelector('#status').value = assetType.status || 'active';
+            setStatusValue(form, assetType.status || 'active');
         } catch (error) {
             showAlert(getErrorMessage(error));
         }

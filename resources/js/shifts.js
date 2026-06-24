@@ -3,8 +3,10 @@ import {
     applyBackendErrors,
     clearFormErrors,
     focusFirstInvalidField,
+    getStatusValue,
     setFieldError,
     setFlashMessage,
+    setStatusValue,
     setSubmitLoading,
 } from './form-utils';
 
@@ -54,7 +56,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         break_duration_minutes: Number(form.querySelector('#break_duration_minutes')?.value || 0),
         is_overnight: form.querySelector('#is_overnight')?.checked ?? false,
         description: form.querySelector('#description')?.value.trim() || null,
-        status: form.querySelector('#status')?.value || 'active',
+        status: getStatusValue(form),
     });
 
     const validateForm = () => {
@@ -106,7 +108,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             form.querySelector('#break_duration_minutes').value = shift.break_duration_minutes ?? 0;
             form.querySelector('#is_overnight').checked = Boolean(shift.is_overnight);
             form.querySelector('#description').value = shift.description || '';
-            form.querySelector('#status').value = shift.status || 'active';
+            setStatusValue(form, shift.status || 'active');
         } catch (error) {
             showAlert(getErrorMessage(error));
         }

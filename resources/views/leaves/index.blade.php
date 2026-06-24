@@ -6,11 +6,17 @@
     <div class="d-flex flex-wrap align-items-center justify-content-between gap-2">
         <div>
             <h1 class="page-title mb-1">Leave Management</h1>
-            <p class="page-subtitle mb-0">Apply, review, and track employee leave requests.</p>
+            <p class="page-subtitle mb-0">Apply and track employee leave requests.</p>
         </div>
         <div class="d-flex gap-2">
+            @if (Auth::user()->canViewAllLeaveRequests())
+                <a href="{{ route('web.leave.calendar') }}" class="btn btn-outline-secondary" title="Leave Calendar">
+                    <span aria-hidden="true">&#128197;</span>
+                    <span class="ms-1">Calendar</span>
+                </a>
+            @endif
             @if (Auth::user()->canManageLeaveBalances())
-                <a href="{{ route('web.leave.manage-balances') }}" class="btn btn-outline-secondary">Manage Balances</a>
+                <a href="{{ route('web.leave.manage-balances') }}" class="btn btn-outline-secondary">All Balances</a>
             @endif
             @if (Auth::user()->canApplyLeave())
                 <a href="{{ route('web.leave.balances') }}" class="btn btn-outline-secondary">My Balances</a>
@@ -22,22 +28,6 @@
 
 @section('content')
     <div id="leavesAlert" class="alert alert-success alert-dismissible fade show d-none"></div>
-
-    @if (Auth::user()->canApproveLeave())
-    <div class="content-card mb-4">
-        <div class="content-card-header border-bottom">
-            <h2 class="content-card-title mb-0">Pending Approvals</h2>
-        </div>
-        <div class="content-card-body">
-            @if (Auth::user()->isHrManager() && ! Auth::user()->isCompanyAdmin())
-                <p class="small text-muted mb-3">Leave requests from HR employees are approved only by Company Admin.</p>
-            @endif
-            <div id="pendingLeavesContainer">
-                <div class="text-muted py-3">Loading pending requests...</div>
-            </div>
-        </div>
-    </div>
-    @endif
 
     <div class="content-card companies-list-card">
         <div class="content-card-body companies-filter-bar border-bottom">

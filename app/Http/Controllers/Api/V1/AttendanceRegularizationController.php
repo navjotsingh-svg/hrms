@@ -24,6 +24,8 @@ class AttendanceRegularizationController extends Controller
         $validated = $request->validate([
             'employee_id' => ['nullable', 'integer', 'exists:employees,id'],
             'status' => ['nullable', Rule::in(['pending', 'approved', 'rejected', 'cancelled'])],
+            'scope' => ['nullable', Rule::in(['mine', 'history'])],
+            'month' => ['nullable', 'date_format:Y-m'],
             'year' => ['nullable', 'integer', 'min:2000', 'max:2100'],
             'per_page' => ['nullable', 'integer', Rule::in([10, 25, 50])],
             'page' => ['nullable', 'integer', 'min:1'],
@@ -56,16 +58,30 @@ class AttendanceRegularizationController extends Controller
         ]);
     }
 
-    public function eligibleDates(Request $request): JsonResponse
+    public function summary(Request $request): JsonResponse
     {
         $validated = $request->validate([
             'employee_id' => ['nullable', 'integer', 'exists:employees,id'],
+            'scope' => ['nullable', Rule::in(['mine', 'history'])],
+            'month' => ['nullable', 'date_format:Y-m'],
+        ]);
+
+        return $this->success(
+            $this->regularizationService->summaryForUser($request->user(), $validated),
+        );
+    }
+
+    public function eligibleDates(Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'date' => ['nullable', 'date', 'before_or_equal:today'],
         ]);
 
         return $this->success(
             $this->regularizationService->eligibleDatesForUser(
                 $request->user(),
-                $validated['employee_id'] ?? null,
+                null,
+                $validated['date'] ?? null,
             ),
         );
     }
@@ -200,4 +216,5 @@ class AttendanceRegularizationController extends Controller
 
         abort(403);
     }
+
 }

@@ -62,7 +62,7 @@ const EMPLOYMENT_LABELS = {
 
 const PROBATION_STATUS_LABELS = {
     on_probation: 'On Probation',
-    confirmed: 'Confirmed',
+    confirmed: 'Completed',
     extended: 'Extended',
     not_applicable: 'Not Applicable',
 };

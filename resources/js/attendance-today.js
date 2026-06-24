@@ -37,7 +37,7 @@ const markedPillClass = (label) => {
     }
 
     if (label === 'No') {
-        return 'company-status-pill text-bg-danger';
+        return 'company-status-pill company-status-pill--danger';
     }
 
     return 'text-muted';

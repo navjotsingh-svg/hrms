@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Models\Company;
+use App\Models\Employee;
 use App\Models\LeaveType;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Collection;
@@ -29,15 +30,23 @@ class LeaveTypeService
     public function ensureDefaultsForCompany(int $companyId): void
     {
         foreach ($this->defaultTypes() as $item) {
-            $type = LeaveType::query()->firstOrCreate(
-                [
-                    'company_id' => $companyId,
-                    'code' => $item['code'],
-                ],
-                $this->attributesFromDefault($item),
-            );
+            $existing = LeaveType::withTrashed()
+                ->where('company_id', $companyId)
+                ->where('code', $item['code'])
+                ->first();
 
-            $this->repairStandardLeaveType($type, $item);
+            if ($existing) {
+                if (! $existing->trashed()) {
+                    $this->repairStandardLeaveType($existing, $item);
+                }
+
+                continue;
+            }
+
+            LeaveType::create([
+                'company_id' => $companyId,
+                ...$this->attributesFromDefault($item),
+            ]);
         }
 
         $this->removeLegacyHourlyLeaveDuplicate($companyId);
@@ -80,6 +89,30 @@ class LeaveTypeService
             ->where('status', 'active')
             ->orderBy('sort_order')
             ->get();
+    }
+
+    public function activeForEmployee(Employee $employee): Collection
+    {
+        $this->ensureDefaultsForCompany($employee->company_id);
+        $employee->loadMissing('leaveTypes');
+
+        return $employee->leaveTypes
+            ->filter(fn (LeaveType $type) => $type->status === 'active' && ! $type->trashed())
+            ->when(
+                $employee->restrictsPaidLeave(),
+                fn (Collection $types) => $types->filter(fn (LeaveType $type) => ! $type->is_paid),
+            )
+            ->sortBy(fn (LeaveType $type) => [$type->sort_order, $type->name])
+            ->values();
+    }
+
+    public function isAssignedToEmployee(Employee $employee, int $leaveTypeId): bool
+    {
+        $employee->loadMissing('leaveTypes');
+
+        return $employee->leaveTypes->contains(
+            fn (LeaveType $type) => (int) $type->id === $leaveTypeId && $type->status === 'active' && ! $type->trashed(),
+        );
     }
 
     public function create(int $companyId, array $data): LeaveType
@@ -189,6 +222,11 @@ class LeaveTypeService
 
     public function delete(LeaveType $leaveType): void
     {
+        if ($leaveType->trashed()) {
+            return;
+        }
+
+        $leaveType->update(['status' => 'inactive']);
         $leaveType->delete();
     }
 

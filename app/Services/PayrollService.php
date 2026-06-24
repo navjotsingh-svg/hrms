@@ -18,6 +18,7 @@ class PayrollService
     public function __construct(
         private AttendanceService $attendanceService,
         private PortalStartService $portalStartService,
+        private ExpenseService $expenseService,
     ) {}
 
     public function listPeriods(int $companyId): Collection
@@ -80,12 +81,17 @@ class PayrollService
 
         $this->assertPeriodWithinPortalStart($companyId, $year, $month);
 
-        PayrollPeriod::query()
+        $periods = PayrollPeriod::query()
             ->where('company_id', $companyId)
             ->where('year', $year)
             ->where('month', $month)
             ->where('type', 'regular')
-            ->delete();
+            ->get();
+
+        foreach ($periods as $period) {
+            $this->expenseService->releasePayrollPeriod($period);
+            $period->delete();
+        }
 
         return $this->createPayrollPeriod($companyId, $year, $month, $user);
     }
@@ -118,10 +124,14 @@ class PayrollService
             ]);
 
             foreach ($employees as $employee) {
+                $payload = $this->buildPayslipPayload($employee, $year, $month);
+
                 Payslip::create([
                     'payroll_period_id' => $period->id,
-                    ...$this->buildPayslipPayload($employee, $year, $month),
+                    ...$payload,
                 ]);
+
+                $this->expenseService->markPaidForPayroll($period, $employee);
             }
 
             return $period->loadCount('payslips');
@@ -150,11 +160,6 @@ class PayrollService
                 "Payroll cannot be generated for {$label}. Attendance tracking started on {$startLabel}."
             );
         }
-    }
-
-    public function deletePeriod(PayrollPeriod $period): void
-    {
-        $period->delete();
     }
 
     public function resolvePayslipForUser(User $user, Payslip $payslip): Payslip
@@ -206,9 +211,19 @@ class PayrollService
         $factor = $monthDays > 0 ? $paidDays / $monthDays : 0;
 
         $earnings = $this->buildEarnings($salary, $factor);
+        $expenseReimbursements = $this->expenseService->pendingReimbursementTotal($employee, $year, $month);
         $deductions = $this->buildDeductions($salary, $earnings);
         $totalEarnings = round(array_sum(array_column($earnings, 'amount')), 2);
         $totalDeductions = round(array_sum(array_column($deductions, 'amount')), 2);
+        $displayEarnings = $earnings;
+
+        if ($expenseReimbursements > 0) {
+            $displayEarnings[] = [
+                'label' => 'Expense Reimbursement',
+                'amount' => round($expenseReimbursements, 2),
+            ];
+        }
+
         $bank = $this->resolveBankDetails($employee);
 
         $departmentName = $employee->departments->pluck('name')->filter()->implode(', ');
@@ -227,12 +242,12 @@ class PayrollService
             'joining_date' => $employee->joining_date,
             'payable_days' => $payableDays,
             'lop_days' => $lopDays,
-            'earnings' => $earnings,
+            'earnings' => $displayEarnings,
             'deductions' => $deductions,
             'total_earnings' => $totalEarnings,
             'total_deductions' => $totalDeductions,
             'net_pay' => round($totalEarnings - $totalDeductions, 2),
-            'expense_reimbursements' => 0,
+            'expense_reimbursements' => $expenseReimbursements,
             'bank_name' => $bank['bank_name'],
             'bank_account_number' => $bank['bank_account_number'],
             'pan_number' => $employee->pan_number,

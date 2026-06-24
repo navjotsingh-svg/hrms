@@ -75,6 +75,15 @@ const statusClass = (status, awaitingPunchOut = false) => {
 
 const statusBadgeClass = (status) => `attendance-cal-status-badge attendance-cal-status-badge--${status === 'complete' ? 'present' : status}`;
 
+const HOLIDAY_TYPE_LABELS = {
+    public: 'Public',
+    company: 'Company',
+    optional: 'Optional',
+    other: 'Other',
+};
+
+const holidayTypeLabel = (type) => HOLIDAY_TYPE_LABELS[type] || (type ? String(type) : 'Holiday');
+
 const statusBadgeLabel = (dayData) => {
     if (dayData.awaiting_punch_out) {
         return '';
@@ -154,7 +163,7 @@ const renderDayPunchTimes = (dayData) => {
     if (dayData.awaiting_punch_out) {
         const punchBadges = renderPunchBadges(dayData);
         const expectedOut = dayData.expected_clock_out_label
-            ? `<div class="attendance-day-expected-out">Expected clock out ${dayData.expected_clock_out_label}</div>`
+            ? `<div class="attendance-day-expected-out">Expected clock out time for full day present ${dayData.expected_clock_out_label}</div>`
             : '';
 
         return `
@@ -420,6 +429,54 @@ document.addEventListener('DOMContentLoaded', async () => {
         policyInfo.innerHTML = parts.join('<span class="attendance-policy-divider">|</span>');
     };
 
+    const renderMonthHolidays = (monthData) => {
+        const wrap = document.getElementById('attendanceMonthHolidays');
+        const list = document.getElementById('attendanceMonthHolidaysList');
+        const manageLink = document.getElementById('attendanceManageHolidaysLink');
+        const routes = window.HRMS_WEB_ROUTES || {};
+
+        if (manageLink) {
+            manageLink.classList.toggle('d-none', !capabilities.can_manage_attendance_masters);
+            manageLink.href = routes.holidaysIndex || '/masters/attendance/holidays';
+        }
+
+        if (!wrap || !list) {
+            return;
+        }
+
+        const holidays = monthData.month_holidays || [];
+
+        if (!holidays.length) {
+            wrap.classList.add('d-none');
+            list.innerHTML = '';
+            return;
+        }
+
+        wrap.classList.remove('d-none');
+        list.innerHTML = holidays.map((holiday) => {
+            const editUrl = capabilities.can_manage_attendance_masters && holiday.id
+                ? `${routes.holidayEdit || '/masters/attendance/holidays'}/${holiday.id}/edit`
+                : null;
+            const patternNote = holiday.pattern_label && holiday.pattern_label !== holiday.date_label
+                ? `<span class="attendance-month-holiday-pattern">${holiday.pattern_label}</span>`
+                : '';
+            const manageAction = editUrl
+                ? `<a href="${editUrl}" class="attendance-month-holiday-action">Edit</a>`
+                : '';
+
+            return `
+                <div class="attendance-month-holiday-item">
+                    <div class="attendance-month-holiday-main">
+                        <span class="attendance-month-holiday-name">${holiday.name}</span>
+                        <span class="attendance-month-holiday-meta">${holidayTypeLabel(holiday.type)} · ${holiday.date_label}</span>
+                        ${patternNote}
+                    </div>
+                    ${manageAction}
+                </div>
+            `;
+        }).join('');
+    };
+
     const renderCalendarShell = (monthData) => {
         const firstDay = new Date(`${monthData.month}-01T00:00:00`);
         const leading = mondayFirstLeadingBlanks(monthData.month);
@@ -468,11 +525,11 @@ document.addEventListener('DOMContentLoaded', async () => {
                 : '';
             const joiningNote = dayData.is_joining_date ? ' · Joining date' : '';
             const title = dayData.awaiting_punch_out
-                ? `Punch out pending · In ${dayData.current_punch_in_label || dayData.punch_in_label || '—'}${dayData.expected_clock_out_label ? ` · Expected clock out ${dayData.expected_clock_out_label}` : ''}${joiningNote}`
+                ? `Punch out pending · In ${dayData.current_punch_in_label || dayData.punch_in_label || '—'}${dayData.expected_clock_out_label ? ` · Expected clock out time for full day present ${dayData.expected_clock_out_label}` : ''}${joiningNote}`
                 : `${dayData.status_label || dayData.status}${approverNote}${joiningNote} · ${dayData.worked_hours_label} / ${dayData.required_hours_label}`;
             const dayContent = renderDayPunchTimes(dayData);
             const isInteractive = dayData.status !== 'before_portal'
-                && (dayData.status === 'on_leave' || !dayData.is_future);
+                && (dayData.status === 'on_leave' || dayData.status === 'holiday' || !dayData.is_future);
 
             if (isInteractive) {
                 cells.push(`
@@ -521,6 +578,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         setText(onLeaveCount, monthData.summary.on_leave_days || 0);
         setText(requiredHours, `Required: ${monthData.required_hours_label}`);
         renderPolicyInfo(monthData);
+        renderMonthHolidays(monthData);
     };
 
     const loadCalendar = async () => {
@@ -636,10 +694,26 @@ document.addEventListener('DOMContentLoaded', async () => {
             `
             : '';
 
+        const holidayEditUrl = capabilities.can_manage_attendance_masters && payload.holiday?.id
+            ? `${(window.HRMS_WEB_ROUTES?.holidayEdit || '/masters/attendance/holidays')}/${payload.holiday.id}/edit`
+            : null;
+
+        const holidaySection = payload.status === 'holiday'
+            ? `
+                <div class="alert alert-warning mb-3">
+                    <div class="fw-semibold mb-1">${payload.holiday?.name || payload.holiday_name || payload.status_label || 'Holiday'}</div>
+                    <div>${holidayTypeLabel(payload.holiday?.type)}${payload.holiday?.date_label ? ` · ${payload.holiday.date_label}` : ''}</div>
+                    <div class="small text-muted mt-1">${payload.day_message || 'No attendance is required on this day.'}</div>
+                    ${holidayEditUrl ? `<a href="${holidayEditUrl}" class="btn btn-sm btn-outline-primary mt-2">Edit holiday</a>` : ''}
+                </div>
+            `
+            : '';
+
         if (!payload.punches.length) {
-            const message = payload.day_message
+            const message = payload.status === 'holiday'
+                ? null
+                : payload.day_message
                 || (payload.status === 'before_portal' ? 'Attendance tracking had not started on this date.' : null)
-                || (payload.status === 'holiday' ? `Holiday: ${payload.holiday_name || payload.status_label}` : null)
                 || (payload.status === 'weekly_off' ? 'Weekly off day.' : null)
                 || (payload.status === 'regularization_pending' ? 'Regularization request is pending approval.' : null)
                 || (payload.status === 'on_leave' ? 'Approved leave for this day.' : null)
@@ -647,8 +721,9 @@ document.addEventListener('DOMContentLoaded', async () => {
             dayModalBody.innerHTML = `
                 ${regularizationSection}
                 ${joiningSection}
+                ${holidaySection}
                 ${leaveSection}
-                <div class="text-center text-muted py-4">${message}</div>
+                ${message ? `<div class="text-center text-muted py-4">${message}</div>` : ''}
             `;
             return;
         }
@@ -715,6 +790,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         dayModalBody.innerHTML = `
             ${regularizationSection}
             ${joiningSection}
+            ${holidaySection}
             ${leaveSection}
             ${statusSection}
             ${segments ? `<h6 class="mb-2">Work Sessions</h6><div class="d-flex flex-column gap-2 mb-4">${segments}</div>` : ''}

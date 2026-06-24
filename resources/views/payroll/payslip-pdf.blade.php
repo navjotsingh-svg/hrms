@@ -151,6 +151,10 @@
     @php
         $earningRows = $payslip->earnings ?? [];
         $deductionRows = $payslip->deductions ?? [];
+        $salaryEarningRows = collect($earningRows)
+            ->reject(fn (array $row) => ($row['label'] ?? '') === 'Expense Reimbursement')
+            ->values()
+            ->all();
         $maxRows = max(count($earningRows), count($deductionRows), 1);
     @endphp
 
@@ -186,7 +190,7 @@
             @endfor
             <tr class="total-row">
                 <td>Total Earnings</td>
-                <td class="amount">₹ {{ number_format($payslip->total_earnings, 2) }}</td>
+                <td class="amount">₹ {{ number_format(collect($salaryEarningRows)->sum('amount'), 2) }}</td>
                 <td>Total Deductions</td>
                 <td class="amount">₹ {{ number_format($payslip->total_deductions, 2) }}</td>
             </tr>
@@ -195,8 +199,12 @@
 
     <div class="summary">
         <div><strong>Net Pay for the month:</strong> ₹ {{ number_format($payslip->net_pay, 2) }}</div>
-        <div><strong>Expense Reimbursements:</strong> ₹ {{ number_format($payslip->expense_reimbursements, 2) }}</div>
-        <div class="grand-total">Total Payable: {{ number_format($payslip->totalPayable(), 2) }}</div>
+        @if ((float) $payslip->expense_reimbursements > 0)
+            <div><strong>Expense Reimbursements:</strong> ₹ {{ number_format($payslip->expense_reimbursements, 2) }}</div>
+            <div class="grand-total">Total Payable: ₹ {{ number_format($payslip->totalPayable(), 2) }}</div>
+        @else
+            <div class="grand-total">Total Payable: ₹ {{ number_format($payslip->net_pay, 2) }}</div>
+        @endif
     </div>
 
     <div class="footer">

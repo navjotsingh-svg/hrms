@@ -11,6 +11,7 @@ use App\Models\Shift;
 use App\Models\User;
 use App\Models\WeeklyOffDay;
 use Carbon\Carbon;
+use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Collection;
 use Illuminate\Validation\ValidationException;
@@ -25,6 +26,7 @@ class AttendanceService
         private PortalStartService $portalStartService,
         private GeocodingService $geocodingService,
         private LeaveRequestService $leaveRequestService,
+        private EmployeeAccessService $employeeAccessService,
     ) {}
 
     public function canMarkAttendance(User $user): bool
@@ -36,29 +38,34 @@ class AttendanceService
 
     public function canViewAllAttendance(User $user): bool
     {
-        return $user->isCompanyAdmin()
-            || $user->isHrManager()
+        return $user->hasFullAccess()
             || $user->hasPermission('attendance.manage');
     }
 
     public function canViewTeamAttendance(User $user): bool
     {
-        return $user->employee
-            && Employee::query()
-                ->where('company_id', $user->company_id)
-                ->where('manager_id', $user->employee->id)
-                ->exists();
+        if ($user->hasFullAccess()) {
+            return true;
+        }
+
+        if (! $user->hasPermission('attendance.view') && ! $user->hasPermission('attendance.manage')) {
+            return false;
+        }
+
+        return $this->employeeAccessService->subordinateIdsForUser($user) !== [];
     }
 
     public function teamEmployeesForUser(User $user): array
     {
-        if (! $user->employee) {
+        $subordinateIds = $this->employeeAccessService->subordinateIdsForUser($user);
+
+        if ($subordinateIds === []) {
             return [];
         }
 
         return Employee::query()
             ->where('company_id', $user->company_id)
-            ->where('manager_id', $user->employee->id)
+            ->whereIn('id', $subordinateIds)
             ->where('status', 'active')
             ->orderBy('first_name')
             ->get()
@@ -74,7 +81,7 @@ class AttendanceService
     public function resolveViewableEmployee(User $user, ?int $employeeId = null): Employee
     {
         if ($employeeId === null) {
-            $employee = $user->employee;
+            $employee = $this->employeeAccessService->linkedEmployee($user);
 
             if (! $employee) {
                 throw new NotFoundHttpException('No employee profile is linked to your account.');
@@ -97,10 +104,11 @@ class AttendanceService
             return $employee;
         }
 
-        $isSelf = $user->employee && (int) $user->employee->id === (int) $employee->id;
-        $isDirectManager = $user->employee && (int) $employee->manager_id === (int) $user->employee->id;
+        $linkedEmployee = $this->employeeAccessService->linkedEmployee($user);
+        $isSelf = $linkedEmployee && (int) $linkedEmployee->id === (int) $employee->id;
+        $subordinateIds = $this->employeeAccessService->subordinateIdsForUser($user);
 
-        if (! $isSelf && ! $isDirectManager) {
+        if (! $isSelf && ! in_array((int) $employee->id, $subordinateIds, true)) {
             throw new AccessDeniedHttpException('You are not allowed to view attendance for other employees.');
         }
 
@@ -255,7 +263,7 @@ class AttendanceService
             ->groupBy(fn (AttendancePunch $punch) => $punch->punched_at->toDateString());
 
         $requiredMinutes = $this->requiredMinutesForEmployee($employee);
-        $weeklyOffWeekdays = $this->attendancePolicyService->weeklyOffWeekdays($employee->company_id);
+        $weeklyOffWeekdays = $this->attendancePolicyService->weeklyOffWeekdaysForEmployee($employee);
         $holidays = $this->attendancePolicyService->holidaysForRange($employee->company_id, $start, $end);
         $pendingRegularizations = AttendanceRegularizationRequest::query()
             ->where('employee_id', $employee->id)
@@ -273,6 +281,7 @@ class AttendanceService
 
         for ($date = $start->copy(); $date->lte($end); $date->addDay()) {
             $dateString = $date->toDateString();
+            $holidayForDay = $holidays->get($dateString);
             $dayPunches = $punchesByDate->get($dateString, collect());
             $isFuture = $dateString > $today;
             $isToday = $dateString === $today;
@@ -286,7 +295,7 @@ class AttendanceService
                 $workedMinutes,
                 $requiredMinutes,
                 $isFuture,
-                $holidays->get($dateString),
+                $holidayForDay,
                 $weeklyOffWeekdays,
                 $isToday,
                 $approvedLeaveDays->get($dateString),
@@ -307,6 +316,10 @@ class AttendanceService
                 'status' => $status,
                 'status_label' => $statusLabel,
                 'holiday_name' => $dayMeta['holiday_name'],
+                'holiday_id' => $holidayForDay?->id,
+                'holiday_type' => $holidayForDay?->type,
+                'holiday_frequency' => $holidayForDay?->frequency,
+                'holiday_date_label' => $holidayForDay?->displayDateLabel(),
                 'worked_minutes' => $dayMeta['worked_minutes'],
                 'worked_hours_label' => $this->formatMinutes($dayMeta['worked_minutes']),
                 'required_minutes' => $requiredMinutes,
@@ -362,11 +375,7 @@ class AttendanceService
                 fn (int $weekday) => WeeklyOffDay::label($weekday),
                 $weeklyOffWeekdays,
             ),
-            'month_holidays' => $holidays->values()->map(fn (Holiday $holiday) => [
-                'name' => $holiday->name,
-                'date' => $holiday->date->toDateString(),
-                'date_label' => $holiday->date->format('d M'),
-            ])->all(),
+            'month_holidays' => $this->formatMonthHolidays($holidays, $start, $end),
         ];
     }
 
@@ -569,6 +578,7 @@ class AttendanceService
             $punches,
             $this->shouldIncludeOpenSession($punches, $isToday),
         );
+        $holiday = $this->attendancePolicyService->holidayOnDate($employee->company_id, $date);
         $dayMeta = $this->resolveDayMeta(
             $employee,
             $date,
@@ -576,7 +586,7 @@ class AttendanceService
             $workedMinutes,
             $requiredMinutes,
             $date > now()->toDateString(),
-            null,
+            $holiday,
             null,
             $isToday,
         );
@@ -605,6 +615,13 @@ class AttendanceService
             'status' => $pendingRequest ? 'regularization_pending' : $dayMeta['status'],
             'status_label' => $pendingRequest ? 'Regularization Pending' : $dayMeta['status_label'],
             'holiday_name' => $dayMeta['holiday_name'],
+            'holiday' => $holiday ? [
+                'id' => $holiday->id,
+                'name' => $holiday->name,
+                'type' => $holiday->type,
+                'frequency' => $holiday->frequency,
+                'date_label' => $holiday->displayDateLabel(),
+            ] : null,
             'punch_in_label' => $dayMeta['punch_in_label'],
             'current_punch_in_label' => $dayMeta['current_punch_in_label'] ?? null,
             'punch_out_label' => $dayMeta['punch_out_label'],
@@ -677,7 +694,6 @@ class AttendanceService
             ->get()
             ->keyBy('employee_id');
 
-        $weeklyOffWeekdays = $this->attendancePolicyService->weeklyOffWeekdays($companyId);
         $holiday = $this->attendancePolicyService->holidayOnDate($companyId, $date);
 
         $summary = [
@@ -699,6 +715,7 @@ class AttendanceService
         foreach ($employees as $employee) {
             $punches = $punchesByEmployee->get($employee->id, collect());
             $requiredMinutes = $this->requiredMinutesForEmployee($employee);
+            $weeklyOffWeekdays = $this->attendancePolicyService->weeklyOffWeekdaysForEmployee($employee);
             $workedMinutes = $punches->isEmpty()
                 ? 0
                 : $this->workedMinutesForPunches($punches, $this->shouldIncludeOpenSession($punches, $isToday));
@@ -788,6 +805,313 @@ class AttendanceService
             'summary' => $summary,
             'employees' => $rows,
         ];
+    }
+
+    public function companyMonthMatrix(User $user, string $month, array $filters = []): array
+    {
+        $canViewAll = $this->canViewAllAttendance($user);
+        $canViewTeam = ! $canViewAll && $this->canViewTeamAttendance($user);
+
+        if (! $canViewAll && ! $canViewTeam) {
+            throw new AccessDeniedHttpException('You are not allowed to view team attendance.');
+        }
+
+        $monthDate = Carbon::createFromFormat('Y-m', $month)->startOfMonth();
+        $start = $monthDate->copy()->startOfMonth();
+        $end = $monthDate->copy()->endOfMonth();
+        $startDate = $start->toDateString();
+        $endDate = $end->toDateString();
+        $today = now()->toDateString();
+        $companyId = (int) $user->company_id;
+
+        $query = Employee::query()
+            ->where('company_id', $companyId)
+            ->with(['department', 'shift'])
+            ->orderBy('first_name')
+            ->orderBy('last_name');
+
+        if (! $canViewAll) {
+            $subordinateIds = $this->employeeAccessService->subordinateIdsForUser($user);
+
+            if ($subordinateIds === []) {
+                throw new AccessDeniedHttpException('You are not allowed to view team attendance.');
+            }
+
+            $query->whereIn('id', $subordinateIds);
+        }
+
+        $status = $filters['status'] ?? 'active';
+
+        if ($status !== 'all') {
+            $query->where('status', $status);
+        }
+
+        if (! empty($filters['department_id'])) {
+            $departmentId = (int) $filters['department_id'];
+            $query->where(function ($builder) use ($departmentId) {
+                $builder
+                    ->where('department_id', $departmentId)
+                    ->orWhereHas('departments', fn ($relation) => $relation->where('departments.id', $departmentId));
+            });
+        }
+
+        if ($search = trim((string) ($filters['search'] ?? ''))) {
+            $query->where(function ($builder) use ($search) {
+                $builder
+                    ->where('first_name', 'like', "%{$search}%")
+                    ->orWhere('last_name', 'like', "%{$search}%")
+                    ->orWhere('employee_code', 'like', "%{$search}%");
+            });
+        }
+
+        $allEmployeeIds = (clone $query)->pluck('id');
+
+        /** @var LengthAwarePaginator $employees */
+        $employees = $query->paginate((int) ($filters['per_page'] ?? 25));
+
+        $employeeIds = $allEmployeeIds->isNotEmpty() ? $allEmployeeIds : collect();
+
+        $punchesByEmployee = $employeeIds->isEmpty()
+            ? collect()
+            : AttendancePunch::query()
+                ->whereIn('employee_id', $employeeIds)
+                ->whereBetween('punched_at', [$start->copy()->startOfDay(), $end->copy()->endOfDay()])
+                ->orderBy('punched_at')
+                ->get()
+                ->groupBy('employee_id')
+                ->map(fn (Collection $punches) => $punches->groupBy(
+                    fn (AttendancePunch $punch) => $punch->punched_at->toDateString(),
+                ));
+
+        $leaveDays = $employeeIds->isEmpty()
+            ? collect()
+            : $this->leaveRequestService->approvedLeaveDaysForEmployeesInRange($employeeIds, $startDate, $endDate);
+
+        $pendingRegularizations = $employeeIds->isEmpty()
+            ? collect()
+            : AttendanceRegularizationRequest::query()
+                ->whereIn('employee_id', $employeeIds)
+                ->where('status', AttendanceRegularizationRequest::STATUS_PENDING)
+                ->whereBetween('attendance_date', [$startDate, $endDate])
+                ->get()
+                ->keyBy(fn (AttendanceRegularizationRequest $request) => $request->employee_id.'|'.$request->attendance_date->toDateString());
+
+        $holidays = $this->attendancePolicyService->holidaysForRange($companyId, $start, $end);
+
+        $dayColumns = [];
+        $summary = [
+            'employees' => $allEmployeeIds->count(),
+            'present' => 0,
+            'half_day' => 0,
+            'short_leave' => 0,
+            'absent' => 0,
+            'on_leave' => 0,
+            'holiday' => 0,
+            'weekly_off' => 0,
+            'regularization_pending' => 0,
+            'incomplete' => 0,
+        ];
+
+        for ($date = $start->copy(); $date->lte($end); $date->addDay()) {
+            $dateString = $date->toDateString();
+            $dayColumns[] = [
+                'date' => $dateString,
+                'day' => (int) $date->format('j'),
+                'weekday' => $date->format('D'),
+                'is_today' => $dateString === $today,
+                'is_weekend' => in_array((int) $date->dayOfWeek, [0, 6], true),
+            ];
+        }
+
+        $summaryEmployees = Employee::query()
+            ->whereIn('id', $allEmployeeIds)
+            ->with('shift')
+            ->get()
+            ->keyBy('id');
+
+        foreach ($summaryEmployees as $employee) {
+            $requiredMinutes = $this->requiredMinutesForEmployee($employee);
+            $weeklyOffWeekdays = $this->attendancePolicyService->weeklyOffWeekdaysForEmployee($employee);
+            $employeePunches = $punchesByEmployee->get($employee->id, collect());
+
+            foreach ($dayColumns as $column) {
+                $dateString = $column['date'];
+                $isFuture = $dateString > $today;
+                $isToday = $dateString === $today;
+                $dayPunches = $employeePunches->get($dateString, collect());
+                $workedMinutes = $dayPunches->isEmpty()
+                    ? 0
+                    : $this->workedMinutesForPunches($dayPunches, $this->shouldIncludeOpenSession($dayPunches, $isToday));
+                $holidayForDay = $holidays->get($dateString);
+                $leaveDay = $leaveDays->get($employee->id.'|'.$dateString);
+
+                $dayMeta = $this->resolveDayMeta(
+                    $employee,
+                    $dateString,
+                    $dayPunches,
+                    $workedMinutes,
+                    $requiredMinutes,
+                    $isFuture,
+                    $holidayForDay,
+                    $weeklyOffWeekdays,
+                    $isToday,
+                    $leaveDay,
+                );
+
+                $statusKey = $dayMeta['status'];
+
+                if ($pendingRegularizations->has($employee->id.'|'.$dateString)) {
+                    $statusKey = 'regularization_pending';
+                }
+
+                if ($statusKey === 'before_portal' || $statusKey === 'future') {
+                    continue;
+                }
+
+                if (array_key_exists($statusKey, $summary)) {
+                    $summary[$statusKey]++;
+                } elseif ($statusKey === 'incomplete') {
+                    $summary['incomplete']++;
+                }
+            }
+        }
+
+        $employeeRows = collect($employees->items())->map(function (Employee $employee) use (
+            $dayColumns,
+            $punchesByEmployee,
+            $leaveDays,
+            $pendingRegularizations,
+            $holidays,
+            $today,
+        ) {
+            $requiredMinutes = $this->requiredMinutesForEmployee($employee);
+            $weeklyOffWeekdays = $this->attendancePolicyService->weeklyOffWeekdaysForEmployee($employee);
+            $employeePunches = $punchesByEmployee->get($employee->id, collect());
+            $cells = [];
+            $rowSummary = [
+                'present' => 0,
+                'half_day' => 0,
+                'absent' => 0,
+                'on_leave' => 0,
+            ];
+
+            foreach ($dayColumns as $column) {
+                $dateString = $column['date'];
+                $isFuture = $dateString > $today;
+                $isToday = $dateString === $today;
+                $dayPunches = $employeePunches->get($dateString, collect());
+                $workedMinutes = $dayPunches->isEmpty()
+                    ? 0
+                    : $this->workedMinutesForPunches($dayPunches, $this->shouldIncludeOpenSession($dayPunches, $isToday));
+                $holidayForDay = $holidays->get($dateString);
+                $leaveDay = $leaveDays->get($employee->id.'|'.$dateString);
+
+                $dayMeta = $this->resolveDayMeta(
+                    $employee,
+                    $dateString,
+                    $dayPunches,
+                    $workedMinutes,
+                    $requiredMinutes,
+                    $isFuture,
+                    $holidayForDay,
+                    $weeklyOffWeekdays,
+                    $isToday,
+                    $leaveDay,
+                );
+
+                $status = $dayMeta['status'];
+                $statusLabel = $dayMeta['status_label'];
+
+                if ($pendingRegularizations->has($employee->id.'|'.$dateString)) {
+                    $status = 'regularization_pending';
+                    $statusLabel = 'Regularization Pending';
+                }
+
+                if (in_array($status, ['present', 'half_day', 'absent', 'on_leave'], true)) {
+                    $rowSummary[$status]++;
+                }
+
+                $cells[] = $this->formatMatrixCell(
+                    $dateString,
+                    $status,
+                    $statusLabel,
+                    $dayMeta,
+                    $isToday,
+                    $isFuture,
+                );
+            }
+
+            return [
+                'id' => $employee->id,
+                'employee_code' => $employee->employee_code,
+                'full_name' => $employee->full_name,
+                'department' => $employee->department?->name,
+                'designation' => $employee->designation,
+                'cells' => $cells,
+                'summary' => $rowSummary,
+            ];
+        });
+
+        return [
+            'month' => $month,
+            'month_label' => $monthDate->format('F Y'),
+            'days' => $dayColumns,
+            'employees' => $employeeRows->values()->all(),
+            'summary' => $summary,
+            'pagination' => [
+                'current_page' => $employees->currentPage(),
+                'last_page' => $employees->lastPage(),
+                'per_page' => $employees->perPage(),
+                'total' => $employees->total(),
+                'from' => $employees->firstItem(),
+                'to' => $employees->lastItem(),
+            ],
+            'scope' => $canViewAll ? 'company' : 'team',
+        ];
+    }
+
+    /** @return array<string, mixed> */
+    private function formatMatrixCell(
+        string $date,
+        string $status,
+        string $statusLabel,
+        array $dayMeta,
+        bool $isToday,
+        bool $isFuture,
+    ): array {
+        return [
+            'date' => $date,
+            'status' => $status,
+            'status_label' => $statusLabel,
+            'abbrev' => $this->matrixStatusAbbrev($status),
+            'punch_in_label' => $dayMeta['punch_in_label'] ?? null,
+            'punch_out_label' => $dayMeta['punch_out_label'] ?? null,
+            'worked_hours_label' => $this->formatMinutes((int) ($dayMeta['worked_minutes'] ?? 0)),
+            'holiday_name' => $dayMeta['holiday_name'] ?? null,
+            'leave_type_name' => $dayMeta['leave_type_name'] ?? null,
+            'leave_session_label' => $dayMeta['leave_session_label'] ?? null,
+            'awaiting_punch_out' => (bool) ($dayMeta['awaiting_punch_out'] ?? false),
+            'is_today' => $isToday,
+            'is_future' => $isFuture,
+            'is_clickable' => ! in_array($status, ['before_portal', 'future'], true),
+        ];
+    }
+
+    private function matrixStatusAbbrev(string $status): string
+    {
+        return match ($status) {
+            'present' => 'P',
+            'half_day' => 'HD',
+            'short_leave' => 'SL',
+            'absent' => 'A',
+            'on_leave' => 'L',
+            'holiday' => 'H',
+            'weekly_off' => 'WO',
+            'regularization_pending' => 'RP',
+            'incomplete' => '…',
+            'before_portal', 'future' => '',
+            default => '·',
+        };
     }
 
     private function punchesForDate(Employee $employee, string $date): Collection
@@ -907,7 +1231,7 @@ class AttendanceService
         ?LeaveRequestDay $approvedLeaveDay = null,
     ): array {
         $companyId = $employee->company_id;
-        $weeklyOffWeekdays ??= $this->attendancePolicyService->weeklyOffWeekdays($companyId);
+        $weeklyOffWeekdays ??= $this->attendancePolicyService->weeklyOffWeekdaysForEmployee($employee);
         $holiday ??= $this->attendancePolicyService->holidayOnDate($companyId, $dateString);
         $punchSummary = $this->summarizeDayPunches($punches);
 
@@ -1272,5 +1596,51 @@ class AttendanceService
         }
 
         return "{$hours}h {$remaining}m";
+    }
+
+    /** @param  \Illuminate\Support\Collection<string, Holiday>  $holidaysByDate */
+    private function formatMonthHolidays(Collection $holidaysByDate, Carbon $monthStart, Carbon $monthEnd): array
+    {
+        $seen = [];
+        $items = [];
+
+        foreach ($holidaysByDate as $holiday) {
+            if (isset($seen[$holiday->id])) {
+                continue;
+            }
+
+            $seen[$holiday->id] = true;
+
+            if ($holiday->isFixed()) {
+                [$resolvedFrom, $resolvedTo] = $holiday->resolvedBoundsForYear((int) $monthStart->format('Y'));
+                $clipFrom = $resolvedFrom->greaterThan($monthStart) ? $resolvedFrom : $monthStart->copy()->startOfDay();
+                $clipTo = $resolvedTo->lessThan($monthEnd) ? $resolvedTo : $monthEnd->copy()->startOfDay();
+            } else {
+                $clipFrom = $holiday->from_date->greaterThan($monthStart)
+                    ? $holiday->from_date->copy()->startOfDay()
+                    : $monthStart->copy()->startOfDay();
+                $clipTo = $holiday->to_date->lessThan($monthEnd)
+                    ? $holiday->to_date->copy()->startOfDay()
+                    : $monthEnd->copy()->startOfDay();
+            }
+
+            $items[] = [
+                'id' => $holiday->id,
+                'name' => $holiday->name,
+                'from_date' => $clipFrom->toDateString(),
+                'to_date' => $clipTo->toDateString(),
+                'date' => $clipFrom->toDateString(),
+                'date_label' => $clipFrom->equalTo($clipTo)
+                    ? $clipFrom->format('d M Y')
+                    : $clipFrom->format('d M Y').' – '.$clipTo->format('d M Y'),
+                'pattern_label' => $holiday->displayDateLabel(),
+                'frequency' => $holiday->frequency,
+                'type' => $holiday->type,
+            ];
+        }
+
+        usort($items, fn (array $left, array $right) => strcmp($left['from_date'], $right['from_date']));
+
+        return $items;
     }
 }

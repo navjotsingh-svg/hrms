@@ -12,8 +12,28 @@ Route::post('/auth/session/logout', [AuthSessionController::class, 'destroy']);
 Route::redirect('/login', '/');
 Route::redirect('/register', '/');
 
-Route::middleware('web.auth')->name('web.')->group(function () {
-    Route::get('/dashboard', fn () => view('dashboard'))->name('dashboard');
+    Route::middleware(['web.auth', 'log.activity'])->name('web.')->group(function () {
+    Route::get('/dashboard', function () {
+        $user = auth()->user();
+
+        if ($user?->company_id && ! $user->isSuperAdmin()) {
+            return redirect()->route('web.home.index');
+        }
+
+        return view('dashboard');
+    })->name('dashboard');
+
+    Route::middleware('company.member')->prefix('home')->name('home.')->group(function () {
+        Route::get('/', [\App\Http\Controllers\HomeController::class, 'index'])
+            ->middleware('company.permission:home.view')
+            ->name('index');
+        Route::get('/dashboard', [\App\Http\Controllers\HomeController::class, 'dashboard'])
+            ->middleware('company.permission:home.dashboard.view,home.dashboard.manage')
+            ->name('dashboard');
+        Route::get('/moments', [\App\Http\Controllers\HomeController::class, 'moments'])
+            ->middleware('company.permission:home.moments.view,home.moments.post')
+            ->name('moments');
+    });
 
     Route::get('/profile', fn () => view('profile.edit'))->name('profile');
     Route::get('/profile/change-password', fn () => view('profile.change-password'))->name('profile.change-password');
@@ -70,7 +90,7 @@ Route::middleware('web.auth')->name('web.')->group(function () {
                 ->name('shifts.edit');
         });
 
-        Route::middleware('company.admin')->group(function () {
+        Route::middleware('company.member')->group(function () {
             Route::get('/roles', [\App\Http\Controllers\RoleController::class, 'index'])->name('roles.index');
             Route::get('/roles/{role}', [\App\Http\Controllers\RoleController::class, 'show'])
                 ->whereNumber('role')
@@ -81,6 +101,7 @@ Route::middleware('web.auth')->name('web.')->group(function () {
     Route::middleware(['company.member', 'company.permission:attendance.view'])->group(function () {
         Route::get('/attendance', [\App\Http\Controllers\AttendanceController::class, 'index'])->name('attendance.index');
         Route::get('/attendance/today', [\App\Http\Controllers\AttendanceController::class, 'today'])->name('attendance.today');
+        Route::get('/attendance/overview', [\App\Http\Controllers\AttendanceController::class, 'overview'])->name('attendance.overview');
     });
 
     Route::middleware(['company.member', 'company.permission:attendance.view'])->group(function () {
@@ -94,6 +115,9 @@ Route::middleware('web.auth')->name('web.')->group(function () {
             Route::get('/balances', [\App\Http\Controllers\LeaveController::class, 'balances'])->name('balances');
         });
         Route::get('/', [\App\Http\Controllers\LeaveController::class, 'index'])->name('index');
+        Route::get('/calendar', [\App\Http\Controllers\LeaveController::class, 'calendar'])->name('calendar');
+        Route::middleware('company.permission:leave.manage')->group(function () {
+        });
         Route::get('/{leave}', [\App\Http\Controllers\LeaveController::class, 'show'])
             ->whereNumber('leave')
             ->name('show');
@@ -121,6 +145,16 @@ Route::middleware('web.auth')->name('web.')->group(function () {
         Route::get('/portal-start', [\App\Http\Controllers\PortalStartController::class, 'index'])->name('portal-start.index');
     });
 
+    Route::middleware('company.member')->prefix('analytics')->name('analytics.')->group(function () {
+        Route::get('/', [\App\Http\Controllers\AnalyticsController::class, 'index'])->name('index');
+        Route::get('/leave-balances', [\App\Http\Controllers\AnalyticsController::class, 'leaveBalances'])->name('leave-balances');
+        Route::get('/reports/{reportKey}', [\App\Http\Controllers\AnalyticsController::class, 'report'])
+            ->name('report');
+        Route::get('/{section}', [\App\Http\Controllers\AnalyticsController::class, 'section'])
+            ->where('section', 'leave|attendance|people|expense|hiring|performance')
+            ->name('section');
+    });
+
     Route::middleware(['company.member', 'company.permission:payroll.manage'])->group(function () {
         Route::get('/payroll', [\App\Http\Controllers\PayrollController::class, 'index'])->name('payroll.index');
     });
@@ -132,6 +166,58 @@ Route::middleware('web.auth')->name('web.')->group(function () {
     Route::middleware('company.member')->prefix('people')->name('people.')->group(function () {
         Route::get('/', [\App\Http\Controllers\PeopleController::class, 'index'])->name('index');
     });
+
+    Route::middleware('company.member')->group(function () {
+        Route::get('/requests', [\App\Http\Controllers\RequestHubController::class, 'index'])->name('requests.index');
+        Route::get('/requests/{category}/{id}', [\App\Http\Controllers\RequestHubController::class, 'show'])
+            ->name('requests.show')
+            ->where('category', '[a-z_\-]+');
+    });
+
+    Route::middleware(['company.member', 'company.permission:projects.manage'])->group(function () {
+        Route::get('/projects', [\App\Http\Controllers\ProjectController::class, 'index'])->name('projects.index');
+    });
+
+    Route::middleware('company.member')->group(function () {
+        Route::get('/timesheets', [\App\Http\Controllers\TimesheetController::class, 'index'])->name('timesheets.index');
+    });
+
+    Route::middleware('company.member')->group(function () {
+        Route::get('/expenses', [\App\Http\Controllers\ExpenseController::class, 'index'])->name('expenses.index');
+    });
+
+    Route::middleware(['company.member', 'company.permission:performance.participate'])->prefix('performance')->name('performance.')->group(function () {
+        Route::get('/', [\App\Http\Controllers\PerformanceController::class, 'overview'])->name('overview');
+        Route::get('/review-cycles', [\App\Http\Controllers\PerformanceController::class, 'reviewCycles'])->name('review-cycles');
+        Route::get('/feedback-forms', [\App\Http\Controllers\PerformanceController::class, 'feedbackForms'])->name('feedback-forms');
+        Route::get('/question-bank', [\App\Http\Controllers\PerformanceController::class, 'questionBank'])->name('question-bank');
+        Route::get('/goals', [\App\Http\Controllers\PerformanceController::class, 'goals'])->name('goals');
+        Route::get('/kpi', [\App\Http\Controllers\PerformanceController::class, 'kpi'])->name('kpi');
+        Route::get('/pip', [\App\Http\Controllers\PerformanceController::class, 'pip'])->name('pip');
+    });
+
+    Route::middleware(['company.member', 'company.permission:hiring.requisition.create'])->prefix('hiring')->name('hiring.')->group(function () {
+        Route::get('/', [\App\Http\Controllers\HiringController::class, 'overview'])->name('overview');
+        Route::get('/requisitions', [\App\Http\Controllers\HiringController::class, 'requisitions'])->name('requisitions');
+        Route::middleware('company.permission:hiring.manage')->group(function () {
+            Route::get('/jobs', [\App\Http\Controllers\HiringController::class, 'jobs'])->name('jobs');
+            Route::get('/candidates', [\App\Http\Controllers\HiringController::class, 'candidates'])->name('candidates');
+            Route::get('/offers', [\App\Http\Controllers\HiringController::class, 'offers'])->name('offers');
+            Route::get('/templates', [\App\Http\Controllers\HiringController::class, 'templates'])->name('templates');
+        });
+        Route::middleware('company.permission:hiring.interview')->group(function () {
+            Route::get('/interviews', [\App\Http\Controllers\HiringController::class, 'interviews'])->name('interviews');
+        });
+        Route::middleware('company.permission:hiring.careers.publish')->group(function () {
+            Route::get('/careers', [\App\Http\Controllers\HiringController::class, 'careers'])->name('careers');
+        });
+    });
+
+    Route::middleware('company.member')->group(function () {
+        Route::get('/reports', [\App\Http\Controllers\ReportController::class, 'index'])->name('reports.index');
+    });
+
+    Route::get('/activity-logs', [\App\Http\Controllers\ActivityLogController::class, 'index'])->name('activity-logs.index');
 
     Route::middleware('company.member')->prefix('employees')->name('employees.')->group(function () {
         Route::middleware('company.permission:employees.view')->group(function () {
@@ -151,5 +237,10 @@ Route::middleware('web.auth')->name('web.')->group(function () {
         });
     });
 });
+
+Route::get('/careers/{slug}', [\App\Http\Controllers\PublicCareersController::class, 'show'])->name('careers.show');
+Route::post('/careers/{slug}/apply', [\App\Http\Controllers\PublicCareersController::class, 'applyGeneral'])->name('careers.apply-general');
+Route::get('/careers/{slug}/jobs/{jobPosting}', [\App\Http\Controllers\PublicCareersController::class, 'job'])->name('careers.job');
+Route::post('/careers/{slug}/jobs/{jobPosting}/apply', [\App\Http\Controllers\PublicCareersController::class, 'apply'])->name('careers.apply');
 
 require __DIR__.'/auth.php';

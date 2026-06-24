@@ -14,7 +14,7 @@ class UpdatePortalStartRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'attendance_portal_start_date' => ['nullable', 'date', 'regex:/^\d{4}-\d{2}-\d{2}$/'],
+            'attendance_portal_start_date' => ['required', 'date', 'regex:/^\d{4}-\d{2}-\d{2}$/'],
         ];
     }
 

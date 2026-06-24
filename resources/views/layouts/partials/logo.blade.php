@@ -2,9 +2,13 @@
     $companyName = config('hrms.company_name', config('app.name', 'HRMS'));
     $logoPath = config('hrms.company_logo');
     $hasLogo = $logoPath && file_exists(public_path($logoPath));
+    $user = Auth::user();
+    $homeRoute = ($user?->company_id && ! $user->isSuperAdmin() && $user->hasPermission('home.view'))
+        ? route('web.home.index')
+        : route('web.dashboard');
 @endphp
 
-<a href="{{ route('web.dashboard') }}" class="company-brand text-decoration-none d-flex align-items-center gap-2">
+<a href="{{ $homeRoute }}" class="company-brand text-decoration-none d-flex align-items-center gap-2">
     @if ($hasLogo)
         <img src="{{ asset($logoPath) }}" alt="{{ $companyName }}" class="company-logo-img">
     @else

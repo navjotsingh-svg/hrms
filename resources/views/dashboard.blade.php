@@ -1,6 +1,6 @@
 @extends('layouts.app')
 
-@section('title', 'Dashboard - ' . config('app.name', 'HRMS'))
+@section('title', 'Home - ' . config('app.name', 'HRMS'))
 
 @section('header')
     <div class="d-flex flex-wrap align-items-center justify-content-between gap-2">
@@ -10,9 +10,9 @@
 @endsection
 
 @section('content')
-    <div id="dashboardHomeRoot" class="d-none">
-        <div id="dashboardHomeWidgets" class="row g-3 mb-4 d-none"></div>
+    @include('home.partials.tabs', ['active' => 'home'])
 
+    <div id="dashboardHomeRoot" class="d-none">
         <div class="row g-4">
             <div class="col-xl-8">
                 <div class="dash-home-card dash-celebrations-card">
@@ -46,16 +46,24 @@
                                 <span class="dash-pending-count badge text-bg-warning d-none" id="dashboardPendingCount">0</span>
                             </button>
                             <div class="collapse show" id="dashboardPendingCollapse">
+                                <div class="dash-pending-bulk d-none align-items-center gap-2 px-3 py-2 border-bottom bg-light" id="dashboardPendingBulkBar">
+                                    <span class="small text-muted" id="dashboardPendingSelectedCount">0 selected</span>
+                                    <button type="button" class="btn btn-sm btn-success" id="dashboardPendingBulkApprove">Approve selected</button>
+                                    <button type="button" class="btn btn-sm btn-outline-danger" id="dashboardPendingBulkReject">Reject selected</button>
+                                </div>
                                 <div class="table-responsive" id="dashboardPendingTableWrap">
                                     <table class="table dash-pending-table mb-0">
                                         <thead>
                                             <tr>
+                                                <th class="dash-pending-select-col">
+                                                    <input type="checkbox" class="form-check-input" id="dashboardPendingSelectAll" aria-label="Select all pending requests">
+                                                </th>
                                                 <th>Request By</th>
                                                 <th>Employee ID</th>
                                                 <th>Request Type</th>
                                                 <th>Requested On</th>
                                                 <th>Request Status</th>
-                                                <th class="text-end">Details</th>
+                                                <th class="text-end">Actions</th>
                                             </tr>
                                         </thead>
                                         <tbody id="dashboardPendingBody"></tbody>
@@ -63,6 +71,10 @@
                                 </div>
                                 <div class="dash-pending-empty d-none" id="dashboardPendingEmpty">
                                     Well done. No request approvals.
+                                </div>
+                                <div class="d-flex flex-wrap align-items-center justify-content-between gap-2 px-3 py-2 border-top d-none" id="dashboardPendingPaginationWrap">
+                                    <div class="small text-muted" id="dashboardPendingPaginationInfo"></div>
+                                    <ul class="pagination pagination-sm mb-0" id="dashboardPendingPaginationList"></ul>
                                 </div>
                             </div>
                         </div>

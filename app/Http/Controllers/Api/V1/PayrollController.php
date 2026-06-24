@@ -95,16 +95,8 @@ class PayrollController extends Controller
 
         return $this->success(
             ['period' => new PayrollPeriodResource($period)],
-            'Payroll regenerated successfully with updated attendance and leave data.'
+            'Payroll regenerated successfully with updated attendance, leave, and expense reimbursement data.'
         );
-    }
-
-    public function destroyPeriod(Request $request, PayrollPeriod $payrollPeriod): JsonResponse
-    {
-        $this->payrollService->resolvePeriodForUser($request->user(), $payrollPeriod);
-        $this->payrollService->deletePeriod($payrollPeriod);
-
-        return $this->success(null, 'Payroll period deleted successfully.');
     }
 
     public function payslips(Request $request, PayrollPeriod $payrollPeriod): JsonResponse

@@ -29,6 +29,6 @@ class PortalStartController extends Controller
             $request->validated()['attendance_portal_start_date'] ?? null
         );
 
-        return $this->success($config, 'Portal start day updated successfully.');
+        return $this->success($config, 'Portal start day saved successfully.');
     }
 }

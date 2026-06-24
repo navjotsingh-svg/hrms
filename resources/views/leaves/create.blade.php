@@ -14,12 +14,21 @@
 
 @section('content')
     <div id="leaveFormAlert" class="alert alert-danger d-none"></div>
+    <div id="paidLeaveRestrictionNotice" class="alert alert-warning d-none"></div>
 
     <div class="row g-4">
         <div class="col-lg-8">
             <div class="content-card">
                 <div class="content-card-body">
                     <form id="leaveForm" class="row g-4">
+                        <div class="col-md-6">
+                            <label for="leave_application_type" class="form-label">Application Type <span class="text-danger">*</span></label>
+                            <select class="form-select" id="leave_application_type" name="leave_application_type" required>
+                                <option value="single" selected>Single Day</option>
+                                <option value="multiple">Multiple Days</option>
+                            </select>
+                            <div class="form-text">Single day supports half-day sessions. Multiple days apply as full days only.</div>
+                        </div>
                         <div class="col-md-6">
                             <label for="leave_type_id" class="form-label">Leave Type <span class="text-danger">*</span></label>
                             <select class="form-select" id="leave_type_id" name="leave_type_id" required></select>
@@ -33,23 +42,20 @@
                                 <option value="first_half">First Half</option>
                                 <option value="second_half">Second Half</option>
                             </select>
-                            <div class="form-text" id="sessionHelpText">Half-day applies only when from and to date are the same.</div>
-                        </div>
-                        <div class="col-md-6 d-none" id="hourlyDurationWrap">
-                            <label for="duration_minutes" class="form-label">Duration</label>
-                            <select class="form-select" id="duration_minutes" name="duration_minutes"></select>
-                            <div class="form-text" id="hourlyDeductionHint"></div>
+                            <div class="form-text" id="sessionHelpText">Choose full day or half day for the selected date.</div>
                         </div>
                         <div class="col-md-6">
-                            <label for="from_date" class="form-label">From Date <span class="text-danger">*</span></label>
+                            <label for="from_date" class="form-label" id="fromDateLabel">Leave Date <span class="text-danger">*</span></label>
                             <input type="date" class="form-control" id="from_date" name="from_date" required>
                             <div class="invalid-feedback"></div>
                         </div>
-                        <div class="col-md-6">
+                        <div class="col-md-6 d-none" id="toDateWrap">
                             <label for="to_date" class="form-label">To Date <span class="text-danger">*</span></label>
-                            <input type="date" class="form-control" id="to_date" name="to_date" required>
-                            <div id="leaveDaysPreview" class="form-text d-none"></div>
+                            <input type="date" class="form-control" id="to_date" name="to_date">
                             <div class="invalid-feedback"></div>
+                        </div>
+                        <div class="col-12">
+                            <div id="leaveDaysPreview" class="form-text d-none"></div>
                         </div>
                         <div class="col-12">
                             <label for="reason" class="form-label">Reason <span class="text-danger">*</span></label>

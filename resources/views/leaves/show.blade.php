@@ -7,7 +7,10 @@
         <div>
             <h1 class="page-title mb-1">Leave Request</h1>
         </div>
-        <a href="{{ route('web.leave.index') }}" class="btn btn-outline-secondary">Back</a>
+        <div class="d-flex align-items-center gap-2">
+            <div id="leaveShowHeaderActions" class="table-action-group d-none"></div>
+            <a href="{{ route('web.leave.index') }}" class="btn btn-outline-secondary">Back</a>
+        </div>
     </div>
 @endsection
 

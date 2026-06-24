@@ -28,4 +28,11 @@ class LeaveController extends Controller
     {
         return view('leaves.manage-balances');
     }
+
+    public function calendar()
+    {
+        abort_unless(auth()->user()?->canViewAllLeaveRequests(), 403);
+
+        return view('leaves.calendar');
+    }
 }

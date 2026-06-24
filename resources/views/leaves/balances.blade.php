@@ -13,6 +13,8 @@
 @endsection
 
 @section('content')
+    <div id="paidLeaveRestrictionNotice" class="alert alert-warning d-none mb-3"></div>
+
     <div class="content-card">
         <div class="content-card-body border-bottom">
             <label for="balanceYear" class="form-label">Year</label>

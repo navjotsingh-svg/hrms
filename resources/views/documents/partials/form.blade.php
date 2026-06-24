@@ -12,15 +12,6 @@
 </div>
 
 <div class="col-md-6">
-    <label for="status" class="form-label">Status <span class="text-danger">*</span></label>
-    <select class="form-select" id="status" name="status" required>
-        <option value="active">Active</option>
-        <option value="inactive">Inactive</option>
-    </select>
-    <div class="invalid-feedback d-block" data-error="status"></div>
-</div>
-
-<div class="col-md-6">
     <label for="allow_multiple" class="form-label">Upload Mode <span class="text-danger">*</span></label>
     <select class="form-select" id="allow_multiple" name="allow_multiple" required>
         <option value="0">Single file</option>
@@ -29,6 +20,8 @@
     <div class="form-text">Single allows one file per employee. Multiple lets employees upload several files for this type.</div>
     <div class="invalid-feedback d-block" data-error="allow_multiple"></div>
 </div>
+
+@include('partials.status-toggle')
 
 <div class="col-md-6 d-flex align-items-end">
     <div class="form-check form-switch mb-3">

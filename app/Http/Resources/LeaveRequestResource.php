@@ -16,6 +16,7 @@ class LeaveRequestResource extends JsonResource
             'to_date' => $this->to_date?->toDateString(),
             'from_date_label' => $this->from_date?->format('d M Y'),
             'to_date_label' => $this->to_date?->format('d M Y'),
+            'dates_label' => $this->formatDatesLabel(),
             'total_days' => (float) $this->total_days,
             'total_days_label' => $this->formatTotalDaysLabel(),
             'reason' => $this->reason,
@@ -60,12 +61,26 @@ class LeaveRequestResource extends JsonResource
             'can_review' => $request->user()?->canReviewLeaveRequest($this->resource) ?? false,
             'can_cancel' => $request->user()?->canCancelLeaveRequest($this->resource) ?? false,
             'can_upload_proof' => $request->user()?->canUploadLeaveProof($this->resource) ?? false,
+            'can_bypass_proof' => $request->user()?->canBypassLeaveProofRequirement($this->resource) ?? false,
             'proof_required' => (bool) $this->whenLoaded('leaveType', fn () => $this->leaveType?->requires_proof),
             'proof_missing' => $this->when(
                 $this->relationLoaded('leaveType') && $this->relationLoaded('attachments'),
                 fn () => (bool) $this->leaveType?->requires_proof && $this->attachments->isEmpty(),
             ),
         ];
+    }
+
+    private function formatDatesLabel(): string
+    {
+        if (! $this->from_date) {
+            return '—';
+        }
+
+        if (! $this->to_date || $this->from_date->equalTo($this->to_date)) {
+            return $this->from_date->format('d M Y');
+        }
+
+        return $this->from_date->format('d M Y').' to '.$this->to_date->format('d M Y');
     }
 
     private function formatTotalDaysLabel(): string

@@ -10,6 +10,10 @@ use Illuminate\Database\Eloquent\Relations\HasOne;
 
 class Employee extends Model
 {
+    public const WEEKLY_OFF_MODE_COMPANY = 'company_default';
+
+    public const WEEKLY_OFF_MODE_CUSTOM = 'custom';
+
     protected $fillable = [
         'company_id',
         'user_id',
@@ -17,6 +21,7 @@ class Employee extends Model
         'role_id',
         'manager_id',
         'shift_id',
+        'weekly_off_mode',
         'employee_code',
         'first_name',
         'last_name',
@@ -103,9 +108,77 @@ class Employee extends Model
         return $this->hasMany(Employee::class, 'manager_id');
     }
 
+    public function projects(): BelongsToMany
+    {
+        return $this->belongsToMany(Project::class, 'project_employee')->withTimestamps();
+    }
+
     public function shift(): BelongsTo
     {
         return $this->belongsTo(Shift::class);
+    }
+
+    public function weeklyOffDays(): HasMany
+    {
+        return $this->hasMany(EmployeeWeeklyOffDay::class)->orderBy('weekday');
+    }
+
+    public function leaveTypes(): BelongsToMany
+    {
+        return $this->belongsToMany(LeaveType::class, 'employee_leave_types')
+            ->withTimestamps()
+            ->orderBy('leave_types.sort_order')
+            ->orderBy('leave_types.name');
+    }
+
+    public function pipPlans(): HasMany
+    {
+        return $this->hasMany(PipPlan::class);
+    }
+
+    public function isOnProbation(): bool
+    {
+        if (! $this->probation_applicable) {
+            return false;
+        }
+
+        return in_array($this->probation_status, ['on_probation', 'extended'], true);
+    }
+
+    public function hasActivePip(): bool
+    {
+        return $this->pipPlans()
+            ->where('status', PipPlan::STATUS_ACTIVE)
+            ->exists();
+    }
+
+    public function restrictsPaidLeave(): bool
+    {
+        return $this->isOnProbation() || $this->hasActivePip();
+    }
+
+    public function paidLeaveRestrictionLabel(): ?string
+    {
+        if (! $this->restrictsPaidLeave()) {
+            return null;
+        }
+
+        $parts = [];
+
+        if ($this->isOnProbation()) {
+            $parts[] = 'probation';
+        }
+
+        if ($this->hasActivePip()) {
+            $parts[] = 'an active performance improvement plan (PIP)';
+        }
+
+        return 'Paid leave is not available while you are on '.implode(' or ', $parts).'. Only unpaid leave (such as Loss of Pay) can be applied.';
+    }
+
+    public function usesCompanyWeeklyOff(): bool
+    {
+        return ($this->weekly_off_mode ?? self::WEEKLY_OFF_MODE_COMPANY) === self::WEEKLY_OFF_MODE_COMPANY;
     }
 
     public function salary(): HasOne

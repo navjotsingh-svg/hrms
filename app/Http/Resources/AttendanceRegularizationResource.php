@@ -18,6 +18,7 @@ class AttendanceRegularizationResource extends JsonResource
             'requested_punch_out' => $this->requested_punch_out?->format('H:i'),
             'requested_punch_in_label' => $this->requested_punch_in?->format('h:i A'),
             'requested_punch_out_label' => $this->requested_punch_out?->format('h:i A'),
+            ...$this->originalPunchFields(),
             'reason' => $this->reason,
             'status' => $this->status,
             'status_label' => ucfirst($this->status),
@@ -39,6 +40,32 @@ class AttendanceRegularizationResource extends JsonResource
             ]),
             'can_review' => $request->user()?->canReviewRegularizationRequest($this->resource) ?? false,
             'can_cancel' => $request->user()?->canCancelRegularizationRequest($this->resource) ?? false,
+        ];
+    }
+
+    private function originalPunchFields(): array
+    {
+        $punchIn = $this->original_punch_in;
+        $punchOut = $this->original_punch_out;
+
+        if (! $punchIn && ! $punchOut && $this->status === 'pending') {
+            $punches = \App\Models\AttendancePunch::query()
+                ->where('employee_id', $this->employee_id)
+                ->whereDate('punched_at', $this->attendance_date)
+                ->orderBy('punched_at')
+                ->get();
+
+            $firstIn = $punches->firstWhere('punch_type', \App\Models\AttendancePunch::TYPE_IN);
+            $lastOut = $punches->where('punch_type', \App\Models\AttendancePunch::TYPE_OUT)->last();
+            $punchIn = $firstIn?->punched_at;
+            $punchOut = $lastOut?->punched_at;
+        }
+
+        return [
+            'original_punch_in' => $punchIn?->format('H:i'),
+            'original_punch_out' => $punchOut?->format('H:i'),
+            'original_punch_in_label' => $punchIn?->format('h:i A'),
+            'original_punch_out_label' => $punchOut?->format('h:i A'),
         ];
     }
 }

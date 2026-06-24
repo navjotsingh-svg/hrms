@@ -1,6 +1,7 @@
 import api, { getErrorMessage } from './api';
 import { renderActionGroup, renderDeleteButton, renderEditLink } from './action-icons';
 import { consumePageFlashMessage } from './form-utils';
+import { confirmLeaveTypeDelete } from './swal-utils';
 
 const routes = () => window.HRMS_WEB_ROUTES || {};
 
@@ -37,7 +38,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             <td><span class="company-status-pill ${type.status === 'active' ? 'company-status-pill--active' : 'company-status-pill--inactive'}">${type.status}</span></td>
             <td>${renderActionGroup(`
                 ${renderEditLink(editUrl, `Edit ${type.name}`)}
-                ${renderDeleteButton('data-delete-type', type.id, `Delete ${type.name}`)}
+                ${renderDeleteButton('data-delete-type', type.id, `Delete ${type.name}`, type.name)}
             `)}</td>
         </tr>`;
     };
@@ -85,10 +86,17 @@ document.addEventListener('DOMContentLoaded', async () => {
     });
     tableBody.addEventListener('click', async (e) => {
         const btn = e.target.closest('[data-delete-type]');
-        if (!btn || !confirm('Delete this leave type?')) return;
+        if (!btn) return;
+
+        const typeName = btn.dataset.deleteName || 'this leave type';
+
+        if (!await confirmLeaveTypeDelete(typeName)) {
+            return;
+        }
+
         try {
-            await api.delete(`/leave-types/${btn.dataset.deleteType}`);
-            showAlert('Leave type deleted.');
+            const { data } = await api.delete(`/leave-types/${btn.dataset.deleteType}`);
+            showAlert(data.message || 'Leave type has been deleted successfully.');
             loadTypes(currentPage);
         } catch (error) {
             showAlert(getErrorMessage(error), 'danger');

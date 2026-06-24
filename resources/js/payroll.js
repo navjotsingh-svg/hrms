@@ -22,7 +22,6 @@ document.addEventListener('DOMContentLoaded', async () => {
     const generateForm = document.getElementById('payrollGenerateForm');
     const generateBtn = document.getElementById('payrollGenerateBtn');
     const regenerateBtn = document.getElementById('payrollRegenerateBtn');
-    const deletePeriodBtn = document.getElementById('payrollDeletePeriodBtn');
     const exportBtn = document.getElementById('payrollExportBtn');
     const summaryWrap = document.getElementById('payrollSummaryWrap');
     const summaryBody = document.getElementById('payrollSummaryBody');
@@ -119,10 +118,6 @@ document.addEventListener('DOMContentLoaded', async () => {
         viewBtn.disabled = !hasPayslip;
         downloadBtn.disabled = !hasPayslip;
 
-        if (deletePeriodBtn) {
-            deletePeriodBtn.disabled = !periodSelect?.value;
-        }
-
         if (exportBtn) {
             const periodId = periodSelect?.value;
             const payslips = periodId ? (payslipsByPeriod.get(periodId) || []) : [];
@@ -157,7 +152,9 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (summaryTotals) {
             const totalGross = payslips.reduce((sum, item) => sum + (Number(item.total_earnings) || 0), 0);
             const totalNet = payslips.reduce((sum, item) => sum + (Number(item.net_pay) || 0), 0);
-            summaryTotals.textContent = `${payslips.length} employees · Gross ${formatAmount(totalGross)} · Net ${formatAmount(totalNet)}`;
+            const totalExpenses = payslips.reduce((sum, item) => sum + (Number(item.expense_reimbursements) || 0), 0);
+            const totalPayable = payslips.reduce((sum, item) => sum + (Number(item.total_payable) || 0), 0);
+            summaryTotals.textContent = `${payslips.length} employees · Gross ${formatAmount(totalGross)} · Net ${formatAmount(totalNet)} · Expenses ${formatAmount(totalExpenses)} · Total ${formatAmount(totalPayable)}`;
         }
 
         summaryBody.innerHTML = payslips.map((payslip) => `
@@ -169,7 +166,9 @@ document.addEventListener('DOMContentLoaded', async () => {
                 <td class="text-end">${Number(payslip.payable_days) || 0}</td>
                 <td class="text-end">${Number(payslip.lop_days) || 0}</td>
                 <td class="text-end">${formatAmount(payslip.total_earnings)}</td>
-                <td class="text-end fw-semibold">${formatAmount(payslip.net_pay)}</td>
+                <td class="text-end">${formatAmount(payslip.net_pay)}</td>
+                <td class="text-end">${formatAmount(payslip.expense_reimbursements)}</td>
+                <td class="text-end fw-semibold">${formatAmount(payslip.total_payable)}</td>
                 <td class="text-center">
                     <button type="button" class="btn btn-link btn-sm p-0" data-summary-view="${payslip.id}">View</button>
                 </td>
@@ -448,42 +447,6 @@ document.addEventListener('DOMContentLoaded', async () => {
             'Generating...',
             'Payroll generated successfully.',
         );
-    });
-
-    deletePeriodBtn?.addEventListener('click', async () => {
-        const periodId = periodSelect?.value;
-
-        if (!periodId) {
-            return;
-        }
-
-        const period = periods.find((item) => String(item.id) === String(periodId));
-
-        if (!window.confirm(`Delete payroll for ${period?.label || 'this period'}? All payslips in this period will be removed.`)) {
-            return;
-        }
-
-        deletePeriodBtn.disabled = true;
-
-        try {
-            const { data } = await api.delete(`/payroll-periods/${periodId}`);
-            showAlert(data.message || 'Payroll period deleted successfully.');
-            payslipsByPeriod.delete(periodId);
-            clearPreview();
-            hideSummary();
-            await loadPeriods();
-
-            if (employeeSearch) {
-                employeeSearch.clearSelection();
-                employeeInput.placeholder = 'Select period first...';
-                employeeSearch.setDisabled(true);
-            }
-
-            updateActionButtons();
-        } catch (error) {
-            showAlert(getErrorMessage(error), 'danger');
-            deletePeriodBtn.disabled = false;
-        }
     });
 
     regenerateBtn?.addEventListener('click', async () => {

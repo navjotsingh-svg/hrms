@@ -9,11 +9,19 @@ use Illuminate\Support\Facades\Route;
 Route::prefix('v1')->name('api.')->group(function () {
     Route::post('auth/login', [AuthController::class, 'login'])->name('auth.login');
 
-    Route::middleware('auth:sanctum')->group(function () {
+    Route::middleware(['auth:sanctum', 'log.activity'])->group(function () {
         Route::get('auth/me', [AuthController::class, 'me'])->name('auth.me');
         Route::post('auth/logout', [AuthController::class, 'logout'])->name('auth.logout');
 
         Route::get('dashboard', [DashboardController::class, 'index'])->name('dashboard');
+
+        Route::get('activity-logs', [\App\Http\Controllers\Api\V1\ActivityLogController::class, 'index'])
+            ->name('activity-logs.index');
+        Route::get('activity-logs/dates', [\App\Http\Controllers\Api\V1\ActivityLogController::class, 'dates'])
+            ->name('activity-logs.dates');
+        Route::get('activity-logs/employees/{employee}/timeline', [\App\Http\Controllers\Api\V1\ActivityLogController::class, 'timeline'])
+            ->name('activity-logs.employee-timeline')
+            ->whereNumber('employee');
 
         Route::get('profile', [ProfileController::class, 'show'])->name('profile.show');
         Route::get('profile/employee', [ProfileController::class, 'showEmployee'])->name('profile.employee.show');
@@ -42,6 +50,46 @@ Route::prefix('v1')->name('api.')->group(function () {
         });
 
         Route::middleware('company.member')->group(function () {
+            Route::middleware('company.permission:home.moments.view')->group(function () {
+                Route::get('home/moments', [\App\Http\Controllers\Api\V1\MomentController::class, 'index'])
+                    ->name('home.moments.index');
+                Route::get('home/moments/{moment}/comments', [\App\Http\Controllers\Api\V1\MomentController::class, 'comments'])
+                    ->name('home.moments.comments.index')
+                    ->whereNumber('moment');
+                Route::post('home/moments/{moment}/react', [\App\Http\Controllers\Api\V1\MomentController::class, 'react'])
+                    ->name('home.moments.react')
+                    ->whereNumber('moment');
+                Route::post('home/moments/{moment}/comments', [\App\Http\Controllers\Api\V1\MomentController::class, 'storeComment'])
+                    ->name('home.moments.comments.store')
+                    ->whereNumber('moment');
+            });
+
+            Route::middleware('company.permission:home.moments.post')->group(function () {
+                Route::post('home/moments', [\App\Http\Controllers\Api\V1\MomentController::class, 'store'])
+                    ->name('home.moments.store');
+            });
+
+            Route::middleware('company.permission:home.dashboard.view')->group(function () {
+                Route::get('home/dashboard', [\App\Http\Controllers\Api\V1\HomeDashboardController::class, 'index'])
+                    ->name('home.dashboard.index');
+            });
+
+            Route::middleware('company.permission:home.dashboard.manage')->group(function () {
+                Route::put('home/dashboard/widgets', [\App\Http\Controllers\Api\V1\HomeDashboardController::class, 'syncWidgets'])
+                    ->name('home.dashboard.widgets.sync');
+            });
+
+            Route::get('request-hub/summary', [\App\Http\Controllers\Api\V1\RequestHubController::class, 'summary'])
+                ->name('request-hub.summary');
+            Route::get('request-hub/pending', [\App\Http\Controllers\Api\V1\RequestHubController::class, 'pending'])
+                ->name('request-hub.pending');
+            Route::post('request-hub/bulk-review', [\App\Http\Controllers\Api\V1\RequestHubController::class, 'bulkReview'])
+                ->name('request-hub.bulk-review');
+            Route::get('request-hub/mine', [\App\Http\Controllers\Api\V1\RequestHubController::class, 'mine'])
+                ->name('request-hub.mine');
+            Route::get('request-hub/team', [\App\Http\Controllers\Api\V1\RequestHubController::class, 'team'])
+                ->name('request-hub.team');
+
             Route::get('employee-documents/pending', [\App\Http\Controllers\Api\V1\EmployeeDocumentController::class, 'pending'])
                 ->name('employee-documents.pending');
             Route::patch('employee-documents/{employeeDocument}/approve', [\App\Http\Controllers\Api\V1\EmployeeDocumentController::class, 'approve'])
@@ -143,6 +191,111 @@ Route::prefix('v1')->name('api.')->group(function () {
                     ->whereNumber('shift');
             });
 
+            Route::middleware('company.permission:projects.view')->group(function () {
+                Route::get('projects/assigned', [\App\Http\Controllers\Api\V1\ProjectController::class, 'assigned'])
+                    ->name('projects.assigned');
+                Route::get('projects/{project}', [\App\Http\Controllers\Api\V1\ProjectController::class, 'show'])
+                    ->name('projects.show')
+                    ->whereNumber('project');
+            });
+
+            Route::middleware('company.permission:projects.manage')->group(function () {
+                Route::get('projects/employee-options', [\App\Http\Controllers\Api\V1\ProjectController::class, 'employeeOptions'])
+                    ->name('projects.employee-options');
+                Route::get('projects', [\App\Http\Controllers\Api\V1\ProjectController::class, 'index'])
+                    ->name('projects.index');
+                Route::post('projects', [\App\Http\Controllers\Api\V1\ProjectController::class, 'store'])
+                    ->name('projects.store');
+                Route::put('projects/{project}', [\App\Http\Controllers\Api\V1\ProjectController::class, 'update'])
+                    ->name('projects.update')
+                    ->whereNumber('project');
+                Route::patch('projects/{project}', [\App\Http\Controllers\Api\V1\ProjectController::class, 'update'])
+                    ->name('projects.patch')
+                    ->whereNumber('project');
+                Route::delete('projects/{project}', [\App\Http\Controllers\Api\V1\ProjectController::class, 'destroy'])
+                    ->name('projects.destroy')
+                    ->whereNumber('project');
+            });
+
+            Route::middleware('company.member')->group(function () {
+                Route::get('timesheets/team-employees', [\App\Http\Controllers\Api\V1\TimesheetController::class, 'teamEmployees'])
+                    ->name('timesheets.team-employees');
+                Route::get('timesheets/comments', [\App\Http\Controllers\Api\V1\TimesheetController::class, 'comments'])
+                    ->name('timesheets.comments');
+                Route::post('timesheets/comments', [\App\Http\Controllers\Api\V1\TimesheetController::class, 'storeComment'])
+                    ->name('timesheets.comments.store');
+                Route::get('timesheets/project-options', [\App\Http\Controllers\Api\V1\TimesheetController::class, 'projectOptions'])
+                    ->name('timesheets.project-options');
+                Route::get('timesheets/recent', [\App\Http\Controllers\Api\V1\TimesheetController::class, 'recent'])
+                    ->name('timesheets.recent');
+                Route::get('timesheets', [\App\Http\Controllers\Api\V1\TimesheetController::class, 'index'])
+                    ->name('timesheets.index');
+                Route::post('timesheets', [\App\Http\Controllers\Api\V1\TimesheetController::class, 'store'])
+                    ->name('timesheets.store');
+            });
+
+            Route::middleware('company.permission:expenses.apply')->group(function () {
+                Route::get('expense-types/options', [\App\Http\Controllers\Api\V1\ExpenseController::class, 'typeOptions'])
+                    ->name('expense-types.options');
+                Route::get('expenses/export', [\App\Http\Controllers\Api\V1\ExpenseController::class, 'export'])
+                    ->name('expenses.export');
+                Route::post('expenses', [\App\Http\Controllers\Api\V1\ExpenseController::class, 'store'])
+                    ->name('expenses.store');
+                Route::put('expenses/{expense}', [\App\Http\Controllers\Api\V1\ExpenseController::class, 'update'])
+                    ->name('expenses.update')
+                    ->whereNumber('expense');
+                Route::patch('expenses/{expense}/submit', [\App\Http\Controllers\Api\V1\ExpenseController::class, 'submit'])
+                    ->name('expenses.submit')
+                    ->whereNumber('expense');
+                Route::patch('expenses/{expense}/cancel', [\App\Http\Controllers\Api\V1\ExpenseController::class, 'cancel'])
+                    ->name('expenses.cancel')
+                    ->whereNumber('expense');
+                Route::get('expense-groups/draft-options', [\App\Http\Controllers\Api\V1\ExpenseGroupController::class, 'draftOptions'])
+                    ->name('expense-groups.draft-options');
+                Route::post('expense-groups', [\App\Http\Controllers\Api\V1\ExpenseGroupController::class, 'store'])
+                    ->name('expense-groups.store');
+                Route::put('expense-groups/{expenseGroup}', [\App\Http\Controllers\Api\V1\ExpenseGroupController::class, 'update'])
+                    ->name('expense-groups.update')
+                    ->whereNumber('expenseGroup');
+                Route::post('expense-groups/{expenseGroup}/expenses', [\App\Http\Controllers\Api\V1\ExpenseGroupController::class, 'addExpense'])
+                    ->name('expense-groups.expenses.store')
+                    ->whereNumber('expenseGroup');
+                Route::patch('expense-groups/{expenseGroup}/submit', [\App\Http\Controllers\Api\V1\ExpenseGroupController::class, 'submit'])
+                    ->name('expense-groups.submit')
+                    ->whereNumber('expenseGroup');
+                Route::patch('expense-groups/{expenseGroup}/cancel', [\App\Http\Controllers\Api\V1\ExpenseGroupController::class, 'cancel'])
+                    ->name('expense-groups.cancel')
+                    ->whereNumber('expenseGroup');
+            });
+
+            Route::middleware('company.member')->group(function () {
+                Route::patch('expenses/{expense}/approve', [\App\Http\Controllers\Api\V1\ExpenseController::class, 'approve'])
+                    ->name('expenses.approve')
+                    ->whereNumber('expense');
+                Route::patch('expenses/{expense}/reject', [\App\Http\Controllers\Api\V1\ExpenseController::class, 'reject'])
+                    ->name('expenses.reject')
+                    ->whereNumber('expense');
+                Route::patch('expense-groups/{expenseGroup}/approve', [\App\Http\Controllers\Api\V1\ExpenseGroupController::class, 'approve'])
+                    ->name('expense-groups.approve')
+                    ->whereNumber('expenseGroup');
+                Route::patch('expense-groups/{expenseGroup}/reject', [\App\Http\Controllers\Api\V1\ExpenseGroupController::class, 'reject'])
+                    ->name('expense-groups.reject')
+                    ->whereNumber('expenseGroup');
+            });
+
+            Route::middleware('company.member')->group(function () {
+                Route::get('expenses', [\App\Http\Controllers\Api\V1\ExpenseController::class, 'index'])
+                    ->name('expenses.index');
+                Route::get('expenses/{expense}', [\App\Http\Controllers\Api\V1\ExpenseController::class, 'show'])
+                    ->name('expenses.show')
+                    ->whereNumber('expense');
+                Route::get('expense-groups', [\App\Http\Controllers\Api\V1\ExpenseGroupController::class, 'index'])
+                    ->name('expense-groups.index');
+                Route::get('expense-groups/{expenseGroup}', [\App\Http\Controllers\Api\V1\ExpenseGroupController::class, 'show'])
+                    ->name('expense-groups.show')
+                    ->whereNumber('expenseGroup');
+            });
+
             Route::middleware('company.permission:documents.view')->group(function () {
                 Route::get('document-types', [\App\Http\Controllers\Api\V1\DocumentTypeController::class, 'index'])
                     ->name('document-types.index');
@@ -196,12 +349,6 @@ Route::prefix('v1')->name('api.')->group(function () {
             Route::middleware('company.permission:employees.manage')->group(function () {
                 Route::post('employees/check-field', [\App\Http\Controllers\Api\V1\EmployeeController::class, 'checkField'])
                     ->name('employees.check-field');
-                Route::get('roles', [\App\Http\Controllers\Api\V1\RoleController::class, 'index'])
-                    ->name('roles.index');
-                Route::get('roles/{role}', [\App\Http\Controllers\Api\V1\RoleController::class, 'show'])
-                    ->name('roles.show')
-                    ->whereNumber('role');
-
                 Route::post('employees', [\App\Http\Controllers\Api\V1\EmployeeController::class, 'store'])
                     ->name('employees.store');
                 Route::put('employees/{employee}', [\App\Http\Controllers\Api\V1\EmployeeController::class, 'update'])
@@ -219,6 +366,44 @@ Route::prefix('v1')->name('api.')->group(function () {
                 Route::post('employees/{employee}/resend-welcome-email', [\App\Http\Controllers\Api\V1\EmployeeController::class, 'resendWelcomeEmail'])
                     ->name('employees.resend-welcome-email')
                     ->whereNumber('employee');
+                Route::patch('employees/{employee}/make-admin', [\App\Http\Controllers\Api\V1\EmployeeController::class, 'assignCompanyAdmin'])
+                    ->middleware('company.permission:employees.assign_admin')
+                    ->name('employees.make-admin')
+                    ->whereNumber('employee');
+                Route::patch('employees/{employee}/remove-admin', [\App\Http\Controllers\Api\V1\EmployeeController::class, 'removeCompanyAdmin'])
+                    ->middleware('company.permission:employees.assign_admin')
+                    ->name('employees.remove-admin')
+                    ->whereNumber('employee');
+            });
+
+            Route::middleware('company.permission:roles.manage,roles.view,employees.manage')->group(function () {
+                Route::get('roles', [\App\Http\Controllers\Api\V1\RoleController::class, 'index'])
+                    ->name('roles.index');
+                Route::get('roles/{role}', [\App\Http\Controllers\Api\V1\RoleController::class, 'show'])
+                    ->name('roles.show')
+                    ->whereNumber('role');
+            });
+
+            Route::middleware('company.permission:roles.manage')->group(function () {
+                Route::get('permissions/catalog', [\App\Http\Controllers\Api\V1\RoleController::class, 'permissionCatalog'])
+                    ->name('permissions.catalog');
+                Route::post('roles', [\App\Http\Controllers\Api\V1\RoleController::class, 'store'])
+                    ->name('roles.store');
+                Route::put('roles/{role}', [\App\Http\Controllers\Api\V1\RoleController::class, 'update'])
+                    ->name('roles.update')
+                    ->whereNumber('role');
+                Route::patch('roles/{role}', [\App\Http\Controllers\Api\V1\RoleController::class, 'update'])
+                    ->name('roles.patch')
+                    ->whereNumber('role');
+                Route::patch('roles/{role}/permissions', [\App\Http\Controllers\Api\V1\RoleController::class, 'syncPermissions'])
+                    ->name('roles.permissions.sync')
+                    ->whereNumber('role');
+                Route::delete('roles/{role}/permissions', [\App\Http\Controllers\Api\V1\RoleController::class, 'resetPermissions'])
+                    ->name('roles.permissions.reset')
+                    ->whereNumber('role');
+                Route::delete('roles/{role}', [\App\Http\Controllers\Api\V1\RoleController::class, 'destroy'])
+                    ->name('roles.destroy')
+                    ->whereNumber('role');
             });
 
             Route::middleware('company.permission:attendance.view')->group(function () {
@@ -231,6 +416,8 @@ Route::prefix('v1')->name('api.')->group(function () {
                     ->where('date', '[0-9]{4}-[0-9]{2}-[0-9]{2}');
                 Route::get('attendance/today-overview', [\App\Http\Controllers\Api\V1\AttendanceController::class, 'todayOverview'])
                     ->name('attendance.today-overview');
+                Route::get('attendance/month-matrix', [\App\Http\Controllers\Api\V1\AttendanceController::class, 'monthMatrix'])
+                    ->name('attendance.month-matrix');
             });
 
             Route::post('attendance/punch', [\App\Http\Controllers\Api\V1\AttendanceController::class, 'punch'])
@@ -261,6 +448,8 @@ Route::prefix('v1')->name('api.')->group(function () {
             });
 
             Route::middleware('company.member')->group(function () {
+                Route::get('attendance-regularizations/summary', [\App\Http\Controllers\Api\V1\AttendanceRegularizationController::class, 'summary'])
+                    ->name('attendance-regularizations.summary');
                 Route::get('attendance-regularizations', [\App\Http\Controllers\Api\V1\AttendanceRegularizationController::class, 'index'])
                     ->name('attendance-regularizations.index');
                 Route::get('attendance-regularizations/{attendance_regularization}', [\App\Http\Controllers\Api\V1\AttendanceRegularizationController::class, 'show'])
@@ -271,6 +460,29 @@ Route::prefix('v1')->name('api.')->group(function () {
                     ->whereNumber('attendance_regularization');
             });
 
+            Route::middleware('company.member')->group(function () {
+                Route::get('leave-calendar', [\App\Http\Controllers\Api\V1\LeaveCalendarController::class, 'show'])
+                    ->name('leave-calendar.show');
+            });
+
+            Route::middleware('company.member')->group(function () {
+                Route::get('analytics/catalog', [\App\Http\Controllers\Api\V1\AnalyticsController::class, 'catalog'])
+                    ->name('analytics.catalog');
+                Route::get('analytics/options', [\App\Http\Controllers\Api\V1\AnalyticsController::class, 'options'])
+                    ->name('analytics.options');
+                Route::get('analytics/reports/{reportKey}', [\App\Http\Controllers\Api\V1\AnalyticsController::class, 'show'])
+                    ->name('analytics.reports.show');
+                Route::get('analytics/reports/{reportKey}/export', [\App\Http\Controllers\Api\V1\AnalyticsController::class, 'export'])
+                    ->name('analytics.reports.export');
+                Route::get('analytics/leave-balances', [\App\Http\Controllers\Api\V1\LeaveBalanceAnalyticsController::class, 'index'])
+                    ->name('analytics.leave-balances.index');
+                Route::get('analytics/leave-balances/export', [\App\Http\Controllers\Api\V1\LeaveBalanceAnalyticsController::class, 'export'])
+                    ->name('analytics.leave-balances.export');
+                Route::get('analytics/leave-balances/employees/{employee}/policies/{leaveType}', [\App\Http\Controllers\Api\V1\LeaveBalanceAnalyticsController::class, 'detail'])
+                    ->name('analytics.leave-balances.detail')
+                    ->whereNumber(['employee', 'leaveType']);
+            });
+
             Route::middleware('company.permission:leave.manage')->group(function () {
                 Route::apiResource('leave-types', \App\Http\Controllers\Api\V1\LeaveTypeController::class)
                     ->names('leave-types')
@@ -278,6 +490,11 @@ Route::prefix('v1')->name('api.')->group(function () {
                 Route::patch('leave-balances/{balance}', [\App\Http\Controllers\Api\V1\LeaveBalanceController::class, 'update'])
                     ->name('leave-balances.update')
                     ->whereNumber('balance');
+                Route::get('leave-balances/overview', [\App\Http\Controllers\Api\V1\LeaveBalanceController::class, 'overview'])
+                    ->name('leave-balances.overview');
+                Route::get('leave-balances/employees/{employee}', [\App\Http\Controllers\Api\V1\LeaveBalanceController::class, 'employeeBalances'])
+                    ->name('leave-balances.employee')
+                    ->whereNumber('employee');
                 Route::post('leave-balances/{balance}/grant-comp-off', [\App\Http\Controllers\Api\V1\LeaveBalanceController::class, 'grantCompOff'])
                     ->name('leave-balances.grant-comp-off')
                     ->whereNumber('balance');
@@ -300,9 +517,6 @@ Route::prefix('v1')->name('api.')->group(function () {
             Route::middleware('company.permission:leave.approve')->group(function () {
                 Route::get('leave-requests/pending', [\App\Http\Controllers\Api\V1\LeaveRequestController::class, 'pending'])
                     ->name('leave-requests.pending');
-                Route::get('leave-balances/employees/{employee}', [\App\Http\Controllers\Api\V1\LeaveBalanceController::class, 'employeeBalances'])
-                    ->name('leave-balances.employee')
-                    ->whereNumber('employee');
                 Route::patch('leave-requests/{leave_request}/approve', [\App\Http\Controllers\Api\V1\LeaveRequestController::class, 'approve'])
                     ->name('leave-requests.approve')
                     ->whereNumber('leave_request');
@@ -381,12 +595,231 @@ Route::prefix('v1')->name('api.')->group(function () {
                 Route::get('payroll-periods/{payrollPeriod}/export', [\App\Http\Controllers\Api\V1\PayrollController::class, 'export'])
                     ->name('payroll-periods.export')
                     ->whereNumber('payrollPeriod');
-                Route::delete('payroll-periods/{payrollPeriod}', [\App\Http\Controllers\Api\V1\PayrollController::class, 'destroyPeriod'])
-                    ->name('payroll-periods.destroy')
-                    ->whereNumber('payrollPeriod');
+            });
+
+            Route::middleware('company.permission:performance.participate')->group(function () {
+                Route::get('performance/overview', [\App\Http\Controllers\Api\V1\PerformanceOverviewController::class, 'show'])
+                    ->name('performance.overview');
+            });
+
+            Route::middleware('company.permission:performance.manage')->group(function () {
+                Route::get('performance-question-bank', [\App\Http\Controllers\Api\V1\PerformanceQuestionBankController::class, 'index'])
+                    ->name('performance-question-bank.index');
+                Route::post('performance-question-bank', [\App\Http\Controllers\Api\V1\PerformanceQuestionBankController::class, 'store'])
+                    ->name('performance-question-bank.store');
+                Route::put('performance-question-bank/{performanceQuestionBank}', [\App\Http\Controllers\Api\V1\PerformanceQuestionBankController::class, 'update'])
+                    ->name('performance-question-bank.update')
+                    ->whereNumber('performanceQuestionBank');
+                Route::delete('performance-question-bank/{performanceQuestionBank}', [\App\Http\Controllers\Api\V1\PerformanceQuestionBankController::class, 'destroy'])
+                    ->name('performance-question-bank.destroy')
+                    ->whereNumber('performanceQuestionBank');
+
+                Route::get('performance-feedback-forms', [\App\Http\Controllers\Api\V1\PerformanceFeedbackFormController::class, 'index'])
+                    ->name('performance-feedback-forms.index');
+                Route::post('performance-feedback-forms', [\App\Http\Controllers\Api\V1\PerformanceFeedbackFormController::class, 'store'])
+                    ->name('performance-feedback-forms.store');
+                Route::get('performance-feedback-forms/{performanceFeedbackForm}', [\App\Http\Controllers\Api\V1\PerformanceFeedbackFormController::class, 'show'])
+                    ->name('performance-feedback-forms.show')
+                    ->whereNumber('performanceFeedbackForm');
+                Route::put('performance-feedback-forms/{performanceFeedbackForm}', [\App\Http\Controllers\Api\V1\PerformanceFeedbackFormController::class, 'update'])
+                    ->name('performance-feedback-forms.update')
+                    ->whereNumber('performanceFeedbackForm');
+                Route::delete('performance-feedback-forms/{performanceFeedbackForm}', [\App\Http\Controllers\Api\V1\PerformanceFeedbackFormController::class, 'destroy'])
+                    ->name('performance-feedback-forms.destroy')
+                    ->whereNumber('performanceFeedbackForm');
+
+                Route::get('performance-kpis', [\App\Http\Controllers\Api\V1\PerformanceKpiController::class, 'index'])
+                    ->name('performance-kpis.index');
+                Route::post('performance-kpis', [\App\Http\Controllers\Api\V1\PerformanceKpiController::class, 'store'])
+                    ->name('performance-kpis.store');
+                Route::get('performance-kpis/{performanceKpi}', [\App\Http\Controllers\Api\V1\PerformanceKpiController::class, 'show'])
+                    ->name('performance-kpis.show')
+                    ->whereNumber('performanceKpi');
+                Route::put('performance-kpis/{performanceKpi}', [\App\Http\Controllers\Api\V1\PerformanceKpiController::class, 'update'])
+                    ->name('performance-kpis.update')
+                    ->whereNumber('performanceKpi');
+                Route::delete('performance-kpis/{performanceKpi}', [\App\Http\Controllers\Api\V1\PerformanceKpiController::class, 'destroy'])
+                    ->name('performance-kpis.destroy')
+                    ->whereNumber('performanceKpi');
+
+                Route::get('performance-review-cycles', [\App\Http\Controllers\Api\V1\PerformanceReviewCycleController::class, 'index'])
+                    ->name('performance-review-cycles.index');
+                Route::post('performance-review-cycles', [\App\Http\Controllers\Api\V1\PerformanceReviewCycleController::class, 'store'])
+                    ->name('performance-review-cycles.store');
+                Route::get('performance-review-cycles/{performanceReviewCycle}', [\App\Http\Controllers\Api\V1\PerformanceReviewCycleController::class, 'show'])
+                    ->name('performance-review-cycles.show')
+                    ->whereNumber('performanceReviewCycle');
+                Route::put('performance-review-cycles/{performanceReviewCycle}', [\App\Http\Controllers\Api\V1\PerformanceReviewCycleController::class, 'update'])
+                    ->name('performance-review-cycles.update')
+                    ->whereNumber('performanceReviewCycle');
+                Route::patch('performance-review-cycles/{performanceReviewCycle}', [\App\Http\Controllers\Api\V1\PerformanceReviewCycleController::class, 'update'])
+                    ->name('performance-review-cycles.patch')
+                    ->whereNumber('performanceReviewCycle');
+                Route::patch('performance-review-cycles/{performanceReviewCycle}/activate', [\App\Http\Controllers\Api\V1\PerformanceReviewCycleController::class, 'activate'])
+                    ->name('performance-review-cycles.activate')
+                    ->whereNumber('performanceReviewCycle');
+                Route::patch('performance-review-cycles/{performanceReviewCycle}/close', [\App\Http\Controllers\Api\V1\PerformanceReviewCycleController::class, 'close'])
+                    ->name('performance-review-cycles.close')
+                    ->whereNumber('performanceReviewCycle');
+                Route::patch('performance-review-cycles/{performanceReviewCycle}/reviews-open', [\App\Http\Controllers\Api\V1\PerformanceReviewCycleController::class, 'toggleReviewsOpen'])
+                    ->name('performance-review-cycles.reviews-open')
+                    ->whereNumber('performanceReviewCycle');
+                Route::get('performance-review-cycles/{performanceReviewCycle}/progress', [\App\Http\Controllers\Api\V1\PerformanceReviewCycleController::class, 'progress'])
+                    ->name('performance-review-cycles.progress')
+                    ->whereNumber('performanceReviewCycle');
+                Route::post('performance-review-cycles/{performanceReviewCycle}/reminders', [\App\Http\Controllers\Api\V1\PerformanceReviewCycleController::class, 'sendReminders'])
+                    ->name('performance-review-cycles.reminders')
+                    ->whereNumber('performanceReviewCycle');
+            });
+
+            Route::middleware('company.permission:performance.review')->group(function () {
+                Route::get('performance-reviews/mine', [\App\Http\Controllers\Api\V1\PerformanceReviewCycleController::class, 'myReviews'])
+                    ->name('performance-reviews.mine');
+                Route::get('performance-reviews/{performanceReview}', [\App\Http\Controllers\Api\V1\PerformanceReviewController::class, 'show'])
+                    ->name('performance-reviews.show')
+                    ->whereNumber('performanceReview');
+                Route::post('performance-reviews/{performanceReview}/submit', [\App\Http\Controllers\Api\V1\PerformanceReviewController::class, 'submit'])
+                    ->name('performance-reviews.submit')
+                    ->whereNumber('performanceReview');
+            });
+
+            Route::middleware('company.permission:performance.participate')->group(function () {
+                Route::get('goals', [\App\Http\Controllers\Api\V1\GoalController::class, 'index'])
+                    ->name('goals.index');
+                Route::post('goals', [\App\Http\Controllers\Api\V1\GoalController::class, 'store'])
+                    ->name('goals.store');
+                Route::get('goals/{goal}', [\App\Http\Controllers\Api\V1\GoalController::class, 'show'])
+                    ->name('goals.show')
+                    ->whereNumber('goal');
+                Route::put('goals/{goal}', [\App\Http\Controllers\Api\V1\GoalController::class, 'update'])
+                    ->name('goals.update')
+                    ->whereNumber('goal');
+                Route::patch('goals/{goal}', [\App\Http\Controllers\Api\V1\GoalController::class, 'update'])
+                    ->name('goals.patch')
+                    ->whereNumber('goal');
+                Route::patch('goals/{goal}/key-results/{goalKeyResult}', [\App\Http\Controllers\Api\V1\GoalController::class, 'updateKeyResult'])
+                    ->name('goals.key-results.update')
+                    ->whereNumber(['goal', 'goalKeyResult']);
+                Route::delete('goals/{goal}/key-results/{goalKeyResult}', [\App\Http\Controllers\Api\V1\GoalController::class, 'deleteKeyResult'])
+                    ->name('goals.key-results.destroy')
+                    ->whereNumber(['goal', 'goalKeyResult']);
+            });
+
+            Route::middleware('company.permission:pip.manage')->group(function () {
+                Route::get('pips', [\App\Http\Controllers\Api\V1\PipController::class, 'index'])
+                    ->name('pips.index');
+                Route::post('pips', [\App\Http\Controllers\Api\V1\PipController::class, 'store'])
+                    ->name('pips.store');
+                Route::get('pips/{pipPlan}', [\App\Http\Controllers\Api\V1\PipController::class, 'show'])
+                    ->name('pips.show')
+                    ->whereNumber('pipPlan');
+                Route::put('pips/{pipPlan}', [\App\Http\Controllers\Api\V1\PipController::class, 'update'])
+                    ->name('pips.update')
+                    ->whereNumber('pipPlan');
+                Route::patch('pips/{pipPlan}', [\App\Http\Controllers\Api\V1\PipController::class, 'update'])
+                    ->name('pips.patch')
+                    ->whereNumber('pipPlan');
+                Route::patch('pips/{pipPlan}/status', [\App\Http\Controllers\Api\V1\PipController::class, 'updateStatus'])
+                    ->name('pips.status')
+                    ->whereNumber('pipPlan');
+                Route::patch('pips/{pipPlan}/key-results/{pipKeyResult}', [\App\Http\Controllers\Api\V1\PipController::class, 'updateKeyResult'])
+                    ->name('pips.key-results.update')
+                    ->whereNumber(['pipPlan', 'pipKeyResult']);
+            });
+
+            Route::middleware('company.permission:hiring.requisition.create')->group(function () {
+                Route::get('hiring/overview', [\App\Http\Controllers\Api\V1\HiringOverviewController::class, 'show'])
+                    ->name('hiring.overview');
+                Route::get('job-requisitions', [\App\Http\Controllers\Api\V1\JobRequisitionController::class, 'index'])
+                    ->name('job-requisitions.index');
+                Route::post('job-requisitions', [\App\Http\Controllers\Api\V1\JobRequisitionController::class, 'store'])
+                    ->name('job-requisitions.store');
+                Route::put('job-requisitions/{jobRequisition}', [\App\Http\Controllers\Api\V1\JobRequisitionController::class, 'update'])
+                    ->name('job-requisitions.update')
+                    ->whereNumber('jobRequisition');
+                Route::patch('job-requisitions/{jobRequisition}/submit', [\App\Http\Controllers\Api\V1\JobRequisitionController::class, 'submit'])
+                    ->name('job-requisitions.submit')
+                    ->whereNumber('jobRequisition');
+            });
+
+            Route::middleware('company.permission:hiring.requisition.approve')->group(function () {
+                Route::patch('job-requisitions/{jobRequisition}/approve', [\App\Http\Controllers\Api\V1\JobRequisitionController::class, 'approve'])
+                    ->name('job-requisitions.approve')
+                    ->whereNumber('jobRequisition');
+                Route::patch('job-requisitions/{jobRequisition}/reject', [\App\Http\Controllers\Api\V1\JobRequisitionController::class, 'reject'])
+                    ->name('job-requisitions.reject')
+                    ->whereNumber('jobRequisition');
+            });
+
+            Route::middleware('company.permission:hiring.manage')->group(function () {
+                Route::get('hiring-jobs', [\App\Http\Controllers\Api\V1\HiringJobController::class, 'index'])
+                    ->name('hiring-jobs.index');
+                Route::post('hiring-jobs', [\App\Http\Controllers\Api\V1\HiringJobController::class, 'store'])
+                    ->name('hiring-jobs.store');
+                Route::put('hiring-jobs/{jobPosting}', [\App\Http\Controllers\Api\V1\HiringJobController::class, 'update'])
+                    ->name('hiring-jobs.update')
+                    ->whereNumber('jobPosting');
+                Route::patch('hiring-jobs/{jobPosting}/publish', [\App\Http\Controllers\Api\V1\HiringJobController::class, 'publish'])
+                    ->name('hiring-jobs.publish')
+                    ->whereNumber('jobPosting');
+                Route::patch('hiring-jobs/{jobPosting}/close', [\App\Http\Controllers\Api\V1\HiringJobController::class, 'close'])
+                    ->name('hiring-jobs.close')
+                    ->whereNumber('jobPosting');
+
+                Route::get('hiring-candidates', [\App\Http\Controllers\Api\V1\HiringCandidateController::class, 'index'])
+                    ->name('hiring-candidates.index');
+                Route::post('hiring-candidates', [\App\Http\Controllers\Api\V1\HiringCandidateController::class, 'store'])
+                    ->name('hiring-candidates.store');
+                Route::patch('hiring-candidates/{candidate}/stage', [\App\Http\Controllers\Api\V1\HiringCandidateController::class, 'updateStage'])
+                    ->name('hiring-candidates.stage')
+                    ->whereNumber('candidate');
+
+                Route::get('hiring-offers', [\App\Http\Controllers\Api\V1\HiringOfferController::class, 'index'])
+                    ->name('hiring-offers.index');
+                Route::post('hiring-offers', [\App\Http\Controllers\Api\V1\HiringOfferController::class, 'store'])
+                    ->name('hiring-offers.store');
+                Route::patch('hiring-offers/{hiringOffer}/send', [\App\Http\Controllers\Api\V1\HiringOfferController::class, 'send'])
+                    ->name('hiring-offers.send')
+                    ->whereNumber('hiringOffer');
+
+                Route::get('hiring-templates', [\App\Http\Controllers\Api\V1\HiringOfferController::class, 'templates'])
+                    ->name('hiring-templates.index');
+                Route::post('hiring-templates', [\App\Http\Controllers\Api\V1\HiringOfferController::class, 'storeTemplate'])
+                    ->name('hiring-templates.store');
+                Route::put('hiring-templates/{hiringTemplate}', [\App\Http\Controllers\Api\V1\HiringOfferController::class, 'updateTemplate'])
+                    ->name('hiring-templates.update')
+                    ->whereNumber('hiringTemplate');
+            });
+
+            Route::middleware('company.permission:hiring.interview')->group(function () {
+                Route::get('hiring-interviews', [\App\Http\Controllers\Api\V1\HiringInterviewController::class, 'index'])
+                    ->name('hiring-interviews.index');
+                Route::post('hiring-interviews', [\App\Http\Controllers\Api\V1\HiringInterviewController::class, 'store'])
+                    ->name('hiring-interviews.store');
+                Route::put('hiring-interviews/{candidateInterview}', [\App\Http\Controllers\Api\V1\HiringInterviewController::class, 'update'])
+                    ->name('hiring-interviews.update')
+                    ->whereNumber('candidateInterview');
+            });
+
+            Route::middleware('company.permission:hiring.careers.publish')->group(function () {
+                Route::get('hiring/careers-page', [\App\Http\Controllers\Api\V1\HiringCareersController::class, 'show'])
+                    ->name('hiring.careers-page.show');
+                Route::post('hiring/careers-page', [\App\Http\Controllers\Api\V1\HiringCareersController::class, 'update'])
+                    ->name('hiring.careers-page.update');
             });
 
             Route::middleware('company.member')->group(function () {
+                Route::get('reports/catalog', [\App\Http\Controllers\Api\V1\ReportController::class, 'catalog'])
+                    ->name('reports.catalog');
+                Route::get('reports/options', [\App\Http\Controllers\Api\V1\ReportController::class, 'options'])
+                    ->name('reports.options');
+                Route::get('reports/{type}', [\App\Http\Controllers\Api\V1\ReportController::class, 'show'])
+                    ->name('reports.show')
+                    ->where('type', '[a-z\-]+');
+                Route::get('reports/{type}/export', [\App\Http\Controllers\Api\V1\ReportController::class, 'export'])
+                    ->name('reports.export')
+                    ->where('type', '[a-z\-]+');
+
                 Route::put('employees/{employee}/profile/salary', [\App\Http\Controllers\Api\V1\EmployeeProfileController::class, 'updateSalary'])
                     ->name('employees.profile.salary.update')
                     ->whereNumber('employee');

@@ -217,14 +217,7 @@
                     </select>
                     <div class="invalid-feedback d-block" data-error="employment_type"></div>
                 </div>
-                <div class="col-md-4">
-                    <label for="status" class="form-label">Status <span class="text-danger">*</span></label>
-                    <select class="form-select" id="status" name="status" required>
-                        <option value="active">Active</option>
-                        <option value="inactive">Inactive</option>
-                    </select>
-                    <div class="invalid-feedback d-block" data-error="status"></div>
-                </div>
+                @include('partials.status-toggle', ['colClass' => 'col-md-4'])
             </div>
         </div>
 
@@ -251,6 +244,45 @@
                         <span class="text-muted small" id="shiftBreakText"></span>
                     </div>
                 </div>
+                <div class="col-md-6">
+                    <label for="weekly_off_mode" class="form-label">Weekly Off</label>
+                    <select class="form-select" id="weekly_off_mode" name="weekly_off_mode">
+                        <option value="company_default">Company default</option>
+                        <option value="custom">Custom days</option>
+                    </select>
+                    <div class="form-text" id="companyWeeklyOffHint">Loading company weekly off...</div>
+                    <div class="invalid-feedback d-block" data-error="weekly_off_weekdays"></div>
+                </div>
+                <div class="col-12" id="employeeWeeklyOffCustomWrap">
+                    <label class="form-label mb-2">Custom weekly off days</label>
+                    <div class="row g-2" id="employeeWeeklyOffDays">
+                        @foreach ([0 => 'Sunday', 1 => 'Monday', 2 => 'Tuesday', 3 => 'Wednesday', 4 => 'Thursday', 5 => 'Friday', 6 => 'Saturday'] as $weekday => $label)
+                            <div class="col-sm-6 col-md-4 col-lg-3">
+                                <div class="form-check">
+                                    <input class="form-check-input employee-weekly-off-day" type="checkbox" value="{{ $weekday }}" id="employeeWeeklyOff{{ $weekday }}" name="weekly_off_weekdays[]">
+                                    <label class="form-check-label" for="employeeWeeklyOff{{ $weekday }}">{{ $label }}</label>
+                                </div>
+                            </div>
+                        @endforeach
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="wizard-form-section">
+            <div class="wizard-form-section-head">
+                <span class="wizard-form-section-icon" aria-hidden="true">🏖️</span>
+                <div>
+                    <h6 class="wizard-form-section-title">Leave Types</h6>
+                    <p class="wizard-form-section-desc">Assign leave policies this employee can view and apply for in the portal.</p>
+                </div>
+            </div>
+            <div class="wizard-form-section-body">
+                <div class="form-text mb-3">Only selected leave types appear on the employee portal and can be applied.</div>
+                <div class="row g-2" id="employeeLeaveTypeOptions">
+                    <div class="col-12 text-muted small" id="employeeLeaveTypeLoading">Loading leave types...</div>
+                </div>
+                <div class="invalid-feedback d-block" data-error="leave_type_ids"></div>
             </div>
         </div>
 
@@ -293,7 +325,7 @@
                         <label for="probation_status" class="form-label">Probation Status</label>
                         <select class="form-select" id="probation_status" name="probation_status">
                             <option value="on_probation">On Probation</option>
-                            <option value="confirmed">Confirmed</option>
+                            <option value="confirmed">Completed</option>
                             <option value="extended">Extended</option>
                         </select>
                         <div class="invalid-feedback d-block" data-error="probation_status"></div>

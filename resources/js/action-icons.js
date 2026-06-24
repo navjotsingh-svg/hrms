@@ -4,7 +4,7 @@ export const EDIT_ICON = '<svg xmlns="http://www.w3.org/2000/svg" width="16" hei
 
 export const DELETE_ICON = '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16" aria-hidden="true"><path d="M5.5 5.5A.5.5 0 0 1 6 6v6a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5m2.5 0a.5.5 0 0 1 .5.5v6a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5m3 .5a.5.5 0 0 0-1 0v6a.5.5 0 0 0 1 0z"/><path d="M14.5 3a1 1 0 0 1-1 1H13v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V4h-.5a1 1 0 0 1-1-1V2a1 1 0 0 1 1-1H6a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1h3.5a1 1 0 0 1 1 1zM4.118 4 4 4.059V13a1 1 0 0 0 1 1h6a1 1 0 0 0 1-1V4.059L11.882 4zM2.5 3h11V2h-11z"/></svg>';
 
-export const CANCEL_ICON = '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16" aria-hidden="true"><path d="M4.646 4.646a.5.5 0 1 1 .708 0L8 7.293l2.646-2.647a.5.5 0 1 1 .708.708L8.707 8l2.647 2.646a.5.5 0 0 1-.708.708L8 8.707l-2.646 2.647a.5.5 0 0 1-.708-.708L7.293 8 4.646 5.354a.5.5 0 0 1 0-.708"/></svg>';
+export const CANCEL_ICON = '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 3a5 5 0 1 0 4.546 2.914.5.5 0 0 1 .908-.417A6 6 0 1 1 8 2z"/><path d="M8 4.466V.534a.25.25 0 0 1 .41-.192l2.36 1.966c.12.1.12.284 0 .384L8.41 4.658A.25.25 0 0 1 8 4.466"/></svg>';
 
 export const renderViewLink = (href, label = 'View') => `
     <a href="${href}" class="table-action-btn table-action-btn--view" title="${label}" aria-label="${label}">
@@ -18,8 +18,28 @@ export const renderEditLink = (href, label = 'Edit') => `
     </a>
 `;
 
-export const renderDeleteButton = (dataAttr, id, label = 'Delete') => `
-    <button type="button" class="table-action-btn table-action-btn--delete" title="${label}" aria-label="${label}" ${dataAttr}="${id}">
+export const renderViewIconButton = (attrName, id, label = 'View') => `
+    <button type="button" class="table-action-btn table-action-btn--view" title="${label}" aria-label="${label}" ${attrName}="${id}">
+        ${VIEW_ICON}
+    </button>
+`;
+
+export const renderEditIconButton = (attrName, id, label = 'Edit') => `
+    <button type="button" class="table-action-btn table-action-btn--edit" title="${label}" aria-label="${label}" ${attrName}="${id}">
+        ${EDIT_ICON}
+    </button>
+`;
+
+export const ADD_ICON = '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 4a.5.5 0 0 1 .5.5v3h3a.5.5 0 0 1 0 1h-3v3a.5.5 0 0 1-1 0v-3h-3a.5.5 0 0 1 0-1h3v-3A.5.5 0 0 1 8 4"/></svg>';
+
+export const renderAddIconButton = (attrName, id, label = 'Add') => `
+    <button type="button" class="table-action-btn table-action-btn--approve" title="${label}" aria-label="${label}" ${attrName}="${id}">
+        ${ADD_ICON}
+    </button>
+`;
+
+export const renderDeleteButton = (dataAttr, id, label = 'Delete', itemName = null) => `
+    <button type="button" class="table-action-btn table-action-btn--delete" title="${label}" aria-label="${label}" ${dataAttr}="${id}"${itemName ? ` data-delete-name="${String(itemName).replace(/"/g, '&quot;')}"` : ''}>
         ${DELETE_ICON}
     </button>
 `;
@@ -30,8 +50,8 @@ export const renderCancelButton = (id, label = 'Cancel', extraAttrs = '') => `
     </button>
 `;
 
-export const renderCancelIconButton = (attrName, id, label = 'Cancel') => `
-    <button type="button" class="table-action-btn table-action-btn--reject" title="${label}" aria-label="${label}" ${attrName}="${id}">
+export const renderCancelIconButton = (attrName, id, label = 'Cancel request (withdraw)') => `
+    <button type="button" class="table-action-btn table-action-btn--cancel" title="${label}" aria-label="${label}" ${attrName}="${id}">
         ${CANCEL_ICON}
     </button>
 `;

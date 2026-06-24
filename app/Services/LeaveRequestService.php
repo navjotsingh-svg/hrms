@@ -24,6 +24,9 @@ class LeaveRequestService
         private LeaveAttachmentService $leaveAttachmentService,
         private AttendancePolicyService $attendancePolicyService,
         private PortalStartService $portalStartService,
+        private EmployeeAccessService $employeeAccessService,
+        private ActivityLogService $activityLogService,
+        private LeaveTypeService $leaveTypeService,
     ) {}
 
     public function listForUser(User $user, array $filters = []): LengthAwarePaginator
@@ -34,20 +37,18 @@ class LeaveRequestService
             ->orderByDesc('created_at');
 
         if (! $user->canViewAllLeaveRequests()) {
-            $employee = $user->employee;
+            $employee = $this->employeeAccessService->linkedEmployee($user);
 
             if (! $employee) {
                 throw new AccessDeniedHttpException('No employee profile linked to your account.');
             }
 
             if ($user->canApproveLeave()) {
-                $visibleEmployeeIds = Employee::query()
-                    ->where('company_id', $user->company_id)
-                    ->where(function ($query) use ($employee) {
-                        $query->where('manager_id', $employee->id)
-                            ->orWhere('id', $employee->id);
-                    })
-                    ->pluck('id');
+                $subordinateIds = $this->employeeAccessService->subordinateIdsForUser($user);
+                $visibleEmployeeIds = array_values(array_unique([
+                    ...$subordinateIds,
+                    $employee->id,
+                ]));
 
                 $query->whereIn('employee_id', $visibleEmployeeIds);
             } else {
@@ -204,6 +205,54 @@ class LeaveRequestService
         return $days;
     }
 
+    /**
+     * @param  array<int>|Collection<int, int>  $employeeIds
+     * @return Collection<string, LeaveRequestDay> keyed by "{employee_id}|{date}"
+     */
+    public function approvedLeaveDaysForEmployeesInRange(array|Collection $employeeIds, string $fromDate, string $toDate): Collection
+    {
+        $employeeIds = collect($employeeIds)->filter()->values();
+
+        if ($employeeIds->isEmpty()) {
+            return collect();
+        }
+
+        $days = LeaveRequestDay::query()
+            ->with(['leaveRequest.leaveType', 'leaveRequest.reviewedBy'])
+            ->whereDate('date', '>=', $fromDate)
+            ->whereDate('date', '<=', $toDate)
+            ->whereHas('leaveRequest', function ($query) use ($employeeIds) {
+                $query->whereIn('employee_id', $employeeIds)
+                    ->where('status', LeaveRequest::STATUS_APPROVED);
+            })
+            ->get()
+            ->keyBy(fn (LeaveRequestDay $day) => $day->leaveRequest->employee_id.'|'.$day->date->toDateString());
+
+        LeaveRequest::query()
+            ->with(['leaveType', 'reviewedBy'])
+            ->whereIn('employee_id', $employeeIds)
+            ->where('status', LeaveRequest::STATUS_APPROVED)
+            ->whereDate('from_date', '<=', $toDate)
+            ->whereDate('to_date', '>=', $fromDate)
+            ->get()
+            ->each(function (LeaveRequest $request) use (&$days, $fromDate, $toDate) {
+                foreach (CarbonPeriod::create(
+                    max($fromDate, $request->from_date->toDateString()),
+                    min($toDate, $request->to_date->toDateString()),
+                ) as $date) {
+                    $key = $request->employee_id.'|'.$date->toDateString();
+
+                    if ($days->has($key)) {
+                        continue;
+                    }
+
+                    $days->put($key, $this->syntheticLeaveDay($request, $date->toDateString()));
+                }
+            });
+
+        return $days;
+    }
+
     private function syntheticLeaveDay(LeaveRequest $request, string $date): LeaveRequestDay
     {
         $leaveDay = new LeaveRequestDay([
@@ -246,6 +295,9 @@ class LeaveRequestService
             ->where('company_id', $employee->company_id)
             ->where('status', 'active')
             ->findOrFail($data['leave_type_id']);
+
+        $this->assertLeaveTypeAssigned($employee, $leaveType);
+        $this->assertPaidLeaveAllowed($employee, $leaveType);
 
         $fromDate = Carbon::parse($data['from_date'])->toDateString();
         $toDate = Carbon::parse($data['to_date'])->toDateString();
@@ -323,7 +375,26 @@ class LeaveRequestService
 
             $this->leaveBalanceService->reserve($balance, $totalDays);
 
-            return $request->fresh()->load(['employee', 'leaveType', 'days', 'attachments', 'appliedBy']);
+            $fresh = $request->fresh()->load(['employee', 'leaveType', 'days', 'attachments', 'appliedBy']);
+
+            $this->activityLogService->logWorkflowRequest(
+                $user,
+                'leave',
+                $fresh,
+                (int) $employee->id,
+                'submitted',
+                'Leave request submitted.',
+                null,
+                request(),
+                [
+                    'leave_type' => $leaveType->name,
+                    'from_date' => $fromDate,
+                    'to_date' => $toDate,
+                    'total_days' => $totalDays,
+                ],
+            );
+
+            return $fresh;
         });
     }
 
@@ -363,7 +434,9 @@ class LeaveRequestService
 
         $request->loadMissing(['leaveType', 'attachments']);
 
-        if ($request->leaveType?->requires_proof && $request->attachments->isEmpty()) {
+        if ($request->leaveType?->requires_proof
+            && $request->attachments->isEmpty()
+            && ! $user->canBypassLeaveProofRequirement($request)) {
             throw ValidationException::withMessages([
                 'leave' => ['Supporting documents must be uploaded before this leave can be approved.'],
             ]);
@@ -385,7 +458,20 @@ class LeaveRequestService
 
             $this->leaveBalanceService->confirmUsage($balance, (float) $request->total_days);
 
-            return $request->fresh()->load(['employee', 'leaveType', 'days', 'attachments', 'appliedBy', 'reviewedBy']);
+            $fresh = $request->fresh()->load(['employee', 'leaveType', 'days', 'attachments', 'appliedBy', 'reviewedBy']);
+
+            $this->activityLogService->logWorkflowRequest(
+                $user,
+                'leave',
+                $fresh,
+                (int) $fresh->employee_id,
+                'approved',
+                'Leave request approved.',
+                null,
+                request(),
+            );
+
+            return $fresh;
         });
     }
 
@@ -413,7 +499,20 @@ class LeaveRequestService
 
             $this->leaveBalanceService->releasePending($balance, (float) $request->total_days);
 
-            return $request->fresh()->load(['employee', 'leaveType', 'days', 'attachments', 'appliedBy', 'reviewedBy']);
+            $fresh = $request->fresh()->load(['employee', 'leaveType', 'days', 'attachments', 'appliedBy', 'reviewedBy']);
+
+            $this->activityLogService->logWorkflowRequest(
+                $user,
+                'leave',
+                $fresh,
+                (int) $fresh->employee_id,
+                'rejected',
+                'Leave request rejected.',
+                trim($notes),
+                request(),
+            );
+
+            return $fresh;
         });
     }
 
@@ -441,7 +540,7 @@ class LeaveRequestService
             $this->leaveBalanceService->yearForDate($request->from_date->toDateString()),
         );
 
-        return DB::transaction(function () use ($request, $balance) {
+        return DB::transaction(function () use ($user, $request, $balance) {
             if ($request->status === LeaveRequest::STATUS_PENDING) {
                 $this->leaveBalanceService->releasePending($balance, (float) $request->total_days);
             }
@@ -452,7 +551,20 @@ class LeaveRequestService
 
             $request->update(['status' => LeaveRequest::STATUS_CANCELLED]);
 
-            return $request->fresh()->load(['employee', 'leaveType', 'days', 'attachments', 'appliedBy', 'reviewedBy']);
+            $fresh = $request->fresh()->load(['employee', 'leaveType', 'days', 'attachments', 'appliedBy', 'reviewedBy']);
+
+            $this->activityLogService->logWorkflowRequest(
+                $user,
+                'leave',
+                $fresh,
+                (int) $fresh->employee_id,
+                'cancelled',
+                'Leave request cancelled.',
+                null,
+                request(),
+            );
+
+            return $fresh;
         });
     }
 
@@ -464,7 +576,7 @@ class LeaveRequestService
     private function resolveApplicableEmployee(User $user, ?int $employeeId): Employee
     {
         if ($employeeId !== null) {
-            if (! $user->isCompanyAdmin() && ! $user->isHrManager() && ! $user->canManageLeaveTypes()) {
+            if (! $user->hasFullAccess() && ! $user->hasPermission('leave.manage')) {
                 throw new AccessDeniedHttpException('You cannot apply leave for other employees.');
             }
 
@@ -550,7 +662,7 @@ class LeaveRequestService
             return true;
         }
 
-        $weeklyOff = $this->attendancePolicyService->weeklyOffWeekdays($employee->company_id);
+        $weeklyOff = $this->attendancePolicyService->weeklyOffWeekdaysForEmployee($employee);
 
         return $this->attendancePolicyService->isWeeklyOff($date, $weeklyOff);
     }
@@ -671,6 +783,9 @@ class LeaveRequestService
             ->where('status', 'active')
             ->findOrFail($data['leave_type_id']);
 
+        $this->assertLeaveTypeAssigned($employee, $leaveType);
+        $this->assertPaidLeaveAllowed($employee, $leaveType);
+
         $fromDate = Carbon::parse($data['from_date'])->toDateString();
         $toDate = Carbon::parse($data['to_date'])->toDateString();
         $session = $data['session'] ?? LeaveRequestDay::SESSION_FULL;
@@ -779,6 +894,26 @@ class LeaveRequestService
         }
 
         return round($durationMinutes / $requiredMinutes, 3);
+    }
+
+    private function assertPaidLeaveAllowed(Employee $employee, LeaveType $leaveType): void
+    {
+        if (! $leaveType->is_paid || ! $employee->restrictsPaidLeave()) {
+            return;
+        }
+
+        throw ValidationException::withMessages([
+            'leave_type_id' => [$employee->paidLeaveRestrictionLabel() ?? 'Paid leave is not available for your current employment status.'],
+        ]);
+    }
+
+    private function assertLeaveTypeAssigned(Employee $employee, LeaveType $leaveType): void
+    {
+        if (! $this->leaveTypeService->isAssignedToEmployee($employee, $leaveType->id)) {
+            throw ValidationException::withMessages([
+                'leave_type_id' => ['This leave type is not assigned to the employee.'],
+            ]);
+        }
     }
 
     private function assertCanReview(User $user, LeaveRequest $request): void

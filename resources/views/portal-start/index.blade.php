@@ -33,8 +33,9 @@
                             id="attendance_portal_start_date"
                             name="attendance_portal_start_date"
                             max="9999-12-31"
+                            required
                         >
-                        <div class="form-text">Use a 4-digit year (YYYY-MM-DD).</div>
+                        <div class="form-text">Set once for the company. This date cannot be changed after saving.</div>
                         <div class="invalid-feedback"></div>
                     </div>
 
@@ -42,7 +43,6 @@
 
                     <div class="d-flex flex-wrap gap-2">
                         <button type="submit" class="btn btn-primary" id="portalStartSubmitBtn">Save Portal Start Day</button>
-                        <button type="button" class="btn btn-outline-secondary" id="portalStartClearBtn">Clear</button>
                     </div>
                 </div>
             </form>

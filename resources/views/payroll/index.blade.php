@@ -17,6 +17,7 @@
     <div class="content-card mb-4">
         <div class="content-card-body">
             <h2 class="h6 mb-3">Generate Payroll</h2>
+            <p class="small text-muted mb-3">Approved expense reimbursements are included when payroll is generated or regenerated. Expenses must be approved with “Claim Reimbursement” enabled.</p>
             <form id="payrollGenerateForm" class="row g-3 align-items-end">
                 <div class="col-md-3">
                     <label for="payrollYear" class="form-label">Year</label>
@@ -54,7 +55,6 @@
                     <button type="button" class="btn btn-primary" id="payrollViewBtn" disabled>View Payslip</button>
                     <button type="button" class="btn btn-outline-secondary" id="payrollDownloadBtn" disabled>Download</button>
                     <button type="button" class="btn btn-outline-success" id="payrollExportBtn" disabled>Export Excel</button>
-                    <button type="button" class="btn btn-outline-danger" id="payrollDeletePeriodBtn" disabled>Delete Period</button>
                 </div>
             </div>
 
@@ -72,6 +72,8 @@
                                 <th class="text-end">LOP Days</th>
                                 <th class="text-end">Gross Salary</th>
                                 <th class="text-end">Net Salary</th>
+                                <th class="text-end">Expenses</th>
+                                <th class="text-end">Total Payable</th>
                                 <th class="text-center">Payslip Preview</th>
                             </tr>
                         </thead>

@@ -56,6 +56,8 @@
 
         attendanceIndex: @json(route('web.attendance.index')),
 
+        attendanceOverview: @json(route('web.attendance.overview')),
+
         attendanceRegularizeIndex: @json(route('web.attendance.regularize.index')),
 
         holidaysIndex: @json(route('web.masters.attendance.holidays.index')),
@@ -77,6 +79,12 @@
         leaveManageBalances: @json(route('web.leave.manage-balances')),
 
         leaveShow: @json(url('/leave')),
+
+        requestsIndex: @json(route('web.requests.index')),
+
+        projectsIndex: @json(route('web.projects.index')),
+
+        timesheetsIndex: @json(route('web.timesheets.index')),
 
         leaveTypesIndex: @json(route('web.masters.leave-types.index')),
 

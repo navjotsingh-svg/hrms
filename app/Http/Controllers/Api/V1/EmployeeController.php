@@ -52,6 +52,7 @@ class EmployeeController extends Controller
                 'can_view_all' => $this->employeeAccessService->canViewAll($user),
                 'can_view_profile' => $user->canViewEmployeeProfile(),
                 'can_review_profile' => $user->canViewEmployeeProfile(),
+                'can_assign_admin' => $user->canAssignCompanyAdmin(),
             ],
         ]);
     }
@@ -76,12 +77,13 @@ class EmployeeController extends Controller
     {
         $this->ensureAccessibleEmployee($request, $employee);
 
-        $employee->load(['department', 'departments', 'role', 'manager', 'shift', 'company', 'salary']);
+        $employee->load(['department', 'departments', 'role', 'manager', 'shift', 'company', 'salary', 'weeklyOffDays', 'leaveTypes']);
 
         return $this->success([
             'employee' => new EmployeeResource($employee),
             'capabilities' => [
                 'can_manage' => $this->employeeAccessService->canManage($request->user()),
+                'can_assign_admin' => $request->user()->canAssignCompanyAdmin(),
             ],
         ]);
     }
@@ -106,6 +108,7 @@ class EmployeeController extends Controller
                 'can_update_contact_info' => $user->canUpdateEmployeeContactInfo(),
                 'can_manage_salary' => $user->canEditEmployeeProfileWithoutApproval($employee),
                 'can_manage_assets' => $user->canEditEmployeeProfileWithoutApproval($employee),
+                'can_assign_admin' => $user->canAssignCompanyAdmin(),
             ],
             'pending_reviews' => $this->employeeProfileService->pendingReviewsForEmployee($user, $employee),
         ]);
@@ -176,6 +179,38 @@ class EmployeeController extends Controller
         return $this->success(
             ['employee' => new EmployeeResource($employee)],
             'Employee status updated successfully.'
+        );
+    }
+
+    public function assignCompanyAdmin(Request $request, Employee $employee): JsonResponse
+    {
+        $this->ensureAccessibleEmployee($request, $employee);
+
+        if (! $request->user()->canAssignCompanyAdmin()) {
+            abort(403, 'You are not allowed to assign company administrator access.');
+        }
+
+        $result = $this->employeeService->assignCompanyAdmin($employee);
+
+        return $this->success(
+            ['employee' => new EmployeeResource($result['employee'])],
+            $result['message'],
+        );
+    }
+
+    public function removeCompanyAdmin(Request $request, Employee $employee): JsonResponse
+    {
+        $this->ensureAccessibleEmployee($request, $employee);
+
+        if (! $request->user()->canAssignCompanyAdmin()) {
+            abort(403, 'You are not allowed to remove company administrator access.');
+        }
+
+        $result = $this->employeeService->removeCompanyAdmin($employee, $request->user());
+
+        return $this->success(
+            ['employee' => new EmployeeResource($result['employee'])],
+            $result['message'],
         );
     }
 

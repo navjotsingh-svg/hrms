@@ -33,6 +33,8 @@ class LeaveBalanceController extends Controller
         return $this->success([
             'year' => $year,
             'balances' => LeaveBalanceResource::collection($balances),
+            'restricts_paid_leave' => $employee->restrictsPaidLeave(),
+            'paid_leave_restriction_message' => $employee->paidLeaveRestrictionLabel(),
         ]);
     }
 
@@ -58,6 +60,32 @@ class LeaveBalanceController extends Controller
             ],
             'balances' => LeaveBalanceResource::collection($balances),
         ]);
+    }
+
+    public function overview(Request $request): JsonResponse
+    {
+        if (! $request->user()->canManageLeaveBalances()) {
+            abort(403);
+        }
+
+        $validated = $request->validate([
+            'year' => ['nullable', 'integer', 'min:2000', 'max:2100'],
+            'department_id' => ['nullable', 'integer'],
+            'search' => ['nullable', 'string', 'max:255'],
+            'status' => ['nullable', 'in:active,inactive,all'],
+            'per_page' => ['nullable', 'integer', 'in:10,25,50,100'],
+            'page' => ['nullable', 'integer', 'min:1'],
+        ]);
+
+        $year = (int) ($validated['year'] ?? now()->format('Y'));
+
+        return $this->success(
+            $this->leaveBalanceService->companyOverview(
+                (int) $request->user()->company_id,
+                $year,
+                $validated,
+            ),
+        );
     }
 
     public function update(UpdateLeaveBalanceRequest $request, EmployeeLeaveBalance $balance): JsonResponse

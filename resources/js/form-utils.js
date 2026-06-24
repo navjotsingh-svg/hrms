@@ -47,6 +47,67 @@ export const hasValidDateYear = (value) => {
     return Boolean(match && match[1].length === 4);
 };
 
+export const bindStatusToggle = (form, options = {}) => {
+    const {
+        toggleId = 'status_toggle',
+        hiddenId = 'status',
+    } = options;
+
+    const toggle = form.querySelector(`#${toggleId}`);
+    const hidden = form.querySelector(`#${hiddenId}`);
+
+    if (!toggle) {
+        return;
+    }
+
+    const sync = () => {
+        if (hidden) {
+            hidden.value = toggle.checked ? 'active' : 'inactive';
+        }
+    };
+
+    toggle.addEventListener('change', sync);
+    sync();
+};
+
+export const getStatusValue = (form, options = {}) => {
+    const hiddenId = options.hiddenId || 'status';
+    const toggleId = options.toggleId || 'status_toggle';
+    const hidden = form.querySelector(`#${hiddenId}`);
+
+    if (hidden?.value) {
+        return hidden.value;
+    }
+
+    const toggle = form.querySelector(`#${toggleId}`);
+
+    return toggle?.checked ? 'active' : 'inactive';
+};
+
+export const setStatusValue = (form, status, options = {}) => {
+    const toggleId = options.toggleId || 'status_toggle';
+    const hiddenId = options.hiddenId || 'status';
+    const isActive = status !== 'inactive';
+    const toggle = form.querySelector(`#${toggleId}`);
+    const hidden = form.querySelector(`#${hiddenId}`);
+
+    if (toggle) {
+        toggle.checked = isActive;
+    }
+
+    if (hidden) {
+        hidden.value = isActive ? 'active' : 'inactive';
+    }
+};
+
+export const initFormStatusToggles = () => {
+    document.querySelectorAll('form').forEach((form) => {
+        if (form.querySelector('#status_toggle')) {
+            bindStatusToggle(form);
+        }
+    });
+};
+
 export const setFieldError = (form, field, message) => {
     const input = form.querySelector(`#${field}`) || form.querySelector(`[name="${field}"]`);
 

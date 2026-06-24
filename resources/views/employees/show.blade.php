@@ -105,6 +105,9 @@
                 <li class="nav-item" role="presentation">
                     <button class="nav-link" id="emp-profile-other-tab" data-bs-toggle="tab" data-bs-target="#empProfileOtherPane" type="button" role="tab">Other</button>
                 </li>
+                <li class="nav-item" role="presentation">
+                    <button class="nav-link" id="emp-profile-timeline-tab" data-bs-toggle="tab" data-bs-target="#empProfileTimelinePane" type="button" role="tab">Timeline</button>
+                </li>
             </ul>
         </div>
 
@@ -248,6 +251,21 @@
 
             <div class="tab-pane fade" id="empProfileOtherPane" role="tabpanel">
                 @include('profile.partials.tabs.other')
+            </div>
+
+            <div class="tab-pane fade" id="empProfileTimelinePane" role="tabpanel">
+                <div class="profile-tab-section">
+                    <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
+                        <div>
+                            <h4 class="profile-info-card-title mb-1">Timeline</h4>
+                            <p class="text-muted small mb-0">Chronological audit of profile changes, requests, attendance, and auth events for this employee.</p>
+                        </div>
+                        <button type="button" class="btn btn-outline-secondary btn-sm" id="empProfileTimelineRefresh">Refresh</button>
+                    </div>
+                    <div id="empProfileTimelineList" class="activity-timeline">
+                        <div class="text-muted py-4 text-center">Open this tab to load timeline entries.</div>
+                    </div>
+                </div>
             </div>
         </div>
     </div>

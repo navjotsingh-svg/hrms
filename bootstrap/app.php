@@ -20,6 +20,7 @@ return Application::configure(basePath: dirname(__DIR__))
             'company.admin' => \App\Http\Middleware\EnsureCompanyAdmin::class,
             'company.permission' => \App\Http\Middleware\EnsureCompanyPermission::class,
             'web.auth' => \App\Http\Middleware\AuthenticateWebUser::class,
+            'log.activity' => \App\Http\Middleware\LogUserActivity::class,
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions) {

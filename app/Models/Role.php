@@ -21,11 +21,11 @@ class Role extends Model
     public const SLUG_EMPLOYEE = 'employee';
 
     protected $fillable = [
+        'company_id',
         'slug',
         'name',
         'description',
         'scope',
-        'level',
         'is_system',
         'status',
     ];
@@ -34,7 +34,6 @@ class Role extends Model
     {
         return [
             'is_system' => 'boolean',
-            'level' => 'integer',
         ];
     }
 

@@ -15,4 +15,12 @@ class AttendanceController extends Controller
 
         return view('attendance.today');
     }
+
+    public function overview()
+    {
+        $user = auth()->user();
+        abort_unless($user->canViewAllAttendance() || $user->canViewTeamAttendance(), 403);
+
+        return view('attendance.overview');
+    }
 }

@@ -22,6 +22,7 @@ class DashboardService
         private LeaveRequestService $leaveRequestService,
         private AttendanceRegularizationService $regularizationService,
         private EmployeeDocumentService $employeeDocumentService,
+        private RequestHubService $requestHubService,
     ) {}
 
     public function forUser(User $user): array
@@ -35,31 +36,35 @@ class DashboardService
         if (! $user->company_id) {
             return $this->homeBase($user, [
                 'role_label' => $user->role?->name ?? 'User',
-                'widgets' => [],
             ]);
         }
 
         return match (true) {
-            $user->isCompanyAdmin(), $user->isHrManager() => $this->forHrAdmin($user),
+            $user->hasFullAccess() => $this->forHrAdmin($user),
+            $this->usesManagementDashboard($user) => $this->forHrAdmin($user),
             $user->canApproveLeave() => $this->forApprover($user),
             default => $this->forEmployee($user),
         };
     }
 
+    private function usesManagementDashboard(User $user): bool
+    {
+        return $user->canViewEmployees()
+            || $user->canViewAllAttendance()
+            || $user->canApproveLeave()
+            || $user->canReviewEmployeeDocuments()
+            || $user->canManageLeaveTypes()
+            || $user->canViewReports()
+            || $user->canViewAllExpenses()
+            || $user->canManagePayroll()
+            || $user->canManageHiring();
+    }
+
     private function forSuperAdmin(User $user): array
     {
-        $activeCompanies = Company::query()->where('status', 'active')->count();
-        $inactiveCompanies = Company::query()->where('status', 'inactive')->count();
-
         return $this->homeBase($user, [
             'role_label' => 'Super Admin',
             'is_super_admin' => true,
-            'widgets' => [
-                $this->widget('companies_total', 'Total Companies', Company::count(), 'All registered tenants', 'primary', route('web.companies.index'), '🏢'),
-                $this->widget('companies_active', 'Active Companies', $activeCompanies, 'Currently active', 'success', route('web.companies.index'), '✅'),
-                $this->widget('companies_inactive', 'Inactive Companies', $inactiveCompanies, 'Suspended or inactive', 'warning', route('web.companies.index'), '⏸️'),
-                $this->widget('employees_platform', 'Platform Employees', Employee::count(), 'Across all companies', 'info', route('web.companies.index'), '👥'),
-            ],
             'show_punch_widget' => false,
             'policy_link' => route('web.companies.index'),
             'policy_label' => 'Manage companies',
@@ -69,23 +74,10 @@ class DashboardService
 
     private function forHrAdmin(User $user): array
     {
-        $companyId = (int) $user->company_id;
-        $attendance = $this->attendanceSnapshot($companyId);
-
         return $this->homeBase($user, [
-            'role_label' => $user->isCompanyAdmin() ? 'Company Admin' : 'HR Manager',
+            'role_label' => $user->hasFullAccess() ? 'Company Admin' : ($user->role?->name ?? 'Manager'),
             'is_super_admin' => false,
             'company' => $user->company ? ['name' => $user->company->name, 'status' => $user->company->status] : null,
-            'widgets' => array_values(array_filter([
-                $user->canViewEmployees() ? $this->widget('employees_active', 'Active Employees', $this->activeEmployeeCount($companyId), 'Workforce strength', 'primary', route('web.employees.index'), '👥') : null,
-                $user->canViewAllAttendance() ? $this->widget('present_today', 'Present Today', $attendance['present'], 'Marked attendance today', 'success', route('web.attendance.index'), '✅') : null,
-                $user->canViewAllAttendance() ? $this->widget('on_leave_today', 'On Leave Today', $attendance['on_leave'], 'Approved leave today', 'info', route('web.attendance.index'), '🏖️') : null,
-                $user->canViewAllAttendance() ? $this->widget('absent_today', 'Absent Today', $attendance['absent'], 'No punch & not on leave', 'warning', route('web.attendance.index'), '⚠️') : null,
-                $user->canApproveLeave() ? $this->widget('pending_leaves', 'Pending Leaves', $this->leaveRequestService->pendingCountForCompany($companyId, $user), 'Awaiting your approval', 'warning', route('web.leave.index').'?status=pending', '📅') : null,
-                $user->canReviewEmployeeDocuments() ? $this->widget('pending_documents', 'Pending Documents', $this->pendingDocumentsCount($companyId), 'Employee uploads to review', 'danger', route('web.employees.index'), '📄') : null,
-                $user->canReviewEmployeeDocuments() ? $this->widget('pending_profiles', 'Profile Reviews', $this->pendingProfileReviewsCount($companyId), 'Personal, family, compliance', 'danger', route('web.employees.index'), '📝') : null,
-                $this->widget('proofs_due', 'Proofs Due', $this->pendingProofsDueCount($companyId, $user), 'Leave waiting for documents', 'warning', route('web.leave.index').'?status=pending', '📎'),
-            ])),
             'show_punch_widget' => $user->canMarkAttendance(),
         ]);
     }
@@ -96,7 +88,6 @@ class DashboardService
             'role_label' => $user->role?->name ?? 'Approver',
             'is_super_admin' => false,
             'company' => $user->company ? ['name' => $user->company->name, 'status' => $user->company->status] : null,
-            'widgets' => [],
             'show_punch_widget' => $user->canMarkAttendance(),
         ]);
     }
@@ -107,7 +98,6 @@ class DashboardService
             'role_label' => $user->role?->name ?? 'Employee',
             'is_super_admin' => false,
             'company' => $user->company ? ['name' => $user->company->name, 'status' => $user->company->status] : null,
-            'widgets' => [],
             'show_punch_widget' => $user->canMarkAttendance(),
         ]);
     }
@@ -124,16 +114,15 @@ class DashboardService
             'celebrations' => $scopeCompanyId !== null || $platformScope
                 ? $this->celebrations($scopeCompanyId, $platformScope)
                 : $this->emptyCelebrations(),
-            'pending_approvals' => $this->canSeePendingApprovals($user)
-                ? $this->pendingApprovals($user)
-                : [],
+            'pending_approvals_count' => $this->canSeePendingApprovals($user)
+                ? ($this->requestHubService->summaryForUser($user)['pending_count'] ?? 0)
+                : 0,
             'show_pending_approvals' => $this->canSeePendingApprovals($user),
             'new_joinees' => $scopeCompanyId !== null || $platformScope
                 ? $this->newJoinees($scopeCompanyId, platformScope: $platformScope)
                 : [],
             'new_joinees_title' => 'New Joinees',
             'quick_actions' => $this->quickActions($user),
-            'widgets' => [],
             'show_punch_widget' => false,
             'policy_link' => route('web.leave.index'),
             'policy_label' => 'View leave policies',
@@ -148,9 +137,7 @@ class DashboardService
             return false;
         }
 
-        return $user->canApproveLeave()
-            || $user->canApproveRegularization()
-            || $user->canReviewEmployeeDocuments();
+        return $this->requestHubService->canReviewAny($user);
     }
 
     private function greetingName(User $user): string
@@ -332,62 +319,6 @@ class DashboardService
             ->all();
     }
 
-    private function pendingApprovals(User $user): array
-    {
-        $items = collect();
-
-        $this->leaveRequestService->pendingForReviewer($user)->each(function (LeaveRequest $request) use ($items) {
-            $items->push([
-                'id' => 'leave-'.$request->id,
-                'request_by' => $request->employee?->full_name ?? $request->appliedBy?->name ?? 'Employee',
-                'employee_code' => $request->employee?->employee_code ?? '—',
-                'request_type' => ($request->leaveType?->name ?? 'Leave').' Request',
-                'requested_on' => $request->created_at?->toIso8601String(),
-                'requested_on_label' => $request->created_at?->format('d M Y') ?? '—',
-                'status' => 'Pending',
-                'url' => route('web.leave.show', $request),
-                'sort' => $request->created_at?->timestamp ?? 0,
-            ]);
-        });
-
-        $this->regularizationService->pendingForReviewer($user)->each(function (AttendanceRegularizationRequest $request) use ($items) {
-            $items->push([
-                'id' => 'regularization-'.$request->id,
-                'request_by' => $request->employee?->full_name ?? $request->appliedBy?->name ?? 'Employee',
-                'employee_code' => $request->employee?->employee_code ?? '—',
-                'request_type' => 'Attendance Regularization',
-                'requested_on' => $request->created_at?->toIso8601String(),
-                'requested_on_label' => $request->created_at?->format('d M Y') ?? '—',
-                'status' => 'Pending',
-                'url' => route('web.attendance.regularize.index'),
-                'sort' => $request->created_at?->timestamp ?? 0,
-            ]);
-        });
-
-        if ($user->canReviewEmployeeDocuments()) {
-            $this->employeeDocumentService->pendingForReviewer($user)->each(function (EmployeeDocument $document) use ($items) {
-                $items->push([
-                    'id' => 'document-'.$document->id,
-                    'request_by' => $document->employee?->full_name ?? 'Employee',
-                    'employee_code' => $document->employee?->employee_code ?? '—',
-                    'request_type' => ($document->documentType?->name ?? 'Document').' Upload',
-                    'requested_on' => $document->created_at?->toIso8601String(),
-                    'requested_on_label' => $document->created_at?->format('d M Y') ?? '—',
-                    'status' => 'Pending',
-                    'url' => route('web.employees.show', $document->employee_id),
-                    'sort' => $document->created_at?->timestamp ?? 0,
-                ]);
-            });
-        }
-
-        return $items
-            ->sortByDesc('sort')
-            ->take(10)
-            ->map(fn ($item) => collect($item)->except('sort')->all())
-            ->values()
-            ->all();
-    }
-
     private function quickActions(User $user): array
     {
         if ($user->isSuperAdmin()) {
@@ -406,6 +337,14 @@ class DashboardService
         }
 
         $actions = [];
+
+        if ($user->canViewAllLeaveRequests()) {
+            $actions[] = [
+                'label' => 'Leave Calendar',
+                'url' => route('web.leave.calendar'),
+                'enabled' => true,
+            ];
+        }
 
         if ($user->canApplyLeave()) {
             $actions[] = [

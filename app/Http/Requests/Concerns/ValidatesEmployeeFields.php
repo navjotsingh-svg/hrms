@@ -68,9 +68,14 @@ trait ValidatesEmployeeFields
             'role_id' => [
                 'required',
                 'integer',
-                Rule::exists('roles', 'id')->where(function ($query) {
+                Rule::exists('roles', 'id')->where(function ($query) use ($companyId) {
                     $query->where('scope', 'company')
-                        ->whereNotIn('slug', [Role::SLUG_SUPER_ADMIN, Role::SLUG_COMPANY_ADMIN]);
+                        ->whereNotIn('slug', [Role::SLUG_SUPER_ADMIN, Role::SLUG_COMPANY_ADMIN])
+                        ->where(function ($builder) use ($companyId) {
+                            $builder
+                                ->whereNull('company_id')
+                                ->orWhere('company_id', $companyId);
+                        });
                 }),
             ],
             'manager_id' => [
@@ -82,6 +87,19 @@ trait ValidatesEmployeeFields
                 'required',
                 'integer',
                 Rule::exists('shifts', 'id')->where(fn ($query) => $query->where('company_id', $companyId)),
+            ],
+            'weekly_off_mode' => ['required', Rule::in(['company_default', 'custom'])],
+            'weekly_off_weekdays' => [
+                Rule::excludeIf(fn () => ($this->input('weekly_off_mode') ?? 'company_default') !== 'custom'),
+                'required',
+                'array',
+                'min:1',
+            ],
+            'weekly_off_weekdays.*' => ['integer', 'min:0', 'max:6'],
+            'leave_type_ids' => ['required', 'array', 'min:1'],
+            'leave_type_ids.*' => [
+                'integer',
+                Rule::exists('leave_types', 'id')->where(fn ($query) => $query->where('company_id', $companyId)->where('status', 'active')),
             ],
             'designation' => ['nullable', 'string', 'max:100'],
             'joining_date' => ['required', 'date', 'before_or_equal:today'],

@@ -12,6 +12,22 @@
     </div>
 
     <div class="topbar-actions d-flex align-items-center gap-3">
+        @if (Auth::user()->canViewAllLeaveRequests())
+            <button
+                type="button"
+                class="btn btn-link topbar-calendar-btn p-0"
+                data-bs-toggle="modal"
+                data-bs-target="#leaveCalendarModal"
+                aria-label="Open leave calendar"
+                title="Leave calendar"
+            >
+                <svg class="topbar-calendar-icon" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                    <path d="M7 2a1 1 0 0 1 1 1v1h8V3a1 1 0 1 1 2 0v1h1.5A2.5 2.5 0 0 1 22 6.5v13A2.5 2.5 0 0 1 19.5 22h-15A2.5 2.5 0 0 1 2 19.5v-13A2.5 2.5 0 0 1 4.5 4H6V3a1 1 0 0 1 1-1Zm12.5 7H4.5v10.5c0 .276.224.5.5.5h15a.5.5 0 0 0 .5-.5V9ZM6 6h-.5a.5.5 0 0 0-.5.5V7h14v-.5a.5.5 0 0 0-.5-.5H18v1a1 1 0 1 1-2 0V6H8v1a1 1 0 0 1-2 0V6Z"/>
+                    <path d="M15 14a1.5 1.5 0 1 1-3 0 1.5 1.5 0 0 1 3 0Z"/>
+                </svg>
+            </button>
+        @endif
+
         <div class="dropdown">
             <a class="topbar-user dropdown-toggle text-decoration-none" href="#" role="button" data-bs-toggle="dropdown" aria-expanded="false">
                 <div class="topbar-avatar">{{ strtoupper(substr(Auth::user()->name, 0, 1)) }}</div>

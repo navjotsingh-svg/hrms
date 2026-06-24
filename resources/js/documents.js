@@ -3,8 +3,10 @@ import {
     applyBackendErrors,
     clearFormErrors,
     focusFirstInvalidField,
+    getStatusValue,
     setFieldError,
     setFlashMessage,
+    setStatusValue,
     setSubmitLoading,
 } from './form-utils';
 
@@ -40,7 +42,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         description: form.querySelector('#description')?.value.trim() || null,
         is_required: form.querySelector('#is_required')?.checked ?? false,
         allow_multiple: form.querySelector('#allow_multiple')?.value === '1',
-        status: form.querySelector('#status')?.value || 'active',
+        status: getStatusValue(form),
     });
 
     const validateForm = () => {
@@ -64,7 +66,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             form.querySelector('#name').value = documentType.name || '';
             form.querySelector('#code').value = documentType.code || '';
             form.querySelector('#description').value = documentType.description || '';
-            form.querySelector('#status').value = documentType.status || 'active';
+            setStatusValue(form, documentType.status || 'active');
             form.querySelector('#is_required').checked = Boolean(documentType.is_required);
             form.querySelector('#allow_multiple').value = documentType.allow_multiple ? '1' : '0';
         } catch (error) {

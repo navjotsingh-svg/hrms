@@ -48,7 +48,8 @@
                     <tr>
                         <th class="companies-th-serial">#</th>
                         <th>Holiday</th>
-                        <th>Date</th>
+                        <th>Date Range</th>
+                        <th>Fixed / Variable</th>
                         <th>Type</th>
                         <th>Status</th>
                         <th class="companies-th-actions">Actions</th>
@@ -56,7 +57,7 @@
                 </thead>
                 <tbody id="holidaysTableBody">
                     <tr>
-                        <td colspan="6" class="text-center text-muted py-5">Loading holidays...</td>
+                        <td colspan="7" class="text-center text-muted py-5">Loading holidays...</td>
                     </tr>
                 </tbody>
             </table>

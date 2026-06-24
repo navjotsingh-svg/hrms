@@ -42,6 +42,13 @@
             </footer>
         </div>
     </div>
+
+    @auth
+        @if (Auth::user()->canViewAllLeaveRequests())
+            @include('layouts.partials.leave-calendar-modal')
+        @endif
+    @endauth
+
     @yield('scripts')
     @stack('scripts')
 </body>

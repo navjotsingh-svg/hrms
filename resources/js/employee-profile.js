@@ -12,7 +12,7 @@ const EMPLOYMENT_LABELS = {
 
 const PROBATION_STATUS_LABELS = {
     on_probation: 'On Probation',
-    confirmed: 'Confirmed',
+    confirmed: 'Completed',
     extended: 'Extended',
     not_applicable: 'Not Applicable',
 };
@@ -955,6 +955,73 @@ document.addEventListener('DOMContentLoaded', async () => {
         showAlert('Employee not found.');
         return;
     }
+
+    const renderTimeline = (entries = []) => {
+        const container = document.getElementById('empProfileTimelineList');
+
+        if (!container) {
+            return;
+        }
+
+        if (!entries.length) {
+            container.innerHTML = '<div class="text-muted py-4 text-center">No timeline entries found for this employee yet.</div>';
+            return;
+        }
+
+        container.innerHTML = entries.map((entry) => {
+            const changes = [];
+
+            if (entry.old_values && entry.new_values) {
+                Object.keys(entry.new_values).forEach((key) => {
+                    changes.push(`<div class="small"><strong>${key}:</strong> ${entry.old_values[key] ?? '—'} → ${entry.new_values[key] ?? '—'}</div>`);
+                });
+            }
+
+            return `
+                <div class="activity-timeline-item">
+                    <div class="activity-timeline-marker ${entry.status === 'failure' ? 'is-failure' : ''}"></div>
+                    <div class="activity-timeline-body">
+                        <div class="d-flex flex-wrap justify-content-between gap-2">
+                            <strong>${entry.message || entry.action || 'Activity'}</strong>
+                            <span class="text-muted small">${formatDateTime(entry.logged_at)}</span>
+                        </div>
+                        <div class="text-muted small">${entry.user_name || 'System'} · ${entry.module || 'system'} · ${entry.action || 'activity'}</div>
+                        ${entry.action_note ? `<div class="small mt-1">Note: ${entry.action_note}</div>` : ''}
+                        ${entry.failure_reason ? `<div class="small text-danger mt-1">${entry.failure_reason}</div>` : ''}
+                        ${changes.length ? `<div class="mt-2">${changes.join('')}</div>` : ''}
+                    </div>
+                </div>
+            `;
+        }).join('');
+    };
+
+    let timelineLoaded = false;
+
+    const loadTimeline = async () => {
+        const container = document.getElementById('empProfileTimelineList');
+
+        if (!container) {
+            return;
+        }
+
+        container.innerHTML = '<div class="text-muted py-4 text-center">Loading timeline…</div>';
+
+        try {
+            const { data } = await api.get(`/activity-logs/employees/${employeeId}/timeline`);
+            renderTimeline(data.data?.entries || data.entries || []);
+            timelineLoaded = true;
+        } catch (error) {
+            container.innerHTML = `<div class="text-danger py-4 text-center">${getErrorMessage(error, 'Unable to load timeline.')}</div>`;
+        }
+    };
+
+    document.getElementById('emp-profile-timeline-tab')?.addEventListener('shown.bs.tab', () => {
+        if (!timelineLoaded) {
+            loadTimeline();
+        }
+    });
+
+    document.getElementById('empProfileTimelineRefresh')?.addEventListener('click', loadTimeline);
 
     try {
         await loadProfile();

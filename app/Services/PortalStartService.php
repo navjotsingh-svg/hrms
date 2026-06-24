@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Models\Company;
 use App\Models\Employee;
 use Carbon\Carbon;
+use Illuminate\Validation\ValidationException;
 
 class PortalStartService
 {
@@ -17,12 +18,25 @@ class PortalStartService
             'attendance_portal_start_date' => $startDate?->toDateString(),
             'attendance_portal_start_date_label' => $startDate?->format('d M Y'),
             'is_configured' => $startDate !== null,
+            'is_locked' => $startDate !== null,
         ];
     }
 
     public function updateForCompany(int $companyId, ?string $startDate): array
     {
         $company = Company::query()->findOrFail($companyId);
+
+        if ($company->attendance_portal_start_date !== null) {
+            throw ValidationException::withMessages([
+                'attendance_portal_start_date' => ['Portal start day has already been set and cannot be changed.'],
+            ]);
+        }
+
+        if ($startDate === null || trim($startDate) === '') {
+            throw ValidationException::withMessages([
+                'attendance_portal_start_date' => ['Portal start date is required.'],
+            ]);
+        }
 
         $company->update([
             'attendance_portal_start_date' => $startDate,

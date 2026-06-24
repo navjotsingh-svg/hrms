@@ -6,11 +6,15 @@ use App\Mail\EmployeeWelcomeMail;
 use App\Models\Employee;
 use App\Models\EmployeeSalary;
 use App\Models\EmployeeSalaryRevision;
+use App\Models\EmployeeWeeklyOffDay;
+use App\Models\LeaveType;
+use App\Models\Role;
 use App\Models\User;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Str;
+use Symfony\Component\HttpKernel\Exception\AccessDeniedHttpException;
 
 class EmployeeService
 {
@@ -28,7 +32,7 @@ class EmployeeService
         'salary_effective_from',
     ];
 
-    public function __construct(private EmployeeAccessService $employeeAccessService) {}
+    public function __construct(private EmployeeAccessService $employeeAccessService, private ActivityLogService $activityLogService) {}
 
     public function listForCompany(int $companyId, array $filters = [], ?array $visibleEmployeeIds = null): LengthAwarePaginator
     {
@@ -76,11 +80,13 @@ class EmployeeService
 
         $salaryData = $this->extractSalaryData($data);
         $departmentIds = $this->extractDepartmentIds($data);
+        $weeklyOffData = $this->extractWeeklyOffData($data);
+        $leaveTypeIds = $this->extractLeaveTypeIds($data);
         $this->normalizeProbationData($data);
         $plainPassword = null;
         $employeeCode = $data['employee_code'];
 
-        $employee = DB::transaction(function () use ($companyId, $data, $givePortalAccess, $salaryData, $departmentIds, &$plainPassword, $employeeCode) {
+        $employee = DB::transaction(function () use ($companyId, $data, $givePortalAccess, $salaryData, $departmentIds, $weeklyOffData, $leaveTypeIds, &$plainPassword, $employeeCode) {
             $userId = null;
 
             if ($givePortalAccess) {
@@ -109,11 +115,13 @@ class EmployeeService
 
             $this->syncSalary($employee, $salaryData);
             $this->syncDepartments($employee, $departmentIds);
+            $this->syncWeeklyOffDays($employee, $weeklyOffData);
+            $this->syncLeaveTypes($employee, $leaveTypeIds);
 
             return $employee;
         });
 
-        $employee->load(['company', 'department', 'departments', 'role', 'manager', 'shift', 'salary']);
+        $employee->load(['company', 'department', 'departments', 'role', 'manager', 'shift', 'salary', 'weeklyOffDays', 'leaveTypes']);
         app(LeaveBalanceService::class)->ensureBalancesForEmployee($employee, (int) now()->format('Y'));
         $message = 'Employee created successfully.';
 
@@ -129,10 +137,36 @@ class EmployeeService
             $message = 'Employee created without portal access. You can grant access later.';
         }
 
+        $this->logEmployeeCreated($employee);
+
         return [
             'employee' => $employee,
             'message' => $message,
         ];
+    }
+
+    private function logEmployeeCreated(Employee $employee): void
+    {
+        $actor = request()?->user();
+
+        if ($actor) {
+            $this->activityLogService->logChange(
+                $actor,
+                'employees',
+                'created',
+                $employee,
+                (int) $employee->id,
+                'Employee profile created.',
+                [],
+                [
+                    'employee_code' => $employee->employee_code,
+                    'name' => $employee->full_name,
+                    'email' => $employee->email,
+                    'status' => $employee->status,
+                ],
+                request(),
+            );
+        }
     }
 
     public function update(Employee $employee, array $data): Employee
@@ -144,10 +178,17 @@ class EmployeeService
 
         $salaryData = $this->extractSalaryData($data);
         $departmentIds = $this->extractDepartmentIds($data);
+        $weeklyOffData = $this->extractWeeklyOffData($data);
+        $leaveTypeIds = $this->extractLeaveTypeIds($data);
         $this->normalizeProbationData($data);
         $plainPassword = null;
+        $trackedFields = [
+            'first_name', 'last_name', 'email', 'employee_code', 'department_id', 'role_id',
+            'status', 'employment_type', 'designation', 'manager_id', 'shift_id', 'phone', 'date_of_joining', 'probation_status',
+        ];
+        $before = $employee->only($trackedFields);
 
-        DB::transaction(function () use ($employee, $data, $givePortalAccess, $salaryData, $departmentIds, &$plainPassword) {
+        DB::transaction(function () use ($employee, $data, $givePortalAccess, $salaryData, $departmentIds, $weeklyOffData, $leaveTypeIds, &$plainPassword) {
             $employee->update($data);
 
             if ($salaryData !== null) {
@@ -155,6 +196,8 @@ class EmployeeService
             }
 
             $this->syncDepartments($employee, $departmentIds);
+            $this->syncWeeklyOffDays($employee, $weeklyOffData);
+            $this->syncLeaveTypes($employee, $leaveTypeIds);
 
             if ($givePortalAccess === true && ! $employee->user_id) {
                 $plainPassword = Str::password(12, symbols: false);
@@ -195,7 +238,67 @@ class EmployeeService
             }
         });
 
-        $employee = $employee->fresh()->load(['department', 'departments', 'role', 'manager', 'shift', 'company', 'salary']);
+        $employee = $employee->fresh()->load(['department', 'departments', 'role', 'manager', 'shift', 'company', 'salary', 'weeklyOffDays', 'leaveTypes']);
+
+        $actor = request()?->user();
+
+        if ($actor) {
+            $after = $employee->only($trackedFields);
+            $oldValues = [];
+            $newValues = [];
+
+            foreach ($trackedFields as $field) {
+                $previous = $before[$field] ?? null;
+                $current = $after[$field] ?? null;
+
+                if ((string) $previous !== (string) $current) {
+                    $oldValues[$field] = $previous;
+                    $newValues[$field] = $current;
+                }
+            }
+
+            if ($oldValues !== []) {
+                $this->activityLogService->logChange(
+                    $actor,
+                    'employees',
+                    'updated',
+                    $employee,
+                    (int) $employee->id,
+                    'Employee profile updated.',
+                    $oldValues,
+                    $newValues,
+                    request(),
+                );
+            }
+
+            if ($salaryData !== null) {
+                $this->activityLogService->logChange(
+                    $actor,
+                    'employees',
+                    'salary.updated',
+                    $employee,
+                    (int) $employee->id,
+                    'Employee salary details updated.',
+                    [],
+                    $this->sanitizeSalaryForLog($salaryData),
+                    request(),
+                );
+            }
+
+            if ($givePortalAccess === true && $employee->user_id) {
+                $this->activityLogService->logChange(
+                    $actor,
+                    'employees',
+                    'portal_access.granted',
+                    $employee,
+                    (int) $employee->id,
+                    'Portal access granted to employee.',
+                    [],
+                    ['portal_access_date' => $employee->portal_access_date],
+                    request(),
+                );
+            }
+        }
 
         if ($plainPassword) {
             try {
@@ -206,6 +309,154 @@ class EmployeeService
         }
 
         return $employee;
+    }
+
+    /** @return array{employee: Employee, message: string, granted_portal_access: bool} */
+    public function assignCompanyAdmin(Employee $employee): array
+    {
+        $adminRoleId = Role::idFor(Role::SLUG_COMPANY_ADMIN);
+
+        if (! $adminRoleId) {
+            throw new \RuntimeException('Company administrator role is not configured.');
+        }
+
+        $employee->loadMissing(['user', 'role', 'company']);
+
+        if ((int) $employee->role_id === (int) $adminRoleId) {
+            return [
+                'employee' => $employee,
+                'message' => 'This employee is already a company administrator.',
+                'granted_portal_access' => false,
+            ];
+        }
+
+        $plainPassword = null;
+        $grantedPortalAccess = false;
+        $previousRoleId = $employee->role_id;
+
+        DB::transaction(function () use ($employee, $adminRoleId, &$plainPassword, &$grantedPortalAccess) {
+            if (! $employee->user_id) {
+                $plainPassword = Str::password(12, symbols: false);
+                $fullName = trim("{$employee->first_name} ".($employee->last_name ?? ''));
+
+                $user = User::create([
+                    'company_id' => $employee->company_id,
+                    'role_id' => $adminRoleId,
+                    'name' => $fullName,
+                    'email' => $employee->email,
+                    'password' => $plainPassword,
+                    'email_verified_at' => now(),
+                ]);
+
+                $employee->update([
+                    'user_id' => $user->id,
+                    'role_id' => $adminRoleId,
+                    'portal_access_date' => now()->toDateString(),
+                ]);
+
+                $grantedPortalAccess = true;
+
+                return;
+            }
+
+            $employee->update(['role_id' => $adminRoleId]);
+            $employee->user?->update(['role_id' => $adminRoleId]);
+        });
+
+        $employee = $employee->fresh()->load(['department', 'departments', 'role', 'manager', 'shift', 'company']);
+
+        if ($grantedPortalAccess && $plainPassword) {
+            try {
+                Mail::to($employee->email)->send(new EmployeeWelcomeMail($employee, $plainPassword));
+            } catch (\Throwable $exception) {
+                report($exception);
+            }
+        }
+
+        $actor = request()?->user();
+
+        if ($actor) {
+            $this->activityLogService->logChange(
+                $actor,
+                'employees',
+                'admin.assigned',
+                $employee,
+                (int) $employee->id,
+                'Employee promoted to company administrator.',
+                ['role_id' => $previousRoleId],
+                ['role_id' => $adminRoleId],
+                request(),
+            );
+        }
+
+        $message = $grantedPortalAccess
+            ? 'Employee is now a company administrator. Portal access was enabled and welcome email sent.'
+            : 'Employee is now a company administrator.';
+
+        return [
+            'employee' => $employee,
+            'message' => $message,
+            'granted_portal_access' => $grantedPortalAccess,
+        ];
+    }
+
+    /** @return array{employee: Employee, message: string} */
+    public function removeCompanyAdmin(Employee $employee, User $actor): array
+    {
+        $adminRoleId = Role::idFor(Role::SLUG_COMPANY_ADMIN);
+        $employeeRoleId = Role::idFor(Role::SLUG_EMPLOYEE);
+
+        if (! $adminRoleId || ! $employeeRoleId) {
+            throw new \RuntimeException('Required roles are not configured.');
+        }
+
+        $employee->loadMissing(['user', 'role']);
+
+        if ((int) $employee->role_id !== (int) $adminRoleId) {
+            return [
+                'employee' => $employee->load(['department', 'departments', 'role', 'manager', 'shift']),
+                'message' => 'This employee is not a company administrator.',
+            ];
+        }
+
+        $actor->loadMissing('employee');
+
+        if ($actor->employee && (int) $actor->employee->id === (int) $employee->id) {
+            throw new AccessDeniedHttpException('You cannot remove your own administrator access.');
+        }
+
+        $adminCount = User::query()
+            ->where('company_id', $employee->company_id)
+            ->where('role_id', $adminRoleId)
+            ->count();
+
+        if ($adminCount <= 1) {
+            throw new AccessDeniedHttpException('At least one company administrator is required.');
+        }
+
+        DB::transaction(function () use ($employee, $employeeRoleId) {
+            $employee->update(['role_id' => $employeeRoleId]);
+            $employee->user?->update(['role_id' => $employeeRoleId]);
+        });
+
+        $employee = $employee->fresh()->load(['department', 'departments', 'role', 'manager', 'shift', 'company']);
+
+        $this->activityLogService->logChange(
+            $actor,
+            'employees',
+            'admin.removed',
+            $employee,
+            (int) $employee->id,
+            'Company administrator access removed from employee.',
+            ['role_id' => $adminRoleId],
+            ['role_id' => $employeeRoleId],
+            request(),
+        );
+
+        return [
+            'employee' => $employee,
+            'message' => 'Company administrator access removed. Employee role restored.',
+        ];
     }
 
     public function resendWelcomeEmail(Employee $employee): string
@@ -336,6 +587,92 @@ class EmployeeService
         $employee->departments()->sync($departmentIds);
     }
 
+    /** @return array{mode: string, weekdays: array<int, int>} */
+    private function extractWeeklyOffData(array &$data): array
+    {
+        $mode = $data['weekly_off_mode'] ?? Employee::WEEKLY_OFF_MODE_COMPANY;
+        $weekdays = $data['weekly_off_weekdays'] ?? [];
+
+        unset($data['weekly_off_weekdays']);
+
+        $mode = in_array($mode, [Employee::WEEKLY_OFF_MODE_COMPANY, Employee::WEEKLY_OFF_MODE_CUSTOM], true)
+            ? $mode
+            : Employee::WEEKLY_OFF_MODE_COMPANY;
+
+        $data['weekly_off_mode'] = $mode;
+
+        return [
+            'mode' => $mode,
+            'weekdays' => is_array($weekdays)
+                ? array_values(array_unique(array_map('intval', $weekdays)))
+                : [],
+        ];
+    }
+
+    /** @param  array{mode: string, weekdays: array<int, int>}  $weeklyOffData */
+    private function syncWeeklyOffDays(Employee $employee, array $weeklyOffData): void
+    {
+        if ($weeklyOffData['mode'] === Employee::WEEKLY_OFF_MODE_COMPANY) {
+            $employee->weeklyOffDays()->delete();
+
+            return;
+        }
+
+        $weekdays = array_values(array_filter(
+            $weeklyOffData['weekdays'],
+            fn (int $weekday) => $weekday >= 0 && $weekday <= 6,
+        ));
+
+        $employee->weeklyOffDays()->delete();
+
+        foreach ($weekdays as $weekday) {
+            EmployeeWeeklyOffDay::create([
+                'employee_id' => $employee->id,
+                'weekday' => $weekday,
+            ]);
+        }
+    }
+
+    /** @return array<int, int>|null */
+    private function extractLeaveTypeIds(array &$data): ?array
+    {
+        if (! array_key_exists('leave_type_ids', $data)) {
+            return null;
+        }
+
+        $leaveTypeIds = array_values(array_unique(array_filter(array_map(
+            'intval',
+            $data['leave_type_ids'] ?? [],
+        ))));
+
+        unset($data['leave_type_ids']);
+
+        return $leaveTypeIds;
+    }
+
+    /** @param  array<int, int>|null  $leaveTypeIds */
+    private function syncLeaveTypes(Employee $employee, ?array $leaveTypeIds): void
+    {
+        if ($leaveTypeIds === null) {
+            return;
+        }
+
+        $validIds = LeaveType::query()
+            ->where('company_id', $employee->company_id)
+            ->where('status', 'active')
+            ->whereIn('id', $leaveTypeIds)
+            ->pluck('id')
+            ->all();
+
+        $syncData = [];
+
+        foreach ($validIds as $leaveTypeId) {
+            $syncData[$leaveTypeId] = ['company_id' => $employee->company_id];
+        }
+
+        $employee->leaveTypes()->sync($syncData);
+    }
+
     private function normalizeProbationData(array &$data): void
     {
         $applicable = (bool) ($data['probation_applicable'] ?? false);
@@ -420,5 +757,13 @@ class EmployeeService
                 'ifsc_code' => $existing?->ifsc_code,
             ]
         );
+    }
+
+    /** @param  array<string, mixed>  $salaryData */
+    private function sanitizeSalaryForLog(array $salaryData): array
+    {
+        return collect($salaryData)
+            ->except(['account_number'])
+            ->all();
     }
 }

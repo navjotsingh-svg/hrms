@@ -183,14 +183,10 @@
         @error('timezone')<div class="invalid-feedback d-block">{{ $message }}</div>@enderror
     </div>
 
-    <div class="col-md-6">
-        <label for="status" class="form-label">Status <span class="text-danger">*</span></label>
-        <select name="status" id="status" class="form-select @error('status') is-invalid @enderror" required>
-            <option value="active" {{ old('status', $company?->status ?? 'active') == 'active' ? 'selected' : '' }}>Active</option>
-            <option value="inactive" {{ old('status', $company?->status) == 'inactive' ? 'selected' : '' }}>Inactive</option>
-        </select>
-        @error('status')<div class="invalid-feedback d-block">{{ $message }}</div>@enderror
-    </div>
+    @include('partials.status-toggle', [
+        'value' => old('status', $company?->status ?? 'active'),
+        'showError' => true,
+    ])
 
     <div class="col-12 company-description-field">
         <label for="description" class="form-label">Company Description</label>

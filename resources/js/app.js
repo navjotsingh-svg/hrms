@@ -1,6 +1,8 @@
 import './bootstrap';
 import 'bootstrap';
+import './leave-calendar';
 import api, { clearToken, destroyWebSession } from './api';
+import { initFormStatusToggles } from './form-utils';
 
 const SIDEBAR_COLLAPSED_KEY = 'hrms_sidebar_collapsed';
 
@@ -35,6 +37,8 @@ const setSidebarCollapsed = (collapsed) => {
 };
 
 document.addEventListener('DOMContentLoaded', () => {
+    initFormStatusToggles();
+
     const sidebarToggle = document.getElementById('sidebarDesktopToggle');
 
     if (sidebarToggle) {

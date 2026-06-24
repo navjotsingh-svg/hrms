@@ -9,7 +9,7 @@ class EmployeeAccessService
 {
     public function canManage(User $user): bool
     {
-        return $user->isCompanyAdmin() || $user->hasPermission('employees.manage');
+        return $user->hasPermission('employees.manage');
     }
 
     public function canViewAny(User $user): bool
@@ -20,6 +20,53 @@ class EmployeeAccessService
     public function canViewAll(User $user): bool
     {
         return $this->canManage($user);
+    }
+
+    public function linkedEmployee(User $user): ?Employee
+    {
+        $user->loadMissing('employee');
+
+        if ($user->employee) {
+            return $user->employee;
+        }
+
+        if (! $user->company_id) {
+            return null;
+        }
+
+        return Employee::query()
+            ->where('company_id', $user->company_id)
+            ->where('user_id', $user->id)
+            ->first();
+    }
+
+    /**
+     * Active employees in the reporting tree below the signed-in user.
+     *
+     * @return array<int>
+     */
+    public function subordinateIdsForUser(User $user): array
+    {
+        $employee = $this->linkedEmployee($user);
+
+        if (! $employee) {
+            return [];
+        }
+
+        $subordinateIds = $this->descendantIds((int) $employee->id, (int) $user->company_id);
+
+        if ($subordinateIds === []) {
+            return [];
+        }
+
+        return Employee::query()
+            ->where('company_id', $user->company_id)
+            ->where('status', 'active')
+            ->whereIn('id', $subordinateIds)
+            ->pluck('id')
+            ->map(fn ($id) => (int) $id)
+            ->values()
+            ->all();
     }
 
     /**
@@ -35,13 +82,7 @@ class EmployeeAccessService
             return [];
         }
 
-        $employee = $user->employee;
-
-        if (! $employee) {
-            return [];
-        }
-
-        return $this->descendantIds($employee->id, (int) $user->company_id);
+        return $this->subordinateIdsForUser($user);
     }
 
     public function canView(User $user, Employee $employee): bool
@@ -78,28 +119,27 @@ class EmployeeAccessService
      */
     public function descendantIds(int $managerEmployeeId, int $companyId): array
     {
-        $reportsByManager = Employee::query()
+        $childrenByManager = Employee::query()
             ->where('company_id', $companyId)
             ->whereNotNull('manager_id')
-            ->pluck('manager_id', 'id');
+            ->get(['id', 'manager_id'])
+            ->groupBy(fn (Employee $employee) => (int) $employee->manager_id);
 
         $descendants = [];
-        $queue = [$managerEmployeeId];
+        $queue = [(int) $managerEmployeeId];
 
         while ($queue !== []) {
             $currentManagerId = array_shift($queue);
 
-            foreach ($reportsByManager as $employeeId => $managerId) {
-                if ((int) $managerId !== $currentManagerId) {
-                    continue;
-                }
+            foreach ($childrenByManager->get($currentManagerId, collect()) as $report) {
+                $employeeId = (int) $report->id;
 
                 if (in_array($employeeId, $descendants, true)) {
                     continue;
                 }
 
-                $descendants[] = (int) $employeeId;
-                $queue[] = (int) $employeeId;
+                $descendants[] = $employeeId;
+                $queue[] = $employeeId;
             }
         }
 

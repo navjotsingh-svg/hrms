@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Http\Concerns\ApiResponse;
 use App\Http\Resources\UserResource;
 use App\Models\User;
+use App\Services\ActivityLogService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
@@ -17,6 +18,8 @@ class AuthController extends Controller
 {
     use ApiResponse;
 
+    public function __construct(private ActivityLogService $activityLogService) {}
+
     public function login(Request $request): JsonResponse
     {
         $credentials = $request->validate([
@@ -25,12 +28,32 @@ class AuthController extends Controller
             'device_name' => ['nullable', 'string', 'max:255'],
         ]);
 
-        $this->ensureIsNotRateLimited($credentials['email'], $request->ip());
+        try {
+            $this->ensureIsNotRateLimited($credentials['email'], $request->ip());
+        } catch (ValidationException $exception) {
+            $this->activityLogService->logAuthAttempt(
+                null,
+                $request,
+                false,
+                collect($exception->errors())->flatten()->first() ?: 'Too many login attempts.',
+                $credentials['email'],
+            );
+
+            throw $exception;
+        }
 
         $user = User::query()->where('email', $credentials['email'])->first();
 
         if (! $user || ! Hash::check($credentials['password'], $user->password)) {
             RateLimiter::hit($this->throttleKey($credentials['email'], $request->ip()));
+
+            $this->activityLogService->logAuthAttempt(
+                $user,
+                $request,
+                false,
+                trans('auth.failed'),
+                $credentials['email'],
+            );
 
             throw ValidationException::withMessages([
                 'email' => [trans('auth.failed')],
@@ -40,6 +63,14 @@ class AuthController extends Controller
         $user->load('company');
 
         if ($user->company_id && $user->company?->status === 'inactive') {
+            $this->activityLogService->logAuthAttempt(
+                $user,
+                $request,
+                false,
+                'Company account is inactive.',
+                $credentials['email'],
+            );
+
             throw ValidationException::withMessages([
                 'email' => ['Your company account is inactive. Please contact support.'],
             ]);
@@ -52,13 +83,15 @@ class AuthController extends Controller
 
         $user->load(['company', 'role']);
 
+        $this->activityLogService->logAuthAttempt($user, $request, true);
+
         return $this->success([
             'token' => $token,
             'token_type' => 'Bearer',
             'user' => new UserResource($user),
         ], 'Login successful.');
     }
-
+ 
     public function me(Request $request): JsonResponse
     {
         $user = $request->user()->load(['company', 'role']);
@@ -70,7 +103,11 @@ class AuthController extends Controller
 
     public function logout(Request $request): JsonResponse
     {
-        $request->user()->currentAccessToken()?->delete();
+        $user = $request->user();
+
+        $user->currentAccessToken()?->delete();
+
+        $this->activityLogService->logLogout($user, $request);
 
         return $this->success(null, 'Logged out successfully.');
     }

@@ -170,11 +170,10 @@ document.addEventListener('DOMContentLoaded', async () => {
     const renderStatusToggle = (company) => {
         const isActive = company.status === 'active';
         const switchId = `company-status-${company.id}`;
-        const pillClass = isActive ? 'company-status-pill--active' : 'company-status-pill--inactive';
 
         return `
             <div class="company-status-cell">
-                <div class="form-check form-switch company-status-switch mb-0">
+                <div class="form-check form-switch company-status-switch company-status-switch--solo mb-0">
                     <input
                         class="form-check-input"
                         type="checkbox"
@@ -182,14 +181,8 @@ document.addEventListener('DOMContentLoaded', async () => {
                         id="${switchId}"
                         data-status-toggle="${company.id}"
                         ${isActive ? 'checked' : ''}
+                        aria-label="Toggle company status"
                     >
-                    <label
-                        class="form-check-label company-status-pill ${pillClass}"
-                        for="${switchId}"
-                        data-status-label="${company.id}"
-                    >
-                        ${isActive ? 'Active' : 'Inactive'}
-                    </label>
                 </div>
             </div>
         `;
@@ -453,13 +446,11 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
     };
 
-    const setStatusLabel = (companyId, status) => {
-        const label = tableBody.querySelector(`[data-status-label="${companyId}"]`);
+    const setStatusToggle = (companyId, status) => {
+        const toggle = tableBody.querySelector(`[data-status-toggle="${companyId}"]`);
 
-        if (label) {
-            label.textContent = status === 'active' ? 'Active' : 'Inactive';
-            label.classList.remove('company-status-pill--active', 'company-status-pill--inactive');
-            label.classList.add(status === 'active' ? 'company-status-pill--active' : 'company-status-pill--inactive');
+        if (toggle) {
+            toggle.checked = status === 'active';
         }
     };
 
@@ -542,7 +533,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             await loadCompanies(currentPage);
         } catch (error) {
             toggle.checked = previousChecked;
-            setStatusLabel(companyId, previousChecked ? 'active' : 'inactive');
+            setStatusToggle(companyId, previousChecked ? 'active' : 'inactive');
             showAlert(getErrorMessage(error), 'danger');
         } finally {
             toggle.disabled = false;

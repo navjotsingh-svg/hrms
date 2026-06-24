@@ -21,8 +21,14 @@ class EnsureCompanyPermission
             abort(403, 'Your company account is inactive. Please contact support.');
         }
 
-        if ($user->isCompanyAdmin() || $user->hasPermission($permission)) {
+        if ($user->hasFullAccess()) {
             return $next($request);
+        }
+
+        foreach (array_map('trim', explode(',', $permission)) as $slug) {
+            if ($slug !== '' && $user->hasPermission($slug)) {
+                return $next($request);
+            }
         }
 
         abort(403, 'You do not have permission to access this area.');

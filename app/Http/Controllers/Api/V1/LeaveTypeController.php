@@ -54,8 +54,14 @@ class LeaveTypeController extends Controller
             'month' => ['nullable', 'integer', 'min:1', 'max:12'],
         ]);
 
-        $types = $this->leaveTypeService->activeForCompany($request->user()->company_id);
         $employee = $request->user()->employee;
+
+        if (! $employee) {
+            return $this->success(['leave_types' => []]);
+        }
+
+        $types = $this->leaveTypeService->activeForEmployee($employee)
+            ->reject(fn ($type) => $type->isHourlyLeave());
         $year = (int) ($validated['year'] ?? now()->format('Y'));
         $month = (int) ($validated['month'] ?? now()->format('n'));
 
@@ -83,6 +89,8 @@ class LeaveTypeController extends Controller
 
         return $this->success([
             'leave_types' => $leaveTypes,
+            'restricts_paid_leave' => $employee->restrictsPaidLeave(),
+            'paid_leave_restriction_message' => $employee->paidLeaveRestrictionLabel(),
         ]);
     }
 
@@ -113,7 +121,7 @@ class LeaveTypeController extends Controller
         $this->ensureCompanyType($request, $leaveType);
         $this->leaveTypeService->delete($leaveType);
 
-        return $this->success(null, 'Leave type deleted successfully.');
+        return $this->success(null, 'Leave type has been deleted successfully.');
     }
 
     private function ensureCompanyType(Request $request, LeaveType $leaveType): void

@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api\V1;
 use App\Http\Controllers\Controller;
 use App\Http\Concerns\ApiResponse;
 use App\Http\Requests\StoreAttendancePunchRequest;
+use App\Services\ActivityLogService;
 use App\Services\AttendanceService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -13,7 +14,10 @@ class AttendanceController extends Controller
 {
     use ApiResponse;
 
-    public function __construct(private AttendanceService $attendanceService) {}
+    public function __construct(
+        private AttendanceService $attendanceService,
+        private ActivityLogService $activityLogService,
+    ) {}
 
     public function status(Request $request): JsonResponse
     {
@@ -27,17 +31,27 @@ class AttendanceController extends Controller
 
     public function punch(StoreAttendancePunchRequest $request): JsonResponse
     {
-        $result = $this->attendanceService->punch(
-            $request->user(),
-            $request->file('selfie'),
-            (float) $request->input('latitude'),
-            (float) $request->input('longitude'),
-            $request->input('location_name'),
-        );
+        $user = $request->user();
 
-        $label = $result['punch']['punch_type'] === 'in' ? 'Punch in' : 'Punch out';
+        try {
+            $result = $this->attendanceService->punch(
+                $user,
+                $request->file('selfie'),
+                (float) $request->input('latitude'),
+                (float) $request->input('longitude'),
+                $request->input('location_name'),
+            );
 
-        return $this->success($result, "{$label} recorded successfully.", 201);
+            $this->activityLogService->logAttendancePunch($user, $request, true, $result);
+
+            $label = $result['punch']['punch_type'] === 'in' ? 'Punch in' : 'Punch out';
+
+            return $this->success($result, "{$label} recorded successfully.", 201);
+        } catch (\Throwable $error) {
+            $this->activityLogService->logAttendancePunch($user, $request, false, null, $error);
+
+            throw $error;
+        }
     }
 
     public function calendar(Request $request): JsonResponse
@@ -90,6 +104,26 @@ class AttendanceController extends Controller
         );
     }
 
+    public function monthMatrix(Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'month' => ['required', 'date_format:Y-m'],
+            'department_id' => ['nullable', 'integer'],
+            'search' => ['nullable', 'string', 'max:120'],
+            'status' => ['nullable', 'in:active,inactive,all'],
+            'page' => ['nullable', 'integer', 'min:1'],
+            'per_page' => ['nullable', 'integer', 'min:10', 'max:50'],
+        ]);
+
+        return $this->success(
+            $this->attendanceService->companyMonthMatrix(
+                $request->user(),
+                $validated['month'],
+                $validated,
+            )
+        );
+    }
+
     private function capabilities($user): array
     {
         $canViewAll = $this->attendanceService->canViewAllAttendance($user);
@@ -99,6 +133,7 @@ class AttendanceController extends Controller
             'can_mark' => $this->attendanceService->canMarkAttendance($user),
             'can_view_all' => $canViewAll,
             'can_view_team' => $canViewTeam,
+            'can_manage_attendance_masters' => $user->canManageAttendanceMasters(),
             'team_employees' => $canViewTeam ? $this->attendanceService->teamEmployeesForUser($user) : [],
             'self_employee_id' => $user->employee?->id,
             'default_view_own' => $user->isHrManager() && ! $user->isCompanyAdmin(),

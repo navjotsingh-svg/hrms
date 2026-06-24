@@ -2,28 +2,15 @@ import api, { getErrorMessage } from './api';
 import { applyBackendErrors, clearFormErrors, setSubmitLoading } from './form-utils';
 import { compressImageFiles } from './image-compress';
 
-const formatDurationLabel = (minutes) => {
-    const hours = Math.floor(minutes / 60);
-    const remaining = minutes % 60;
-
-    if (hours === 0) {
-        return `${remaining} min`;
-    }
-
-    if (remaining === 0) {
-        return hours === 1 ? '1 hour' : `${hours} hours`;
-    }
-
-    return `${hours}h ${remaining}m`;
-};
-
 const renderBalances = (container, balances) => {
-    if (!balances.length) {
+    const dayBalances = balances.filter((item) => !item.leave_type?.is_hourly_leave);
+
+    if (!dayBalances.length) {
         container.innerHTML = '<div class="text-muted">No balances available.</div>';
         return;
     }
 
-    container.innerHTML = balances.map((item) => {
+    container.innerHTML = dayBalances.map((item) => {
         const unit = item.balance_unit === 'hours' ? 'hour(s)' : 'day(s)';
         const quotaUnit = item.leave_type?.quota_unit === 'hours' ? 'hours' : 'days';
 
@@ -44,7 +31,9 @@ const renderBalances = (container, balances) => {
 document.addEventListener('DOMContentLoaded', async () => {
     const form = document.getElementById('leaveForm');
     const alertBox = document.getElementById('leaveFormAlert');
+    const paidLeaveRestrictionNotice = document.getElementById('paidLeaveRestrictionNotice');
     const submitBtn = document.getElementById('leaveSubmitBtn');
+    const applicationTypeSelect = document.getElementById('leave_application_type');
     const typeSelect = document.getElementById('leave_type_id');
     const balanceCards = document.getElementById('leaveBalanceCards');
     const proofInput = document.getElementById('proofs');
@@ -53,17 +42,18 @@ document.addEventListener('DOMContentLoaded', async () => {
     const sessionSelect = document.getElementById('session');
     const sessionWrap = document.getElementById('sessionWrap');
     const sessionHelpText = document.getElementById('sessionHelpText');
-    const hourlyDurationWrap = document.getElementById('hourlyDurationWrap');
-    const durationSelect = document.getElementById('duration_minutes');
-    const hourlyDeductionHint = document.getElementById('hourlyDeductionHint');
     const fromDateInput = document.getElementById('from_date');
+    const fromDateLabel = document.getElementById('fromDateLabel');
     const toDateInput = document.getElementById('to_date');
+    const toDateWrap = document.getElementById('toDateWrap');
     const daysPreview = document.getElementById('leaveDaysPreview');
     let leaveTypes = [];
     let previewTimer = null;
     let lastPreview = null;
 
-    if (!form) return;
+    if (!form) {
+        return;
+    }
 
     const showAlert = (message, type = 'danger') => {
         alertBox.className = `alert alert-${type}`;
@@ -71,63 +61,56 @@ document.addEventListener('DOMContentLoaded', async () => {
         alertBox.classList.remove('d-none');
     };
 
+    const updatePaidLeaveRestrictionNotice = (message) => {
+        if (!paidLeaveRestrictionNotice) {
+            return;
+        }
+
+        if (!message) {
+            paidLeaveRestrictionNotice.classList.add('d-none');
+            paidLeaveRestrictionNotice.textContent = '';
+
+            return;
+        }
+
+        paidLeaveRestrictionNotice.textContent = message;
+        paidLeaveRestrictionNotice.classList.remove('d-none');
+    };
+
+    const isSingleDayApplication = () => applicationTypeSelect?.value === 'single';
+
     const selectedLeaveType = () => leaveTypes.find((item) => String(item.id) === typeSelect.value);
 
-    const isHourlyType = () => Boolean(selectedLeaveType()?.is_hourly_leave);
+    const getFromDate = () => fromDateInput?.value?.trim() ?? '';
 
-    const syncDateFields = () => {
-        if (!isHourlyType()) {
-            toDateInput.readOnly = false;
-            return;
+    const getToDate = () => (isSingleDayApplication() ? getFromDate() : toDateInput?.value?.trim() ?? '');
+
+    const updateApplicationTypeUi = () => {
+        const single = isSingleDayApplication();
+
+        toDateWrap?.classList.toggle('d-none', single);
+        sessionWrap?.classList.toggle('d-none', !single);
+
+        if (fromDateLabel) {
+            fromDateLabel.innerHTML = single
+                ? 'Leave Date <span class="text-danger">*</span>'
+                : 'From Date <span class="text-danger">*</span>';
         }
 
-        toDateInput.value = fromDateInput.value;
-        toDateInput.readOnly = true;
-    };
-
-    const updateDurationOptions = () => {
-        const type = selectedLeaveType();
-        const durations = type?.allowed_hourly_durations || [60, 120];
-
-        durationSelect.innerHTML = durations.map((minutes) => `
-            <option value="${minutes}">${formatDurationLabel(minutes)}</option>
-        `).join('');
-
-        updateHourlyHint();
-    };
-
-    const updateHourlyHint = () => {
-        const type = selectedLeaveType();
-        const minutes = Number(durationSelect.value || 0);
-
-        if (!type || !minutes) {
-            hourlyDeductionHint.textContent = '';
-            return;
-        }
-
-        const hours = (minutes / 60).toFixed(2).replace(/\.?0+$/, '');
-        hourlyDeductionHint.textContent = `Deducts ${hours} hour(s) from your ${type.name} balance.`;
-    };
-
-    const updateSessionUi = () => {
-        const hourly = isHourlyType();
-
-        sessionWrap?.classList.toggle('d-none', hourly);
-        hourlyDurationWrap.classList.toggle('d-none', !hourly);
-        sessionHelpText.textContent = hourly
-            ? 'Short leave applies to a single date only.'
-            : 'Half-day applies only when from and to date are the same.';
-
-        if (hourly) {
-            sessionSelect.value = 'hourly';
-            syncDateFields();
-            updateDurationOptions();
-        } else {
-            if (sessionSelect.value === 'hourly') {
-                sessionSelect.value = 'full_day';
+        if (single) {
+            if (getFromDate()) {
+                toDateInput.value = getFromDate();
             }
-            toDateInput.readOnly = false;
+            sessionHelpText.textContent = 'Choose full day or half day for the selected date.';
+        } else {
+            sessionSelect.value = 'full_day';
+            sessionHelpText.textContent = 'Multiple-day leave applies as full days only.';
+            if (getFromDate() && !toDateInput.value) {
+                toDateInput.value = getFromDate();
+            }
         }
+
+        schedulePreview();
     };
 
     const loadBalances = async () => {
@@ -142,12 +125,13 @@ document.addEventListener('DOMContentLoaded', async () => {
     const updatePolicyHint = () => {
         const type = selectedLeaveType();
 
-        if (!policyHint) return;
+        if (!policyHint) {
+            return;
+        }
 
         if (!type) {
             policyHint.classList.add('d-none');
             policyHint.textContent = '';
-            updateSessionUi();
             return;
         }
 
@@ -155,8 +139,8 @@ document.addEventListener('DOMContentLoaded', async () => {
 
         if (type.monthly_remaining !== null && type.monthly_remaining !== undefined) {
             const unit = type.monthly_limit_unit === 'hours' ? 'hour(s)' : 'day(s)';
-            const monthLabel = fromDateInput?.value
-                ? new Date(`${fromDateInput.value}T00:00:00`).toLocaleDateString(undefined, { month: 'short', year: 'numeric' })
+            const monthLabel = getFromDate()
+                ? new Date(`${getFromDate()}T00:00:00`).toLocaleDateString(undefined, { month: 'short', year: 'numeric' })
                 : 'This month';
             hint += ` · ${monthLabel}: ${type.monthly_used ?? 0} used, ${type.monthly_remaining} ${unit} remaining`;
         }
@@ -168,7 +152,6 @@ document.addEventListener('DOMContentLoaded', async () => {
 
         policyHint.textContent = hint;
         policyHint.classList.toggle('d-none', !hint);
-        updateSessionUi();
     };
 
     const monthParamsFromDate = (dateValue) => {
@@ -188,15 +171,16 @@ document.addEventListener('DOMContentLoaded', async () => {
         try {
             const params = referenceDate
                 ? { year: referenceDate.getFullYear(), month: referenceDate.getMonth() + 1 }
-                : monthParamsFromDate(fromDateInput?.value);
+                : monthParamsFromDate(getFromDate());
             const { data } = await api.get('/leave-types/options', { params });
             const selectedId = typeSelect.value;
-            leaveTypes = data.data.leave_types || [];
+            leaveTypes = (data.data.leave_types || []).filter((type) => !type.is_hourly_leave);
+            updatePaidLeaveRestrictionNotice(data.data.paid_leave_restriction_message || '');
             typeSelect.innerHTML = '<option value="">Select leave type</option>' + leaveTypes.map((type) => `
                 <option value="${type.id}" data-requires-proof="${type.requires_proof ? '1' : '0'}">${type.name} (${type.code})</option>
             `).join('');
 
-            if (selectedId) {
+            if (selectedId && leaveTypes.some((type) => String(type.id) === selectedId)) {
                 typeSelect.value = selectedId;
             }
 
@@ -220,10 +204,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             return;
         }
 
-        const unit = isHourlyType() ? 'hour(s)' : 'working day(s)';
-        const countLabel = isHourlyType()
-            ? preview.working_days
-            : `${preview.working_days} ${unit}`;
+        const countLabel = `${preview.working_days} working day(s)`;
 
         if (!preview.valid) {
             daysPreview.className = 'form-text text-danger';
@@ -232,13 +213,16 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
 
         daysPreview.className = 'form-text text-success';
-        daysPreview.textContent = isHourlyType()
-            ? `Deducts ${countLabel} from your balance.`
+        daysPreview.textContent = isSingleDayApplication() && sessionSelect.value !== 'full_day'
+            ? `This half-day request uses ${countLabel}.`
             : `This request uses ${countLabel}. Weekends and holidays are excluded.`;
     };
 
     const runPreview = async () => {
-        if (!typeSelect.value || !fromDateInput.value || !toDateInput.value) {
+        const fromDate = getFromDate();
+        const toDate = getToDate();
+
+        if (!typeSelect.value || !fromDate || !toDate) {
             lastPreview = null;
             renderDaysPreview(null);
             return;
@@ -247,14 +231,10 @@ document.addEventListener('DOMContentLoaded', async () => {
         try {
             const payload = {
                 leave_type_id: Number(typeSelect.value),
-                from_date: fromDateInput.value,
-                to_date: toDateInput.value,
-                session: isHourlyType() ? 'hourly' : sessionSelect.value,
+                from_date: fromDate,
+                to_date: toDate,
+                session: isSingleDayApplication() ? sessionSelect.value : 'full_day',
             };
-
-            if (isHourlyType()) {
-                payload.duration_minutes = Number(durationSelect.value);
-            }
 
             const { data } = await api.post('/leave-requests/preview', payload);
             lastPreview = data.data.preview;
@@ -271,7 +251,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     };
 
     const refreshMonthlyContext = async () => {
-        const fromValue = fromDateInput?.value;
+        const fromValue = getFromDate();
 
         if (fromValue) {
             await loadTypes(new Date(`${fromValue}T00:00:00`));
@@ -282,20 +262,18 @@ document.addEventListener('DOMContentLoaded', async () => {
         schedulePreview();
     };
 
+    applicationTypeSelect?.addEventListener('change', updateApplicationTypeUi);
     typeSelect?.addEventListener('change', () => {
         updatePolicyHint();
         schedulePreview();
     });
-    sessionSelect?.addEventListener('change', () => {
-        updateSessionUi();
-        schedulePreview();
-    });
-    durationSelect?.addEventListener('change', () => {
-        updateHourlyHint();
-        schedulePreview();
-    });
+    sessionSelect?.addEventListener('change', schedulePreview);
     fromDateInput?.addEventListener('change', () => {
-        syncDateFields();
+        if (isSingleDayApplication()) {
+            toDateInput.value = getFromDate();
+        } else if (!toDateInput.value || toDateInput.value < getFromDate()) {
+            toDateInput.value = getFromDate();
+        }
         refreshMonthlyContext();
     });
     toDateInput?.addEventListener('change', schedulePreview);
@@ -303,13 +281,21 @@ document.addEventListener('DOMContentLoaded', async () => {
     proofInput?.addEventListener('change', () => {
         const files = Array.from(proofInput.files || []);
         proofPreview.textContent = files.length
-            ? `${files.length} file(s) selected: ${files.map((f) => f.name).join(', ')}`
+            ? `${files.length} file(s) selected: ${files.map((file) => file.name).join(', ')}`
             : '';
     });
 
     form.addEventListener('submit', async (event) => {
         event.preventDefault();
         clearFormErrors(form);
+
+        const fromDate = getFromDate();
+        const toDate = getToDate();
+
+        if (!fromDate || !toDate) {
+            showAlert('Please select the required date(s).');
+            return;
+        }
 
         await runPreview();
 
@@ -327,12 +313,9 @@ document.addEventListener('DOMContentLoaded', async () => {
 
             const formData = new FormData();
             formData.append('leave_type_id', typeSelect.value);
-            formData.append('from_date', fromDateInput.value);
-            formData.append('to_date', toDateInput.value);
-            formData.append('session', isHourlyType() ? 'hourly' : sessionSelect.value);
-            if (isHourlyType()) {
-                formData.append('duration_minutes', durationSelect.value);
-            }
+            formData.append('from_date', fromDate);
+            formData.append('to_date', toDate);
+            formData.append('session', isSingleDayApplication() ? sessionSelect.value : 'full_day');
             formData.append('reason', form.querySelector('#reason').value.trim());
             preparedFiles.forEach((file) => formData.append('proofs[]', file));
 
@@ -349,5 +332,6 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
     });
 
+    updateApplicationTypeUi();
     await Promise.all([loadTypes(), loadBalances()]);
 });

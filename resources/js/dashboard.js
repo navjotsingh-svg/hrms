@@ -1,13 +1,11 @@
 import api, { getErrorMessage } from './api';
 import { initAttendancePunch } from './attendance-punch';
-
-const VARIANT_CLASS = {
-    primary: 'stat-card-primary',
-    success: 'stat-card-success',
-    warning: 'stat-card-warning',
-    info: 'stat-card-info',
-    danger: 'stat-card-danger',
-};
+import {
+    bindRequestReviewHandlers,
+    bulkReviewRequests,
+    renderRequestActions,
+    renderSimplePagination,
+} from './request-review';
 
 const AVATAR_COLORS = ['#3b82f6', '#8b5cf6', '#ec4899', '#f59e0b', '#14b8a6', '#6366f1', '#ef4444', '#22c55e'];
 
@@ -15,6 +13,10 @@ let refreshTimer = null;
 let clockTimer = null;
 let punchInitialized = false;
 let punchController = null;
+let pendingPage = 1;
+let pendingItems = [];
+let pendingPagination = null;
+let selectedPendingKeys = new Set();
 
 const avatarColor = (seed = '') => {
     let hash = 0;
@@ -119,12 +121,42 @@ const renderCelebrations = (celebrations = {}) => {
     }
 };
 
-const renderPendingApprovals = (items = [], showSection = true) => {
+const updatePendingBulkBar = () => {
+    const bar = document.getElementById('dashboardPendingBulkBar');
+    const countLabel = document.getElementById('dashboardPendingSelectedCount');
+    const count = selectedPendingKeys.size;
+
+    bar?.classList.toggle('d-none', count === 0);
+    bar?.classList.toggle('d-flex', count > 0);
+
+    if (countLabel) {
+        countLabel.textContent = `${count} selected`;
+    }
+};
+
+const updatePendingSelectAll = () => {
+    const selectAll = document.getElementById('dashboardPendingSelectAll');
+    const reviewable = pendingItems.filter((item) => item.can_review && item.review_kind && item.review_target);
+
+    if (!selectAll) {
+        return;
+    }
+
+    selectAll.disabled = reviewable.length === 0;
+    selectAll.checked = reviewable.length > 0 && reviewable.every((item) => selectedPendingKeys.has(item.key));
+    selectAll.indeterminate = reviewable.some((item) => selectedPendingKeys.has(item.key))
+        && !selectAll.checked;
+};
+
+const renderPendingApprovals = (items = [], pagination = null, showSection = true) => {
     const card = document.getElementById('dashboardPendingCard');
     const body = document.getElementById('dashboardPendingBody');
     const empty = document.getElementById('dashboardPendingEmpty');
     const tableWrap = document.getElementById('dashboardPendingTableWrap');
     const count = document.getElementById('dashboardPendingCount');
+    const paginationWrap = document.getElementById('dashboardPendingPaginationWrap');
+    const paginationInfo = document.getElementById('dashboardPendingPaginationInfo');
+    const paginationList = document.getElementById('dashboardPendingPaginationList');
 
     card?.classList.toggle('d-none', !showSection);
 
@@ -132,32 +164,85 @@ const renderPendingApprovals = (items = [], showSection = true) => {
         return;
     }
 
+    pendingItems = items;
+
+    if (pagination) {
+        pendingPagination = pagination;
+    }
+
+    const activePagination = pagination || pendingPagination;
+    const totalCount = activePagination?.total ?? items.length;
+
     if (count) {
-        count.textContent = String(items.length);
-        count.classList.toggle('d-none', items.length === 0);
+        count.textContent = String(totalCount);
+        count.classList.toggle('d-none', totalCount === 0);
     }
 
     if (!items.length) {
         body.innerHTML = '';
         tableWrap?.classList.add('d-none');
         empty?.classList.remove('d-none');
+        paginationWrap?.classList.add('d-none');
+        selectedPendingKeys.clear();
+        updatePendingBulkBar();
+        updatePendingSelectAll();
         return;
     }
 
     tableWrap?.classList.remove('d-none');
     empty?.classList.add('d-none');
-    body.innerHTML = items.map((item) => `
+    body.innerHTML = items.map((item) => {
+        const canSelect = item.can_review && item.review_kind && item.review_target;
+
+        return `
         <tr>
-            <td>${item.request_by}</td>
-            <td>${item.employee_code}</td>
-            <td>${item.request_type}</td>
-            <td>${item.requested_on_label}</td>
-            <td><span class="badge text-bg-warning">${item.status}</span></td>
-            <td class="text-end">
-                ${item.url ? `<a href="${item.url}" class="btn btn-sm btn-outline-primary">View</a>` : '—'}
+            <td>
+                ${canSelect ? `<input type="checkbox" class="form-check-input dashboard-pending-select" data-pending-key="${item.key}" aria-label="Select request from ${item.requester_name || 'employee'}" ${selectedPendingKeys.has(item.key) ? 'checked' : ''}>` : ''}
             </td>
+            <td>${item.requester_name || '—'}</td>
+            <td>${item.requester_code || '—'}</td>
+            <td>${item.category_label || item.subject || 'Request'}</td>
+            <td>${item.submitted_at_label || '—'}</td>
+            <td><span class="badge text-bg-warning">${item.status_label || 'Pending'}</span></td>
+            <td class="text-end">${renderRequestActions(item)}</td>
         </tr>
-    `).join('');
+    `;
+    }).join('');
+
+    if (activePagination && activePagination.total > 0) {
+        const rendered = renderSimplePagination(activePagination, 'pending requests');
+        paginationWrap?.classList.remove('d-none');
+        if (paginationInfo) paginationInfo.textContent = rendered.info;
+        if (paginationList) paginationList.innerHTML = rendered.pages;
+    } else {
+        paginationWrap?.classList.add('d-none');
+    }
+
+    updatePendingBulkBar();
+    updatePendingSelectAll();
+};
+
+const loadPendingApprovals = async (page = pendingPage) => {
+    const showSection = document.getElementById('dashboardPendingCard') && !document.getElementById('dashboardPendingCard').classList.contains('d-none');
+
+    if (!showSection) {
+        return;
+    }
+
+    try {
+        const { data } = await api.get('/request-hub/pending', {
+            params: { page, per_page: 5 },
+        });
+
+        pendingPage = page;
+        renderPendingApprovals(data.data?.requests || [], data.data?.pagination || null, true);
+    } catch (error) {
+        const empty = document.getElementById('dashboardPendingEmpty');
+        if (empty) {
+            empty.textContent = getErrorMessage(error);
+            empty.classList.remove('d-none');
+        }
+    }
 };
 
 const renderQuickActions = (actions = []) => {
@@ -202,35 +287,6 @@ const renderNewJoinees = (people = [], title = 'New Joinees') => {
     container.innerHTML = sorted.map((person) => renderPersonChip(person)).join('');
 };
 
-const renderWidget = (widget) => {
-    const variant = VARIANT_CLASS[widget.variant] || VARIANT_CLASS.primary;
-    const value = widget.value ?? '—';
-    const clickable = widget.clickable && widget.url;
-
-    const inner = `
-        <div class="stat-card ${variant} ${clickable ? 'stat-card-clickable' : ''}">
-            <div class="stat-card-icon">${widget.icon || '📊'}</div>
-            <div class="stat-card-body">
-                <p class="stat-card-label">${widget.label}</p>
-                <h3 class="stat-card-value ${String(value).length > 8 ? 'stat-card-value--compact' : ''}">${value}</h3>
-                <span class="stat-card-meta">${widget.meta || ''}</span>
-            </div>
-        </div>
-    `;
-
-    if (!clickable) {
-        return `<div class="col-sm-6 col-xl-3">${inner}</div>`;
-    }
-
-    return `
-        <div class="col-sm-6 col-xl-3">
-            <a href="${widget.url}" class="stat-card-link text-decoration-none" aria-label="${widget.label}">
-                ${inner}
-            </a>
-        </div>
-    `;
-};
-
 const updateLastRefreshed = () => {
     const label = document.getElementById('dashboardLastUpdated');
 
@@ -270,7 +326,6 @@ const renderDashboard = (payload) => {
     const helloName = document.getElementById('dashboardHelloName');
     const timezone = document.getElementById('dashboardClockTimezone');
     const punchWrap = document.getElementById('dashboardPunchWrap');
-    const homeWidgets = document.getElementById('dashboardHomeWidgets');
     const loadingState = document.getElementById('dashboardLoadingState');
     const homeRoot = document.getElementById('dashboardHomeRoot');
 
@@ -286,21 +341,9 @@ const renderDashboard = (payload) => {
     }
 
     renderCelebrations(payload.celebrations || {});
-    renderPendingApprovals(payload.pending_approvals || [], payload.show_pending_approvals === true);
+    renderPendingApprovals([], null, payload.show_pending_approvals === true);
     renderQuickActions(payload.quick_actions || []);
     renderNewJoinees(payload.new_joinees || [], payload.new_joinees_title || 'New Joinees');
-
-    if (homeWidgets) {
-        const widgets = payload.widgets || [];
-
-        if (widgets.length) {
-            homeWidgets.classList.remove('d-none');
-            homeWidgets.innerHTML = widgets.map(renderWidget).join('');
-        } else {
-            homeWidgets.classList.add('d-none');
-            homeWidgets.innerHTML = '';
-        }
-    }
 
     if (punchWrap) {
         punchWrap.classList.toggle('d-none', !payload.show_punch_widget);
@@ -325,6 +368,10 @@ const loadDashboard = async () => {
     try {
         const { data } = await api.get('/dashboard');
         renderDashboard(data.data || {});
+
+        if (data.data?.show_pending_approvals) {
+            await loadPendingApprovals(pendingPage);
+        }
     } catch (error) {
         const message = getErrorMessage(error);
         const loadingState = document.getElementById('dashboardLoadingState');
@@ -349,6 +396,89 @@ document.addEventListener('DOMContentLoaded', async () => {
     clockTimer = window.setInterval(updateLiveClock, 1000);
 
     await loadDashboard();
+
+    const pendingCard = document.getElementById('dashboardPendingCard');
+
+    bindRequestReviewHandlers(pendingCard, {
+        onSuccess: async (message) => {
+            const alert = document.createElement('div');
+            alert.className = 'alert alert-success alert-dismissible fade show mx-3 mt-3';
+            alert.innerHTML = `${message}<button type="button" class="btn-close" data-bs-dismiss="alert"></button>`;
+            pendingCard?.querySelector('.dash-home-card-body')?.prepend(alert);
+            selectedPendingKeys.clear();
+            await loadPendingApprovals(pendingPage);
+            await loadDashboard();
+        },
+        onError: (error) => {
+            window.alert(getErrorMessage(error));
+        },
+    });
+
+    document.getElementById('dashboardPendingSelectAll')?.addEventListener('change', (event) => {
+        const checked = event.target.checked;
+        pendingItems
+            .filter((item) => item.can_review && item.review_kind && item.review_target)
+            .forEach((item) => {
+                if (checked) {
+                    selectedPendingKeys.add(item.key);
+                } else {
+                    selectedPendingKeys.delete(item.key);
+                }
+            });
+        renderPendingApprovals(pendingItems, pendingPagination, true);
+    });
+
+    pendingCard?.addEventListener('change', (event) => {
+        const checkbox = event.target.closest('.dashboard-pending-select');
+        if (!checkbox) return;
+
+        const key = checkbox.dataset.pendingKey;
+        if (checkbox.checked) {
+            selectedPendingKeys.add(key);
+        } else {
+            selectedPendingKeys.delete(key);
+        }
+
+        updatePendingBulkBar();
+        updatePendingSelectAll();
+    });
+
+    document.getElementById('dashboardPendingBulkApprove')?.addEventListener('click', async () => {
+        const items = pendingItems.filter((item) => selectedPendingKeys.has(item.key));
+        if (!items.length) return;
+
+        try {
+            await bulkReviewRequests(items, 'approve');
+            selectedPendingKeys.clear();
+            await loadPendingApprovals(pendingPage);
+            await loadDashboard();
+        } catch (error) {
+            window.alert(getErrorMessage(error));
+        }
+    });
+
+    document.getElementById('dashboardPendingBulkReject')?.addEventListener('click', async () => {
+        const items = pendingItems.filter((item) => selectedPendingKeys.has(item.key));
+        if (!items.length) return;
+
+        try {
+            const result = await bulkReviewRequests(items, 'reject');
+            if (!result) return;
+            selectedPendingKeys.clear();
+            await loadPendingApprovals(pendingPage);
+            await loadDashboard();
+        } catch (error) {
+            window.alert(getErrorMessage(error));
+        }
+    });
+
+    document.getElementById('dashboardPendingPaginationList')?.addEventListener('click', async (event) => {
+        const button = event.target.closest('[data-page]');
+        if (!button) return;
+
+        selectedPendingKeys.clear();
+        await loadPendingApprovals(Number(button.dataset.page));
+    });
 
     refreshTimer = window.setInterval(loadDashboard, 30000);
 

@@ -3,6 +3,7 @@ import api, { getErrorMessage } from './api';
 document.addEventListener('DOMContentLoaded', async () => {
     const yearSelect = document.getElementById('balanceYear');
     const container = document.getElementById('leaveBalancePage');
+    const paidLeaveRestrictionNotice = document.getElementById('paidLeaveRestrictionNotice');
     const currentYear = new Date().getFullYear();
 
     if (!container) return;
@@ -17,6 +18,19 @@ document.addEventListener('DOMContentLoaded', async () => {
         try {
             const { data } = await api.get('/leave-balances/me', { params: { year: yearSelect?.value || currentYear } });
             const balances = data.data.balances || [];
+
+            if (paidLeaveRestrictionNotice) {
+                const message = data.data.paid_leave_restriction_message || '';
+
+                if (message) {
+                    paidLeaveRestrictionNotice.textContent = message;
+                    paidLeaveRestrictionNotice.classList.remove('d-none');
+                } else {
+                    paidLeaveRestrictionNotice.classList.add('d-none');
+                    paidLeaveRestrictionNotice.textContent = '';
+                }
+            }
+
             if (!balances.length) {
                 container.innerHTML = '<div class="text-muted">No leave balances for this year.</div>';
                 return;

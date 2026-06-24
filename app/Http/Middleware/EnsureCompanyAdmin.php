@@ -21,8 +21,8 @@ class EnsureCompanyAdmin
             abort(403, 'Your company account is inactive. Please contact support.');
         }
 
-        if (! $user->isCompanyAdmin() && ! $user->hasPermission('settings.manage')) {
-            abort(403, 'You do not have permission to manage company settings.');
+        if (! $user->hasFullAccess()) {
+            abort(403, 'Only the company administrator has access to this area.');
         }
 
         return $next($request);

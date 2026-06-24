@@ -9,6 +9,9 @@
             <p class="page-subtitle mb-0" id="attendanceSubtitle">View attendance calendar and daily work hours.</p>
         </div>
         <div class="d-flex flex-wrap align-items-center gap-2">
+            @if (Auth::user()->canViewAllAttendance() || Auth::user()->canViewTeamAttendance())
+                <a href="{{ route('web.attendance.overview') }}" class="btn btn-outline-primary btn-sm">Team view</a>
+            @endif
             @if (Auth::user()->canRegularizeAttendance())
                 <a href="{{ route('web.attendance.regularize.index') }}" class="btn btn-outline-primary btn-sm">Regularize</a>
             @endif
@@ -84,6 +87,14 @@
                     </div>
 
                     <div class="attendance-policy-info d-none" id="attendancePolicyInfo"></div>
+
+                    <div class="attendance-month-holidays d-none" id="attendanceMonthHolidays">
+                        <div class="attendance-month-holidays-head">
+                            <h2 class="attendance-month-holidays-title">Holidays this month</h2>
+                            <a href="{{ route('web.masters.attendance.holidays.index') }}" class="btn btn-sm btn-outline-primary d-none" id="attendanceManageHolidaysLink">Manage holidays</a>
+                        </div>
+                        <div class="attendance-month-holidays-list" id="attendanceMonthHolidaysList"></div>
+                    </div>
 
                     <div class="attendance-cal-shell">
                         <div class="attendance-cal-toolbar">

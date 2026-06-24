@@ -2,6 +2,8 @@
 
 namespace App\Http\Resources;
 
+use App\Models\Role;
+use App\Models\WeeklyOffDay;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
 
@@ -50,7 +52,31 @@ class EmployeeResource extends JsonResource
             'role_id' => $this->role_id,
             'manager_id' => $this->manager_id,
             'shift_id' => $this->shift_id,
+            'weekly_off_mode' => $this->weekly_off_mode ?? 'company_default',
+            'weekly_off_weekdays' => $this->whenLoaded(
+                'weeklyOffDays',
+                fn () => $this->weeklyOffDays->pluck('weekday')->map(fn ($weekday) => (int) $weekday)->values()->all(),
+                [],
+            ),
+            'weekly_off_labels' => $this->whenLoaded(
+                'weeklyOffDays',
+                fn () => $this->weeklyOffDays
+                    ->pluck('weekday')
+                    ->map(fn ($weekday) => WeeklyOffDay::label((int) $weekday))
+                    ->values()
+                    ->all(),
+                [],
+            ),
+            'leave_type_ids' => $this->whenLoaded(
+                'leaveTypes',
+                fn () => $this->leaveTypes->pluck('id')->map(fn ($id) => (int) $id)->values()->all(),
+                [],
+            ),
+            'leave_types' => LeaveTypeResource::collection($this->whenLoaded('leaveTypes')),
             'has_portal_access' => ! is_null($this->user_id),
+            'is_company_admin' => $this->relationLoaded('role')
+                ? $this->role?->slug === Role::SLUG_COMPANY_ADMIN
+                : null,
             'department' => new DepartmentResource($this->whenLoaded('department')),
             'departments' => DepartmentResource::collection($this->whenLoaded('departments')),
             'shift' => new ShiftResource($this->whenLoaded('shift')),
