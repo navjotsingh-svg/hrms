@@ -98,7 +98,7 @@ class PayrollPeriodExport implements FromArray, ShouldAutoSize, WithHeadings, Wi
     {
         return $payslips
             ->flatMap(fn (Payslip $payslip) => collect($payslip->{$key} ?? [])->pluck('label'))
-            ->filter()
+            ->filter(fn ($label) => filled($label) && $label !== 'Expense Reimbursement')
             ->unique()
             ->values()
             ->all();

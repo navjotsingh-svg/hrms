@@ -3,6 +3,9 @@ import api, { getErrorMessage } from './api';
 import { applyBackendErrors, bindUploadProgress, setFieldError, setSubmitLoading } from './form-utils';
 import { initRichTextEditor } from './rich-text-editor';
 import { renderReviewIconActionGroup, renderViewDocumentIconButton, renderDeleteDocumentIconButton, renderReviewIconActions } from './review-actions';
+import { patchProfileReviewAction } from './request-review';
+import { hasSalaryRevisionTimeline, renderSalaryRevisionTimeline } from './salary-timeline';
+import { compressImageFiles } from './image-compress';
 
 const PROFILE_TAB_HASHES = {
     work: 'profile-work-tab',
@@ -287,10 +290,50 @@ const renderWorkTab = (employee) => {
 
 const getProfileSalaryValue = (id) => document.getElementById(id)?.value?.trim() ?? '';
 
+let profileSalaryFormMode = null;
+let profileCurrentSalarySnapshot = null;
+
+const getProfileCtcChangeMode = () => document.querySelector('input[name="profile_ctc_mode"]:checked')?.value || 'percent';
+
+const getProfileResolvedAnnualCtc = () => {
+    if (profileSalaryFormMode === 'revise') {
+        if (getProfileCtcChangeMode() === 'revised') {
+            return parseFloat(getProfileSalaryValue('profile_salary_revised_ctc')) || 0;
+        }
+
+        const currentCtc = Number(profileCurrentSalarySnapshot?.annual_ctc) || 0;
+        const increasePercent = parseFloat(getProfileSalaryValue('profile_salary_increase_percent')) || 0;
+
+        return currentCtc > 0 ? roundCurrency(currentCtc * (1 + increasePercent / 100)) : 0;
+    }
+
+    return parseFloat(getProfileSalaryValue('profile_salary_annual_ctc')) || 0;
+};
+
+const roundCurrency = (value) => Math.round((Number(value) || 0) * 100) / 100;
+
 const getProfileMonthlyCtc = () => {
-    const annualCtc = parseFloat(getProfileSalaryValue('profile_salary_annual_ctc')) || 0;
+    const annualCtc = getProfileResolvedAnnualCtc();
 
     return annualCtc > 0 ? annualCtc / 12 : 0;
+};
+
+const getProfileBasicAmount = () => {
+    const monthlyCtc = getProfileMonthlyCtc();
+    const basicPercent = parseFloat(getProfileSalaryValue('profile_salary_basic_percent')) || 0;
+
+    return roundCurrency(monthlyCtc * basicPercent / 100);
+};
+
+const syncProfileBasicSalaryField = () => {
+    const basicInput = document.getElementById('profile_salary_basic_salary');
+    const amount = getProfileBasicAmount();
+
+    if (basicInput) {
+        basicInput.value = amount > 0 ? String(amount) : '';
+    }
+
+    return amount;
 };
 
 const getProfileHraAmount = () => getProfileMonthlyCtc() * (parseFloat(getProfileSalaryValue('profile_salary_hra_percent')) || 0) / 100;
@@ -298,28 +341,74 @@ const getProfileHraAmount = () => getProfileMonthlyCtc() * (parseFloat(getProfil
 const getProfileSpecialAllowanceAmount = () => getProfileMonthlyCtc() * (parseFloat(getProfileSalaryValue('profile_salary_special_allowance_percent')) || 0) / 100;
 
 const calculateProfileMonthlyGross = () => {
-    const basic = parseFloat(getProfileSalaryValue('profile_salary_basic_salary')) || 0;
+    const basic = syncProfileBasicSalaryField();
     const fixed = ['profile_salary_conveyance_allowance', 'profile_salary_medical_allowance', 'profile_salary_other_allowance']
         .reduce((sum, id) => sum + (parseFloat(getProfileSalaryValue(id)) || 0), 0);
 
     return basic + getProfileHraAmount() + getProfileSpecialAllowanceAmount() + fixed;
 };
 
-const updateProfileSalaryPreview = () => {
-    const annual = parseFloat(getProfileSalaryValue('profile_salary_annual_ctc')) || 0;
-    const monthly = calculateProfileMonthlyGross();
+const deriveBasicPercent = (salary = {}) => {
+    const annualCtc = Number(salary.annual_ctc) || 0;
+    const basicSalary = Number(salary.basic_salary) || 0;
 
-    const annualEl = document.getElementById('profileSummaryAnnualCtc');
-    const monthlyEl = document.getElementById('profileSummaryMonthlyGross');
+    if (!annualCtc || !basicSalary) {
+        return 50;
+    }
+
+    return roundCurrency((basicSalary / (annualCtc / 12)) * 100);
+};
+
+const renderProfileSalaryReviewSummary = () => {
+    const summary = document.getElementById('profileSalaryReviewSummary');
+
+    if (!summary) {
+        return;
+    }
+
+    const annualCtc = getProfileResolvedAnnualCtc();
+    const rows = [
+        ['Annual CTC', annualCtc ? formatCurrency(annualCtc) : '—'],
+        ['Basic', formatCurrency(getProfileBasicAmount())],
+        ['HRA', `${formatCurrency(getProfileHraAmount())} (${getProfileSalaryValue('profile_salary_hra_percent') || 0}%)`],
+        ['Special Allowance', `${formatCurrency(getProfileSpecialAllowanceAmount())} (${getProfileSalaryValue('profile_salary_special_allowance_percent') || 0}%)`],
+        ['Monthly Gross', formatCurrency(calculateProfileMonthlyGross())],
+        ['Effective Date', formatDate(getProfileSalaryValue('profile_salary_effective_from'))],
+        ['Payout From', formatDate(getProfileSalaryValue('profile_salary_payout_from'))],
+    ];
+
+    if (profileSalaryFormMode === 'revise' && profileCurrentSalarySnapshot?.annual_ctc) {
+        rows.unshift(['Previous CTC', formatCurrency(profileCurrentSalarySnapshot.annual_ctc)]);
+    }
+
+    summary.innerHTML = rows.map(([label, value]) => `
+        <div class="profile-dl-row">
+            <dt>${label}</dt>
+            <dd>${value}</dd>
+        </div>
+    `).join('');
+};
+
+const updateProfileSalaryPreview = () => {
+    const annual = getProfileResolvedAnnualCtc();
+    const monthly = calculateProfileMonthlyGross();
+    const revisedPreview = document.getElementById('profileRevisedCtcPreview');
+
+    if (revisedPreview) {
+        revisedPreview.textContent = annual > 0 ? formatCurrency(annual) : '—';
+    }
+
+    const annualInput = document.getElementById('profile_salary_annual_ctc');
+    if (annualInput && profileSalaryFormMode === 'add') {
+        annualInput.value = annual > 0 ? String(annual) : annualInput.value;
+    }
+
+    const basicPreview = document.getElementById('profileBasicAmountPreview');
     const hraEl = document.getElementById('profileHraAmountPreview');
     const specialEl = document.getElementById('profileSpecialAllowanceAmountPreview');
 
-    if (annualEl) {
-        annualEl.textContent = formatCurrency(annual);
-    }
-
-    if (monthlyEl) {
-        monthlyEl.textContent = formatCurrency(monthly);
+    if (basicPreview) {
+        basicPreview.textContent = formatCurrency(getProfileBasicAmount());
     }
 
     if (hraEl) {
@@ -329,6 +418,84 @@ const updateProfileSalaryPreview = () => {
     if (specialEl) {
         specialEl.textContent = formatCurrency(getProfileSpecialAllowanceAmount());
     }
+
+    renderProfileSalaryReviewSummary();
+};
+
+const toggleProfileCtcModeUi = () => {
+    const mode = getProfileCtcChangeMode();
+    document.getElementById('profileCtcPercentWrap')?.classList.toggle('d-none', mode !== 'percent');
+    document.getElementById('profileCtcRevisedWrap')?.classList.toggle('d-none', mode !== 'revised');
+    syncProfileSalaryFormFields();
+    updateProfileSalaryPreview();
+};
+
+const syncProfileSalaryFormFields = () => {
+    const isAdd = profileSalaryFormMode === 'add';
+    const isRevise = profileSalaryFormMode === 'revise';
+    const ctcMode = getProfileCtcChangeMode();
+    const addCtcInput = document.getElementById('profile_salary_annual_ctc');
+    const revisedCtcInput = document.getElementById('profile_salary_revised_ctc');
+    const increaseInput = document.getElementById('profile_salary_increase_percent');
+
+    if (addCtcInput) {
+        addCtcInput.disabled = !isAdd;
+    }
+
+    if (revisedCtcInput) {
+        revisedCtcInput.disabled = !isRevise || ctcMode !== 'revised';
+    }
+
+    if (increaseInput) {
+        increaseInput.disabled = !isRevise || ctcMode !== 'percent';
+    }
+};
+
+const closeProfileSalaryForm = () => {
+    profileSalaryFormMode = null;
+    document.getElementById('profileSalaryFormPanel')?.classList.add('d-none');
+    document.getElementById('profileSalaryStatusMsg')?.classList.add('d-none');
+};
+
+const openProfileSalaryForm = (mode, salary = {}) => {
+    profileSalaryFormMode = mode;
+    profileCurrentSalarySnapshot = mode === 'revise' ? { ...salary } : null;
+
+    const panel = document.getElementById('profileSalaryFormPanel');
+    const title = document.getElementById('profileSalaryFormTitle');
+    const desc = document.getElementById('profileSalaryFormDesc');
+    const submitBtn = document.getElementById('profileSalarySubmit');
+
+    panel?.classList.remove('d-none');
+    document.getElementById('profileSalaryAddCtcBlock')?.classList.toggle('d-none', mode !== 'add');
+    document.getElementById('profileSalaryReviseCtcBlock')?.classList.toggle('d-none', mode !== 'revise');
+    document.getElementById('profileSalaryCurrentBlock')?.classList.toggle('d-none', mode !== 'revise');
+
+    if (title) {
+        title.textContent = mode === 'add' ? 'Add Salary' : 'Revise Salary';
+    }
+
+    if (desc) {
+        desc.textContent = mode === 'add'
+            ? 'Enter compensation details for this employee.'
+            : 'Update CTC using increase % or revised CTC, then confirm effective and payout dates.';
+    }
+
+    if (submitBtn) {
+        submitBtn.textContent = mode === 'add' ? 'Submit Salary' : 'Submit Revision';
+    }
+
+    if (mode === 'revise') {
+        document.getElementById('profileSalaryCurrentCtc').textContent = formatCurrency(salary.annual_ctc || 0);
+        document.getElementById('profile_ctc_mode_percent').checked = true;
+        document.getElementById('profile_salary_increase_percent').value = '';
+        document.getElementById('profile_salary_revised_ctc').value = salary.annual_ctc ?? '';
+        toggleProfileCtcModeUi();
+    }
+
+    fillProfileSalaryForm(salary, mode);
+    syncProfileSalaryFormFields();
+    panel?.scrollIntoView({ behavior: 'smooth', block: 'start' });
 };
 
 const buildSalaryDisplayRows = (salary = {}) => [
@@ -340,13 +507,14 @@ const buildSalaryDisplayRows = (salary = {}) => [
     ['Medical', salary.medical_allowance ? formatCurrency(salary.medical_allowance) : '—'],
     ['Other Allowance', salary.other_allowance ? formatCurrency(salary.other_allowance) : '—'],
     ['Monthly Gross', salary.monthly_gross ? formatCurrency(salary.monthly_gross) : '—'],
-    ['Effective From', formatDate(salary.salary_effective_from)],
+    ['Effective Date', formatDate(salary.salary_effective_from)],
+    ['Payout From', formatDate(salary.salary_payout_from || salary.salary_effective_from)],
     ['PF Applicable', yesNo(salary.pf_applicable)],
     ['ESI Applicable', yesNo(salary.esi_applicable)],
     ['Professional Tax', yesNo(salary.professional_tax_applicable)],
 ];
 
-const fillProfileSalaryForm = (salary = {}) => {
+const fillProfileSalaryForm = (salary = {}, mode = 'add') => {
     const set = (id, value) => {
         const input = document.getElementById(id);
         if (input) {
@@ -354,14 +522,19 @@ const fillProfileSalaryForm = (salary = {}) => {
         }
     };
 
-    set('profile_salary_annual_ctc', salary.annual_ctc ?? '');
-    set('profile_salary_basic_salary', salary.basic_salary ?? '');
+    if (mode === 'add') {
+        set('profile_salary_annual_ctc', salary.annual_ctc ?? '');
+    }
+
+    set('profile_salary_basic_percent', deriveBasicPercent(salary));
     set('profile_salary_hra_percent', salary.hra_percent ?? 40);
     set('profile_salary_special_allowance_percent', salary.special_allowance_percent ?? 0);
     set('profile_salary_conveyance_allowance', salary.conveyance_allowance ?? 0);
     set('profile_salary_medical_allowance', salary.medical_allowance ?? 0);
     set('profile_salary_other_allowance', salary.other_allowance ?? 0);
     set('profile_salary_effective_from', salary.salary_effective_from ?? '');
+    set('profile_salary_payout_from', salary.salary_payout_from || salary.salary_effective_from || '');
+    set('profile_salary_revision_notes', '');
 
     const pf = document.getElementById('profile_salary_pf_applicable');
     const esi = document.getElementById('profile_salary_esi_applicable');
@@ -379,31 +552,20 @@ const fillProfileSalaryForm = (salary = {}) => {
         pt.checked = salary.professional_tax_applicable !== false;
     }
 
+    syncProfileBasicSalaryField();
     updateProfileSalaryPreview();
 };
 
-const renderSalaryRevisionsTable = (revisions = []) => {
-    const tableBody = document.getElementById('profileSalaryRevisionsBody');
+const renderSalaryRevisionsTable = (revisions = [], currentSalary = {}) => {
+    const container = document.getElementById('profileSalaryTimelineContainer');
+    const timelineTab = document.getElementById('profile-salary-timeline-tab');
+    const timelinePane = document.getElementById('profileSalaryTimelineSection');
 
-    if (!tableBody) {
-        return;
-    }
+    renderSalaryRevisionTimeline(container, revisions, currentSalary);
 
-    if (revisions.length === 0) {
-        tableBody.innerHTML = '<tr><td colspan="6" class="text-center text-muted py-4">No previous revisions.</td></tr>';
-        return;
-    }
-
-    tableBody.innerHTML = revisions.map((revision) => `
-        <tr>
-            <td>${formatDateTime(revision.revised_at)}</td>
-            <td>${formatCurrency(revision.annual_ctc)}</td>
-            <td>${formatCurrency(revision.monthly_gross)}</td>
-            <td>${formatDate(revision.salary_effective_from)}</td>
-            <td>${revision.revised_by?.name || '—'}</td>
-            <td>${revision.revision_notes || '<span class="text-muted">—</span>'}</td>
-        </tr>
-    `).join('');
+    const hasTimeline = hasSalaryRevisionTimeline(revisions, currentSalary);
+    timelineTab?.classList.toggle('d-none', !hasTimeline);
+    timelinePane?.classList.toggle('d-none', !hasTimeline);
 };
 
 const renderSalaryTab = (employee) => {
@@ -411,6 +573,9 @@ const renderSalaryTab = (employee) => {
     const hasSalary = Boolean(salary.annual_ctc);
     const desc = document.getElementById('profileSalaryTabDesc');
     const manageSection = document.getElementById('profileSalaryManageSection');
+    const actions = document.getElementById('profileSalaryActions');
+    const addBtn = document.getElementById('profileSalaryAddBtn');
+    const reviseBtn = document.getElementById('profileSalaryReviseBtn');
 
     setVisible(
         document.getElementById('profileSalaryContent'),
@@ -424,21 +589,28 @@ const renderSalaryTab = (employee) => {
 
     if (desc) {
         desc.textContent = profileCanManageSalary
-            ? 'View current compensation or update and revise salary for this employee.'
+            ? 'View current compensation. Use Add Salary or Revise Salary to update compensation and track revision history.'
             : 'View your current compensation structure as recorded by HR.';
     }
 
     renderDl(document.getElementById('profileSalaryDisplay'), buildSalaryDisplayRows(salary));
-    updateProfileSalaryPreview();
     document.getElementById('profileSummaryAnnualCtc').textContent = formatCurrency(salary.annual_ctc || 0);
     document.getElementById('profileSummaryMonthlyGross').textContent = formatCurrency(salary.monthly_gross || 0);
 
     manageSection?.classList.toggle('d-none', !profileCanManageSalary);
+    actions?.classList.toggle('d-none', !profileCanManageSalary);
+    addBtn?.classList.toggle('d-none', hasSalary);
+    reviseBtn?.classList.toggle('d-none', !hasSalary);
 
     if (profileCanManageSalary) {
-        fillProfileSalaryForm(salary);
-        renderSalaryRevisionsTable(employee.salary_revisions || []);
+        addBtn?.replaceWith(addBtn.cloneNode(true));
+        reviseBtn?.replaceWith(reviseBtn.cloneNode(true));
+        document.getElementById('profileSalaryAddBtn')?.addEventListener('click', () => openProfileSalaryForm('add', salary));
+        document.getElementById('profileSalaryReviseBtn')?.addEventListener('click', () => openProfileSalaryForm('revise', salary));
     }
+
+    closeProfileSalaryForm();
+    renderSalaryRevisionsTable(employee.salary_revisions || [], salary);
 };
 
 const renderAssetStatus = (isAssigned) => {
@@ -597,20 +769,26 @@ const collectProfileAssetsPayload = () => {
     });
 };
 
-const collectProfileSalaryPayload = () => ({
-    annual_ctc: parseFloat(getProfileSalaryValue('profile_salary_annual_ctc')) || 0,
-    basic_salary: parseFloat(getProfileSalaryValue('profile_salary_basic_salary')) || 0,
-    hra_percent: parseFloat(getProfileSalaryValue('profile_salary_hra_percent')) || 0,
-    special_allowance_percent: parseFloat(getProfileSalaryValue('profile_salary_special_allowance_percent')) || 0,
-    conveyance_allowance: parseFloat(getProfileSalaryValue('profile_salary_conveyance_allowance')) || 0,
-    medical_allowance: parseFloat(getProfileSalaryValue('profile_salary_medical_allowance')) || 0,
-    other_allowance: parseFloat(getProfileSalaryValue('profile_salary_other_allowance')) || 0,
-    pf_applicable: document.getElementById('profile_salary_pf_applicable')?.checked ?? false,
-    esi_applicable: document.getElementById('profile_salary_esi_applicable')?.checked ?? false,
-    professional_tax_applicable: document.getElementById('profile_salary_professional_tax_applicable')?.checked ?? true,
-    salary_effective_from: getProfileSalaryValue('profile_salary_effective_from'),
-    revision_notes: getProfileSalaryValue('profile_salary_revision_notes') || null,
-});
+const collectProfileSalaryPayload = () => {
+    const annualCtc = getProfileResolvedAnnualCtc();
+    const basicSalary = syncProfileBasicSalaryField();
+
+    return {
+        annual_ctc: annualCtc,
+        basic_salary: basicSalary,
+        hra_percent: parseFloat(getProfileSalaryValue('profile_salary_hra_percent')) || 0,
+        special_allowance_percent: parseFloat(getProfileSalaryValue('profile_salary_special_allowance_percent')) || 0,
+        conveyance_allowance: parseFloat(getProfileSalaryValue('profile_salary_conveyance_allowance')) || 0,
+        medical_allowance: parseFloat(getProfileSalaryValue('profile_salary_medical_allowance')) || 0,
+        other_allowance: parseFloat(getProfileSalaryValue('profile_salary_other_allowance')) || 0,
+        pf_applicable: document.getElementById('profile_salary_pf_applicable')?.checked ?? false,
+        esi_applicable: document.getElementById('profile_salary_esi_applicable')?.checked ?? false,
+        professional_tax_applicable: document.getElementById('profile_salary_professional_tax_applicable')?.checked ?? true,
+        salary_effective_from: getProfileSalaryValue('profile_salary_effective_from'),
+        salary_payout_from: getProfileSalaryValue('profile_salary_payout_from') || getProfileSalaryValue('profile_salary_effective_from'),
+        revision_notes: getProfileSalaryValue('profile_salary_revision_notes') || null,
+    };
+};
 
 const PERSONAL_SECTION_LABELS = {
     family: 'Family Details',
@@ -1217,7 +1395,9 @@ const PAYMENT_MODE_OPTIONS = [
 const toggleBankFields = () => {
     const mode = document.getElementById('profile_payment_mode')?.value;
     const fields = document.getElementById('profileBankFields');
+    const proofFields = document.getElementById('profileBankProofFields');
     const note = document.getElementById('profileBankNonTransferNote');
+    const proofInput = document.getElementById('profile_bank_proofs');
     const bankFieldIds = [
         'profile_bank_name',
         'profile_bank_branch',
@@ -1231,6 +1411,10 @@ const toggleBankFields = () => {
         fields.classList.toggle('d-none', mode !== 'bank_transfer');
     }
 
+    if (proofFields) {
+        proofFields.classList.toggle('d-none', mode !== 'bank_transfer');
+    }
+
     if (note) {
         note.classList.toggle('d-none', !mode || mode === 'bank_transfer');
     }
@@ -1242,6 +1426,10 @@ const toggleBankFields = () => {
                 input.value = '';
             }
         });
+
+        if (proofInput) {
+            proofInput.value = '';
+        }
     }
 };
 
@@ -1299,6 +1487,24 @@ const handlePaymentModeChange = (methods = []) => {
 
 let cachedPaymentMethods = [];
 
+const formatPaymentMethodProofLinks = (method) => {
+    const proofs = method.proofs || [];
+
+    if (!proofs.length) {
+        return '';
+    }
+
+    return `
+        <div class="small mt-1">
+            ${proofs.map((proof) => `
+                <button type="button" class="btn btn-link btn-sm p-0 me-2" data-view-bank-proof="${proof.id}" data-view-bank-proof-title="${escapeHtml(proof.original_name)}">
+                    📎 ${escapeHtml(proof.original_name)}
+                </button>
+            `).join('')}
+        </div>
+    `;
+};
+
 const formatPaymentMethodDetails = (method) => {
     if (method.payment_mode !== 'bank_transfer') {
         return '<span class="text-muted">No bank account required</span>';
@@ -1313,7 +1519,9 @@ const formatPaymentMethodDetails = (method) => {
         method.ifsc_code,
     ].filter(Boolean);
 
-    return parts.length ? parts.join(' · ') : '—';
+    const base = parts.length ? parts.join(' · ') : '—';
+
+    return base + formatPaymentMethodProofLinks(method);
 };
 
 const renderPaymentMethods = (employee) => {
@@ -2281,6 +2489,23 @@ document.addEventListener('DOMContentLoaded', async () => {
         input.addEventListener('input', updateProfileSalaryPreview);
     });
 
+    document.querySelectorAll('input[name="profile_ctc_mode"]').forEach((input) => {
+        input.addEventListener('change', toggleProfileCtcModeUi);
+    });
+
+    document.getElementById('profileSalaryFormCancel')?.addEventListener('click', closeProfileSalaryForm);
+
+    document.getElementById('profile_salary_effective_from')?.addEventListener('change', (event) => {
+        const payoutInput = document.getElementById('profile_salary_payout_from');
+
+        if (payoutInput && !payoutInput.value) {
+            payoutInput.value = event.target.value;
+            updateProfileSalaryPreview();
+        }
+    });
+
+    document.getElementById('profile_salary_payout_from')?.addEventListener('input', updateProfileSalaryPreview);
+
     salaryForm?.addEventListener('submit', async (event) => {
         event.preventDefault();
 
@@ -2292,19 +2517,39 @@ document.addEventListener('DOMContentLoaded', async () => {
         const statusEl = document.getElementById('profileSalaryStatusMsg');
         const payload = collectProfileSalaryPayload();
 
-        if (!payload.annual_ctc || !payload.basic_salary || !payload.salary_effective_from) {
-            alert('Annual CTC, basic salary, and effective date are required.');
+        if (!payload.annual_ctc || !payload.basic_salary || !payload.salary_effective_from || !payload.salary_payout_from) {
+            alert('Annual CTC, basic %, effective date, and payout from are required.');
             return;
         }
 
-        setSubmitLoading(submitBtn, true, { submittingText: 'Saving...' });
+        if (profileSalaryFormMode === 'add' && payload.annual_ctc <= 0) {
+            alert('Enter a valid annual CTC.');
+            return;
+        }
+
+        if (profileSalaryFormMode === 'revise' && getProfileCtcChangeMode() === 'revised'
+            && (parseFloat(getProfileSalaryValue('profile_salary_revised_ctc')) || 0) <= 0) {
+            alert('Enter a valid revised CTC.');
+            return;
+        }
+
+        if (profileSalaryFormMode === 'revise' && profileCurrentSalarySnapshot?.annual_ctc
+            && Number(payload.annual_ctc) === Number(profileCurrentSalarySnapshot.annual_ctc)
+            && getProfileCtcChangeMode() === 'percent'
+            && !getProfileSalaryValue('profile_salary_increase_percent')) {
+            alert('Enter an increase % or switch to Revised CTC to change compensation.');
+            return;
+        }
+
+        setSubmitLoading(submitBtn, true, { submittingText: 'Submitting...' });
 
         try {
             const { data } = await api.put(`${profileSubmitPrefix}/salary`, payload);
 
             await applyEmployeeProfilePayload(data.data);
-            document.getElementById('profile_salary_revision_notes').value = '';
-            showFormStatus(statusEl, data.message || 'Salary saved.');
+            closeProfileSalaryForm();
+            document.getElementById('profile-salary-timeline-tab')?.click();
+            alert(data.message || 'Salary saved.');
         } catch (error) {
             applyBackendErrors(salaryForm, error.response?.data?.errors, setFieldError);
             alert(getErrorMessage(error));
@@ -2450,16 +2695,39 @@ document.addEventListener('DOMContentLoaded', async () => {
         setSubmitLoading(submitBtn, true, { submittingText: 'Submitting...' });
 
         try {
-            const payload = { payment_mode: paymentMode };
-
             if (paymentMode === 'bank_transfer') {
-                payload.bank_name = document.getElementById('profile_bank_name')?.value.trim() || null;
-                payload.bank_branch = document.getElementById('profile_bank_branch')?.value.trim() || null;
-                payload.bank_address = document.getElementById('profile_bank_address')?.value.trim() || null;
-                payload.account_holder_name = document.getElementById('profile_account_holder_name')?.value.trim() || null;
-                payload.account_number = document.getElementById('profile_account_number')?.value.trim() || null;
-                payload.ifsc_code = document.getElementById('profile_ifsc_code')?.value.trim().toUpperCase() || null;
+                const proofInput = document.getElementById('profile_bank_proofs');
+                const selectedFiles = proofInput?.files ? Array.from(proofInput.files) : [];
+
+                if (!selectedFiles.length) {
+                    setFieldError(paymentMethodForm, 'proofs', 'Please attach at least one bank proof document.');
+                    return;
+                }
+
+                const formData = new FormData();
+                formData.append('payment_mode', paymentMode);
+                formData.append('bank_name', document.getElementById('profile_bank_name')?.value.trim() || '');
+                formData.append('bank_branch', document.getElementById('profile_bank_branch')?.value.trim() || '');
+                formData.append('bank_address', document.getElementById('profile_bank_address')?.value.trim() || '');
+                formData.append('account_holder_name', document.getElementById('profile_account_holder_name')?.value.trim() || '');
+                formData.append('account_number', document.getElementById('profile_account_number')?.value.trim() || '');
+                formData.append('ifsc_code', document.getElementById('profile_ifsc_code')?.value.trim().toUpperCase() || '');
+
+                const preparedFiles = await compressImageFiles(selectedFiles);
+                preparedFiles.forEach((file) => formData.append('proofs[]', file));
+
+                const { data } = await api.post(`${profileSubmitPrefix}/payment-methods`, formData, {
+                    headers: { 'Content-Type': 'multipart/form-data' },
+                });
+
+                await refreshEmployeeProfile();
+                paymentMethodForm.reset();
+                toggleBankFields();
+                showFormStatus(statusEl, data.message || 'Submitted.');
+                return;
             }
+
+            const payload = { payment_mode: paymentMode };
 
             const { data } = await api.post(`${profileSubmitPrefix}/payment-methods`, payload);
 
@@ -2613,6 +2881,53 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
     };
 
+    const viewBankProofFile = async (proofId, useReviewEndpoint = false, title = 'Bank proof') => {
+        const url = useReviewEndpoint
+            ? `/employee-payment-method-proofs/${proofId}/download`
+            : `${profileSubmitPrefix}/payment-method-proofs/${proofId}/download`;
+
+        const response = await api.get(url, { responseType: 'blob' });
+        const mime = response.headers['content-type'] || response.data.type || 'application/octet-stream';
+        const disposition = response.headers['content-disposition'];
+        const match = disposition?.match(/filename="?([^"]+)"?/);
+
+        previewFallbackName = match?.[1] || 'bank-proof';
+        clearDocumentPreview();
+        previewBlobUrl = window.URL.createObjectURL(response.data);
+
+        const iframe = document.getElementById('viewDocumentFrame');
+        const img = document.getElementById('viewDocumentImage');
+        const unsupported = document.getElementById('viewDocumentUnsupported');
+
+        iframe?.classList.add('d-none');
+        img?.classList.add('d-none');
+        unsupported?.classList.add('d-none');
+
+        if (mime.startsWith('image/')) {
+            img.src = previewBlobUrl;
+            img.classList.remove('d-none');
+        } else if (mime === 'application/pdf') {
+            iframe.src = previewBlobUrl;
+            iframe.classList.remove('d-none');
+        } else {
+            unsupported?.classList.remove('d-none');
+        }
+
+        openDocumentLightbox(title);
+    };
+
+    const handleViewBankProofClick = async (button, useReviewEndpoint = false) => {
+        try {
+            await viewBankProofFile(
+                button.dataset.viewBankProof,
+                useReviewEndpoint,
+                button.dataset.viewBankProofTitle || 'Bank proof',
+            );
+        } catch (error) {
+            alert(getErrorMessage(error));
+        }
+    };
+
     const viewDocumentFile = async (documentId, useReviewEndpoint = false, title = 'Document') => {
         const url = useReviewEndpoint
             ? `/employee-documents/${documentId}/download`
@@ -2722,6 +3037,33 @@ document.addEventListener('DOMContentLoaded', async () => {
         await handleViewDocumentClick(viewBtn);
     });
 
+    const handleProfileReview = async (url, kind, action) => {
+        try {
+            const message = await patchProfileReviewAction(url, kind, action);
+            if (message) {
+                await refreshEmployeeProfile();
+            }
+        } catch (error) {
+            alert(getErrorMessage(error));
+        }
+    };
+
+    document.getElementById('profilePendingBankBody')?.addEventListener('click', async (event) => {
+        const proofBtn = event.target.closest('[data-view-bank-proof]');
+
+        if (proofBtn) {
+            await handleViewBankProofClick(proofBtn, true);
+        }
+    });
+
+    document.getElementById('profilePaymentMethodsTableBody')?.addEventListener('click', async (event) => {
+        const proofBtn = event.target.closest('[data-view-bank-proof]');
+
+        if (proofBtn) {
+            await handleViewBankProofClick(proofBtn, false);
+        }
+    });
+
     document.getElementById('profilePendingDocumentsBody')?.addEventListener('click', async (event) => {
         const viewBtn = event.target.closest('[data-view-document]');
         const approveBtn = event.target.closest('[data-approve-document]');
@@ -2733,20 +3075,20 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
 
         if (approveBtn) {
-            try {
-                await api.patch(`/employee-documents/${approveBtn.dataset.approveDocument}/approve`);
-                await refreshEmployeeProfile();
-            } catch (error) {
-                alert(getErrorMessage(error));
-            }
+            await handleProfileReview(
+                `/employee-documents/${approveBtn.dataset.approveDocument}/approve`,
+                'document',
+                'approve',
+            );
             return;
         }
 
         if (rejectBtn) {
-            rejectDocumentId = rejectBtn.dataset.rejectDocument;
-            document.getElementById('rejectDocumentNotes').value = '';
-            rejectModal = rejectModal || Modal.getOrCreateInstance(document.getElementById('rejectDocumentModal'));
-            rejectModal.show();
+            await handleProfileReview(
+                `/employee-documents/${rejectBtn.dataset.rejectDocument}/reject`,
+                'document',
+                'reject',
+            );
         }
     });
 
@@ -2809,17 +3151,20 @@ document.addEventListener('DOMContentLoaded', async () => {
         const rejectBtn = event.target.closest('[data-reject-family-member]');
 
         if (approveBtn) {
-            try {
-                await api.patch(`/employee-family-members/${approveBtn.dataset.approveFamilyMember}/approve`);
-                await refreshEmployeeProfile();
-            } catch (error) {
-                alert(getErrorMessage(error));
-            }
+            await handleProfileReview(
+                `/employee-family-members/${approveBtn.dataset.approveFamilyMember}/approve`,
+                'family_member',
+                'approve',
+            );
             return;
         }
 
         if (rejectBtn) {
-            openRejectProfileSubmissionModal('family_member', rejectBtn.dataset.rejectFamilyMember);
+            await handleProfileReview(
+                `/employee-family-members/${rejectBtn.dataset.rejectFamilyMember}/reject`,
+                'family_member',
+                'reject',
+            );
         }
     });
 
@@ -2828,17 +3173,20 @@ document.addEventListener('DOMContentLoaded', async () => {
         const rejectBtn = event.target.closest('[data-reject-payment-method]');
 
         if (approveBtn) {
-            try {
-                await api.patch(`/employee-payment-methods/${approveBtn.dataset.approvePaymentMethod}/approve`);
-                await refreshEmployeeProfile();
-            } catch (error) {
-                alert(getErrorMessage(error));
-            }
+            await handleProfileReview(
+                `/employee-payment-methods/${approveBtn.dataset.approvePaymentMethod}/approve`,
+                'payment_method',
+                'approve',
+            );
             return;
         }
 
         if (rejectBtn) {
-            openRejectProfileSubmissionModal('payment_method', rejectBtn.dataset.rejectPaymentMethod);
+            await handleProfileReview(
+                `/employee-payment-methods/${rejectBtn.dataset.rejectPaymentMethod}/reject`,
+                'payment_method',
+                'reject',
+            );
         }
     });
 
@@ -2847,17 +3195,20 @@ document.addEventListener('DOMContentLoaded', async () => {
         const rejectBtn = event.target.closest('[data-reject-personal-section]');
 
         if (approveBtn) {
-            try {
-                await api.patch(`/employee-personal-sections/${approveBtn.dataset.approvePersonalSection}/approve`);
-                await refreshEmployeeProfile();
-            } catch (error) {
-                alert(getErrorMessage(error));
-            }
+            await handleProfileReview(
+                `/employee-personal-sections/${approveBtn.dataset.approvePersonalSection}/approve`,
+                'personal_section',
+                'approve',
+            );
             return;
         }
 
         if (rejectBtn) {
-            openRejectProfileSubmissionModal('personal_section', rejectBtn.dataset.rejectPersonalSection);
+            await handleProfileReview(
+                `/employee-personal-sections/${rejectBtn.dataset.rejectPersonalSection}/reject`,
+                'personal_section',
+                'reject',
+            );
         }
     });
 
@@ -2866,17 +3217,20 @@ document.addEventListener('DOMContentLoaded', async () => {
         const rejectBtn = event.target.closest('[data-reject-compliance-field]');
 
         if (approveBtn) {
-            try {
-                await api.patch(`/employee-compliance-fields/${approveBtn.dataset.approveComplianceField}/approve`);
-                await refreshEmployeeProfile();
-            } catch (error) {
-                alert(getErrorMessage(error));
-            }
+            await handleProfileReview(
+                `/employee-compliance-fields/${approveBtn.dataset.approveComplianceField}/approve`,
+                'compliance_field',
+                'approve',
+            );
             return;
         }
 
         if (rejectBtn) {
-            openRejectProfileSubmissionModal('compliance_field', rejectBtn.dataset.rejectComplianceField);
+            await handleProfileReview(
+                `/employee-compliance-fields/${rejectBtn.dataset.rejectComplianceField}/reject`,
+                'compliance_field',
+                'reject',
+            );
         }
     });
 

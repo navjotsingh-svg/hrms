@@ -21,6 +21,7 @@ use App\Http\Resources\EmployeePaymentMethodResource;
 use App\Http\Resources\EmployeeProfileResource;
 use App\Models\Employee;
 use App\Models\EmployeeDocument;
+use App\Models\EmployeePaymentMethodProof;
 use App\Services\EmployeeProfileService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -118,7 +119,8 @@ class EmployeeProfileController extends Controller
         $result = $this->employeeProfileService->submitPaymentMethod(
             $request->user(),
             $employee,
-            $request->validated()
+            $request->validated(),
+            $request->proofFiles(),
         );
 
         $employee = $this->employeeProfileService->loadProfile($employee->fresh());
@@ -202,6 +204,21 @@ class EmployeeProfileController extends Controller
     {
         $employee = $this->employeeProfileService->resolveEmployeeForActor($request->user(), $employee);
         $file = $this->employeeProfileService->downloadDocument($request->user(), $employee, $employeeDocument);
+
+        return $this->inlineFileResponse($file);
+    }
+
+    public function downloadPaymentMethodProof(
+        Request $request,
+        Employee $employee,
+        EmployeePaymentMethodProof $employeePaymentMethodProof,
+    ): BinaryFileResponse {
+        $employee = $this->employeeProfileService->resolveEmployeeForActor($request->user(), $employee);
+        $file = $this->employeeProfileService->downloadPaymentMethodProof(
+            $request->user(),
+            $employee,
+            $employeePaymentMethodProof,
+        );
 
         return $this->inlineFileResponse($file);
     }

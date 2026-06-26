@@ -1,6 +1,8 @@
 import './bootstrap';
 import 'bootstrap';
 import './leave-calendar';
+import './notifications';
+import './moments-badges';
 import api, { clearToken, destroyWebSession } from './api';
 import { initFormStatusToggles } from './form-utils';
 

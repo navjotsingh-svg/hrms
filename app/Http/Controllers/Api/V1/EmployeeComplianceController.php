@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Api\V1;
 
+use App\Http\Concerns\ValidatesReviewNotes;
 use App\Http\Controllers\Controller;
 use App\Http\Concerns\ApiResponse;
 use App\Http\Requests\RejectEmployeeDocumentRequest;
@@ -13,7 +14,7 @@ use Illuminate\Http\Request;
 
 class EmployeeComplianceController extends Controller
 {
-    use ApiResponse;
+    use ApiResponse, ValidatesReviewNotes;
 
     public function __construct(private EmployeeComplianceFieldService $complianceFieldService) {}
 
@@ -33,7 +34,11 @@ class EmployeeComplianceController extends Controller
     public function approve(Request $request, EmployeeComplianceField $employeeComplianceField): JsonResponse
     {
         $this->complianceFieldService->assertBelongsToCompany($request->user(), $employeeComplianceField);
-        $field = $this->complianceFieldService->approve($request->user(), $employeeComplianceField);
+        $field = $this->complianceFieldService->approve(
+            $request->user(),
+            $employeeComplianceField,
+            $this->optionalReviewNotes($request),
+        );
 
         return $this->success(
             ['compliance_field' => new EmployeeComplianceFieldResource($field)],

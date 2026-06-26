@@ -8,10 +8,6 @@
             <h1 class="page-title mb-1">Today's Attendance</h1>
             <p class="page-subtitle mb-0" id="attendanceTodaySubtitle">See who has marked attendance, who is present, absent, or on leave.</p>
         </div>
-        <div class="d-flex flex-wrap align-items-center gap-2">
-            <input type="date" class="form-control form-control-sm" id="attendanceTodayDate" aria-label="Attendance date">
-            <button type="button" class="btn btn-outline-secondary btn-sm" id="attendanceTodayRefresh">Refresh</button>
-        </div>
     </div>
 @endsection
 
@@ -20,6 +16,17 @@
 
     <div class="content-card mb-4">
         <div class="content-card-body">
+            <div class="attendance-period-nav attendance-period-nav--primary attendance-period-nav--date mb-3">
+                <div class="attendance-period-nav-controls">
+                    <button type="button" class="btn btn-outline-secondary attendance-period-nav-btn" id="attendanceTodayPrevDay" aria-label="Previous day">&larr;</button>
+                    <input type="date" class="form-control attendance-period-date-input" id="attendanceTodayDate" aria-label="Attendance date">
+                    <button type="button" class="btn btn-outline-secondary attendance-period-nav-btn" id="attendanceTodayNextDay" aria-label="Next day">&rarr;</button>
+                </div>
+                <div class="attendance-period-nav-actions">
+                    <button type="button" class="btn btn-outline-primary btn-sm" id="attendanceTodayGoToday">Today</button>
+                    <button type="button" class="btn btn-outline-secondary btn-sm" id="attendanceTodayRefresh">Refresh</button>
+                </div>
+            </div>
             <div class="attendance-summary-row" id="attendanceTodaySummaryRow">
                 <div class="attendance-summary-item">
                     <span class="fw-semibold" id="attendanceTodayTotal">0</span> employees

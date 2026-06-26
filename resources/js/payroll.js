@@ -1,3 +1,4 @@
+import { Offcanvas } from 'bootstrap';
 import api, { getErrorMessage } from './api';
 import { filterEmployeeOptions, formatEmployeeLabel, initEmployeeAutocomplete } from './employee-autocomplete';
 
@@ -5,6 +6,11 @@ const MONTHS = [
     'January', 'February', 'March', 'April', 'May', 'June',
     'July', 'August', 'September', 'October', 'November', 'December',
 ];
+
+const paidDaysForPayslip = (payslip) => Math.max(
+    (Number(payslip.payable_days) || 0) - (Number(payslip.lop_days) || 0),
+    0,
+);
 
 document.addEventListener('DOMContentLoaded', async () => {
     const mode = window.PAYROLL_MODE || 'employee';
@@ -23,10 +29,16 @@ document.addEventListener('DOMContentLoaded', async () => {
     const generateBtn = document.getElementById('payrollGenerateBtn');
     const regenerateBtn = document.getElementById('payrollRegenerateBtn');
     const exportBtn = document.getElementById('payrollExportBtn');
+    const markPaidBtn = document.getElementById('payrollMarkPaidBtn');
+    const periodStatusEl = document.getElementById('payrollPeriodStatus');
     const summaryWrap = document.getElementById('payrollSummaryWrap');
+    const summaryHead = document.getElementById('payrollSummaryHead');
     const summaryBody = document.getElementById('payrollSummaryBody');
+    const summarySearch = document.getElementById('payrollSummarySearch');
     const summaryPeriodLabel = document.getElementById('payrollSummaryPeriodLabel');
     const summaryTotals = document.getElementById('payrollSummaryTotals');
+    const detailDrawerEl = document.getElementById('payrollDetailDrawer');
+    const detailDrawer = detailDrawerEl ? Offcanvas.getOrCreateInstance(detailDrawerEl) : null;
     const yearSelect = document.getElementById('payrollYear');
     const monthSelect = document.getElementById('payrollMonth');
 
@@ -51,6 +63,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     let previewUrl = null;
     let currentPayslipOptions = [];
     let employeeSearch = null;
+    let summaryPayslipsAll = [];
+    let summarySearchTerm = '';
 
     if (isManageMode && employeeInput && employeeHidden) {
         employeeSearch = initEmployeeAutocomplete({
@@ -112,6 +126,53 @@ document.addEventListener('DOMContentLoaded', async () => {
         return payslip ? String(payslip.id) : '';
     };
 
+    const selectedPeriod = () => periods.find((item) => String(item.id) === String(periodSelect?.value));
+
+    const updatePeriodActions = () => {
+        const period = selectedPeriod();
+        const isPaid = Boolean(period?.is_paid || period?.status === 'paid');
+
+        if (regenerateBtn) {
+            regenerateBtn.disabled = isPaid;
+            regenerateBtn.title = isPaid ? 'Paid payroll cannot be regenerated.' : '';
+        }
+
+        if (markPaidBtn) {
+            markPaidBtn.disabled = !period || isPaid;
+            markPaidBtn.classList.toggle('d-none', isPaid);
+        }
+
+        if (periodStatusEl) {
+            if (!period) {
+                periodStatusEl.classList.add('d-none');
+                periodStatusEl.innerHTML = '';
+                return;
+            }
+
+            periodStatusEl.classList.remove('d-none');
+
+            if (isPaid) {
+                const paidMeta = period.paid_at_label
+                    ? `Marked paid on ${period.paid_at_label}${period.paid_by?.name ? ` by ${period.paid_by.name}` : ''}`
+                    : 'This payroll period has been marked as paid.';
+
+                periodStatusEl.innerHTML = `
+                    <div class="payroll-period-status-card payroll-period-status-card--paid">
+                        <span class="payroll-period-status-badge payroll-period-status-badge--paid">Paid</span>
+                        <span class="payroll-period-status-text">${escapeHtml(paidMeta)}</span>
+                    </div>
+                `;
+            } else {
+                periodStatusEl.innerHTML = `
+                    <div class="payroll-period-status-card">
+                        <span class="payroll-period-status-badge payroll-period-status-badge--processed">Processed</span>
+                        <span class="payroll-period-status-text">Review the payout summary and mark as paid once salaries are disbursed.</span>
+                    </div>
+                `;
+            }
+        }
+    };
+
     const updateActionButtons = () => {
         const hasPayslip = Boolean(selectedPayslipId());
 
@@ -123,14 +184,161 @@ document.addEventListener('DOMContentLoaded', async () => {
             const payslips = periodId ? (payslipsByPeriod.get(periodId) || []) : [];
             exportBtn.disabled = !periodId || !payslips.length;
         }
+
+        updatePeriodActions();
     };
 
     const hideSummary = () => {
         summaryWrap?.classList.add('d-none');
+        summaryPayslipsAll = [];
+        summarySearchTerm = '';
+
+        if (summarySearch) {
+            summarySearch.value = '';
+        }
 
         if (summaryBody) {
             summaryBody.innerHTML = '';
         }
+
+        if (summaryHead) {
+            summaryHead.innerHTML = '';
+        }
+
+        if (periodStatusEl) {
+            periodStatusEl.classList.add('d-none');
+            periodStatusEl.innerHTML = '';
+        }
+    };
+
+    const formatEmployeeLink = (payslip) => {
+        const name = escapeHtml(payslip.employee_name);
+        const code = escapeHtml(payslip.employee_code || payslip.employee_id);
+        const href = `/employees/${payslip.employee_id}`;
+
+        return `
+            <a href="${href}" class="payroll-employee-link" target="_blank" rel="noopener noreferrer">
+                ${name} (${code})
+                <span class="payroll-external-icon" aria-hidden="true">&#8599;</span>
+            </a>
+        `;
+    };
+
+    const filteredSummaryPayslips = () => {
+        const term = summarySearchTerm.trim().toLowerCase();
+
+        if (!term) {
+            return summaryPayslipsAll;
+        }
+
+        return summaryPayslipsAll.filter((payslip) => {
+            const name = String(payslip.employee_name || '').toLowerCase();
+            const code = String(payslip.employee_code || '').toLowerCase();
+
+            return name.includes(term) || code.includes(term);
+        });
+    };
+
+    const renderDetailDrawer = (payslip) => {
+        const titleEl = document.getElementById('payrollDetailDrawerLabel');
+        const subtitleEl = document.getElementById('payrollDetailSubtitle');
+        const bodyEl = document.getElementById('payrollDetailBody');
+
+        if (!bodyEl) {
+            return;
+        }
+
+        if (titleEl) {
+            titleEl.textContent = payslip.employee_name || 'Detailed Calculations';
+        }
+
+        if (subtitleEl) {
+            subtitleEl.textContent = `${payslip.employee_code || payslip.employee_id || '—'} · ${summaryPeriodLabel?.textContent?.replace(/^—\s*/, '') || 'Payroll period'}`;
+        }
+
+        const earningRows = (payslip.earnings || [])
+            .filter((row) => row.label && row.label !== 'Expense Reimbursement')
+            .map((row) => `
+                <tr>
+                    <td>${escapeHtml(row.label)}</td>
+                    <td class="text-end">${formatAmount(row.amount)}</td>
+                </tr>
+            `).join('');
+
+        const deductionRows = (payslip.deductions || []).map((row) => `
+            <tr>
+                <td>${escapeHtml(row.label)}</td>
+                <td class="text-end">${formatAmount(row.amount)}</td>
+            </tr>
+        `).join('') || '<tr><td colspan="2" class="text-muted">No deductions</td></tr>';
+
+        bodyEl.innerHTML = `
+            <div class="payroll-detail-metrics row g-3 mb-4">
+                <div class="col-4">
+                    <div class="payroll-detail-metric">
+                        <span class="payroll-detail-metric-label">Payable Days</span>
+                        <span class="payroll-detail-metric-value">${Number(payslip.payable_days) || 0}</span>
+                    </div>
+                </div>
+                <div class="col-4">
+                    <div class="payroll-detail-metric">
+                        <span class="payroll-detail-metric-label">LOP Days</span>
+                        <span class="payroll-detail-metric-value">${Number(payslip.lop_days) || 0}</span>
+                    </div>
+                </div>
+                <div class="col-4">
+                    <div class="payroll-detail-metric">
+                        <span class="payroll-detail-metric-label">Paid Days</span>
+                        <span class="payroll-detail-metric-value">${paidDaysForPayslip(payslip).toFixed(1)}</span>
+                    </div>
+                </div>
+            </div>
+
+            <h6 class="mb-2">Earnings</h6>
+            <div class="table-responsive mb-4">
+                <table class="table table-sm payroll-detail-table">
+                    <tbody>${earningRows || '<tr><td colspan="2" class="text-muted">No earnings</td></tr>'}</tbody>
+                    <tfoot>
+                        <tr>
+                            <th>Gross Salary</th>
+                            <th class="text-end">${formatAmount(payslip.total_earnings)}</th>
+                        </tr>
+                    </tfoot>
+                </table>
+            </div>
+
+            <h6 class="mb-2">Deductions</h6>
+            <div class="table-responsive mb-4">
+                <table class="table table-sm payroll-detail-table">
+                    <tbody>${deductionRows}</tbody>
+                    <tfoot>
+                        <tr>
+                            <th>Total Deductions</th>
+                            <th class="text-end">${formatAmount(payslip.total_deductions)}</th>
+                        </tr>
+                    </tfoot>
+                </table>
+            </div>
+
+            <div class="payroll-detail-net">
+                <span>Net Salary</span>
+                <strong>${formatAmount(payslip.net_pay)}</strong>
+            </div>
+        `;
+
+        detailDrawer?.show();
+    };
+
+    const openPayslipPreview = async (payslipId) => {
+        const payslip = currentPayslipOptions.find((item) => String(item.id) === String(payslipId));
+
+        if (payslip && employeeSearch) {
+            employeeSearch.setSelection(payslip);
+        }
+
+        updateActionButtons();
+        await viewPayslip();
+        viewerWrap?.scrollIntoView({ behavior: 'smooth', block: 'start' });
     };
 
     const renderSummary = (payslips) => {
@@ -138,12 +346,15 @@ document.addEventListener('DOMContentLoaded', async () => {
             return;
         }
 
+        summaryPayslipsAll = payslips;
+
         if (!payslips.length) {
             hideSummary();
             return;
         }
 
         const period = periods.find((item) => String(item.id) === String(periodSelect?.value));
+        const visiblePayslips = filteredSummaryPayslips();
 
         if (summaryPeriodLabel) {
             summaryPeriodLabel.textContent = period ? `— ${period.label}` : '';
@@ -152,25 +363,58 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (summaryTotals) {
             const totalGross = payslips.reduce((sum, item) => sum + (Number(item.total_earnings) || 0), 0);
             const totalNet = payslips.reduce((sum, item) => sum + (Number(item.net_pay) || 0), 0);
-            const totalExpenses = payslips.reduce((sum, item) => sum + (Number(item.expense_reimbursements) || 0), 0);
-            const totalPayable = payslips.reduce((sum, item) => sum + (Number(item.total_payable) || 0), 0);
-            summaryTotals.textContent = `${payslips.length} employees · Gross ${formatAmount(totalGross)} · Net ${formatAmount(totalNet)} · Expenses ${formatAmount(totalExpenses)} · Total ${formatAmount(totalPayable)}`;
+            summaryTotals.textContent = `${payslips.length} employees · Gross ${formatAmount(totalGross)} · Net ${formatAmount(totalNet)}`;
         }
 
-        summaryBody.innerHTML = payslips.map((payslip) => `
+        if (!visiblePayslips.length) {
+            if (summaryHead) {
+                summaryHead.innerHTML = `
+                    <tr>
+                        <th>Full Name</th>
+                        <th>Comments</th>
+                        <th class="text-end">Gross Salary</th>
+                        <th class="text-end">Net Salary</th>
+                        <th class="text-center">Payslip Preview</th>
+                        <th class="text-center">Detailed Calculations</th>
+                    </tr>
+                `;
+            }
+
+            summaryBody.innerHTML = `
+                <tr>
+                    <td colspan="6" class="text-center text-muted py-4">No employees match your search.</td>
+                </tr>
+            `;
+            summaryWrap.classList.remove('d-none');
+            return;
+        }
+
+        if (summaryHead) {
+            summaryHead.innerHTML = `
+                <tr>
+                    <th>Full Name</th>
+                    <th>Comments</th>
+                    <th class="text-end">Gross Salary</th>
+                    <th class="text-end">Net Salary</th>
+                    <th class="text-center">Payslip Preview</th>
+                    <th class="text-center">Detailed Calculations</th>
+                </tr>
+            `;
+        }
+
+        summaryBody.innerHTML = visiblePayslips.map((payslip) => `
             <tr>
-                <td>
-                    <div class="fw-semibold">${escapeHtml(payslip.employee_name)}</div>
-                    <div class="text-muted small">${escapeHtml(payslip.employee_code || payslip.employee_id)}</div>
-                </td>
-                <td class="text-end">${Number(payslip.payable_days) || 0}</td>
-                <td class="text-end">${Number(payslip.lop_days) || 0}</td>
+                <td>${formatEmployeeLink(payslip)}</td>
+                <td class="text-muted">—</td>
                 <td class="text-end">${formatAmount(payslip.total_earnings)}</td>
                 <td class="text-end">${formatAmount(payslip.net_pay)}</td>
-                <td class="text-end">${formatAmount(payslip.expense_reimbursements)}</td>
-                <td class="text-end fw-semibold">${formatAmount(payslip.total_payable)}</td>
                 <td class="text-center">
-                    <button type="button" class="btn btn-link btn-sm p-0" data-summary-view="${payslip.id}">View</button>
+                    <button type="button" class="btn btn-link btn-sm p-0 payroll-action-link" data-summary-view="${payslip.id}">View</button>
+                </td>
+                <td class="text-center">
+                    <button type="button" class="btn btn-link btn-sm p-0 payroll-action-link payroll-detail-link" data-summary-detail="${payslip.id}">
+                        View <span class="payroll-sparkle" aria-hidden="true">&#10024;</span>
+                    </button>
                 </td>
             </tr>
         `).join('');
@@ -202,11 +446,15 @@ document.addEventListener('DOMContentLoaded', async () => {
             return;
         }
 
-        const options = periods.map((period) => `
-            <option value="${period.id}">
-                ${period.label} (${period.type === 'regular' ? 'Regular' : period.type})
-            </option>
-        `).join('');
+        const options = periods.map((period) => {
+            const statusSuffix = period.is_paid || period.status === 'paid' ? ' · Paid' : ' · Processed';
+
+            return `
+                <option value="${period.id}">
+                    ${period.label} (${period.type === 'regular' ? 'Regular' : period.type})${statusSuffix}
+                </option>
+            `;
+        }).join('');
 
         periodSelect.innerHTML = `<option value="">Choose period...</option>${options}`;
 
@@ -356,21 +604,26 @@ document.addEventListener('DOMContentLoaded', async () => {
     downloadBtn?.addEventListener('click', downloadPayslip);
 
     summaryBody?.addEventListener('click', async (event) => {
-        const trigger = event.target.closest('[data-summary-view]');
+        const previewTrigger = event.target.closest('[data-summary-view]');
+        const detailTrigger = event.target.closest('[data-summary-detail]');
 
-        if (!trigger || !employeeSearch) {
+        if (previewTrigger) {
+            await openPayslipPreview(previewTrigger.dataset.summaryView);
             return;
         }
 
-        const payslip = currentPayslipOptions.find((item) => String(item.id) === String(trigger.dataset.summaryView));
+        if (detailTrigger) {
+            const payslip = summaryPayslipsAll.find((item) => String(item.id) === String(detailTrigger.dataset.summaryDetail));
 
-        if (payslip) {
-            employeeSearch.setSelection(payslip);
+            if (payslip) {
+                renderDetailDrawer(payslip);
+            }
         }
+    });
 
-        updateActionButtons();
-        await viewPayslip();
-        viewerWrap?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    summarySearch?.addEventListener('input', () => {
+        summarySearchTerm = summarySearch.value || '';
+        renderSummary(summaryPayslipsAll);
     });
 
     exportBtn?.addEventListener('click', async () => {
@@ -403,6 +656,52 @@ document.addEventListener('DOMContentLoaded', async () => {
             showAlert(getErrorMessage(error), 'danger');
         } finally {
             exportBtn.textContent = originalText;
+            updateActionButtons();
+        }
+    });
+
+    markPaidBtn?.addEventListener('click', async () => {
+        const periodId = periodSelect?.value;
+
+        if (!periodId) {
+            return;
+        }
+
+        const period = selectedPeriod();
+
+        if (!period || period.is_paid || period.status === 'paid') {
+            return;
+        }
+
+        if (!window.confirm(`Mark payroll for ${period.label} as paid? Regeneration will be locked after this.`)) {
+            return;
+        }
+
+        markPaidBtn.disabled = true;
+        const originalText = markPaidBtn.textContent;
+        markPaidBtn.textContent = 'Marking...';
+
+        try {
+            const { data } = await api.post(`/payroll-periods/${periodId}/mark-paid`);
+            const updatedPeriod = data.data?.period;
+
+            if (updatedPeriod) {
+                periods = periods.map((item) => (
+                    String(item.id) === String(updatedPeriod.id) ? updatedPeriod : item
+                ));
+                renderPeriodOptions();
+                periodSelect.value = String(updatedPeriod.id);
+            } else {
+                await loadPeriods();
+                periodSelect.value = periodId;
+            }
+
+            updatePeriodActions();
+            showAlert(data.message || 'Payroll marked as paid successfully.');
+        } catch (error) {
+            showAlert(getErrorMessage(error), 'danger');
+        } finally {
+            markPaidBtn.textContent = originalText;
             updateActionButtons();
         }
     });

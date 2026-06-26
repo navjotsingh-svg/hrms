@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Api\V1;
 
+use App\Http\Concerns\ValidatesReviewNotes;
 use App\Http\Controllers\Controller;
 use App\Http\Concerns\ApiResponse;
 use App\Http\Requests\PreviewLeaveRequestRequest;
@@ -17,7 +18,7 @@ use Illuminate\Validation\Rule;
 
 class LeaveRequestController extends Controller
 {
-    use ApiResponse;
+    use ApiResponse, ValidatesReviewNotes;
 
     public function __construct(private LeaveRequestService $leaveRequestService) {}
 
@@ -92,7 +93,11 @@ class LeaveRequestController extends Controller
     public function approve(Request $request, LeaveRequest $leaveRequest): JsonResponse
     {
         $this->ensureCompanyRequest($request, $leaveRequest);
-        $leaveRequest = $this->leaveRequestService->approve($request->user(), $leaveRequest);
+        $leaveRequest = $this->leaveRequestService->approve(
+            $request->user(),
+            $leaveRequest,
+            $this->optionalReviewNotes($request),
+        );
 
         return $this->success(
             ['leave_request' => new LeaveRequestResource($leaveRequest)],

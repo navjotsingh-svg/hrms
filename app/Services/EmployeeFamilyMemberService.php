@@ -55,7 +55,7 @@ class EmployeeFamilyMemberService
             ->values();
     }
 
-    public function approve(User $user, EmployeeFamilyMember $member): EmployeeFamilyMember
+    public function approve(User $user, EmployeeFamilyMember $member, ?string $notes = null): EmployeeFamilyMember
     {
         $this->assertCanReview($user, $member);
 
@@ -69,7 +69,7 @@ class EmployeeFamilyMemberService
             'status' => 'approved',
             'reviewed_by_user_id' => $user->id,
             'reviewed_at' => now(),
-            'notes' => null,
+            'notes' => $notes ? trim($notes) : null,
         ]);
 
         return $member->fresh()->load(['employee', 'submittedBy.role', 'reviewedBy']);

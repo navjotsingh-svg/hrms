@@ -13,11 +13,6 @@
             @if (Auth::user()->canViewAllAttendance())
                 <a href="{{ route('web.attendance.today') }}" class="btn btn-outline-secondary btn-sm">Today</a>
             @endif
-            <div class="d-flex align-items-center gap-2" id="attendanceOverviewMonthNav">
-                <button type="button" class="btn btn-outline-secondary btn-sm" id="attendanceOverviewPrevMonth" aria-label="Previous month">&larr;</button>
-                <span class="fw-semibold min-w-140 text-center" id="attendanceOverviewMonthLabel">—</span>
-                <button type="button" class="btn btn-outline-secondary btn-sm" id="attendanceOverviewNextMonth" aria-label="Next month">&rarr;</button>
-            </div>
         </div>
     </div>
 @endsection
@@ -84,9 +79,16 @@
     </div>
 
     <div class="content-card">
-        <div class="content-card-header border-bottom d-flex flex-wrap justify-content-between align-items-center gap-2">
-            <h2 class="content-card-title mb-0" id="attendanceOverviewTitle">Attendance matrix</h2>
-            <div class="text-muted small" id="attendanceOverviewPaginationInfo">—</div>
+        <div class="content-card-header border-bottom">
+            <div class="d-flex flex-wrap align-items-center justify-content-between gap-3">
+                <h2 class="content-card-title mb-0" id="attendanceOverviewTitle">Attendance matrix</h2>
+                <div class="attendance-period-nav attendance-period-nav--primary" id="attendanceOverviewMonthNav">
+                    <button type="button" class="btn btn-outline-secondary btn-sm attendance-period-nav-btn" id="attendanceOverviewPrevMonth" aria-label="Previous month">&larr;</button>
+                    <span class="attendance-period-nav-label-text" id="attendanceOverviewMonthLabel">—</span>
+                    <button type="button" class="btn btn-outline-secondary btn-sm attendance-period-nav-btn" id="attendanceOverviewNextMonth" aria-label="Next month">&rarr;</button>
+                </div>
+                <div class="text-muted small" id="attendanceOverviewPaginationInfo">—</div>
+            </div>
         </div>
         <div class="companies-table-wrap attendance-matrix-wrap">
             <table class="companies-table attendance-matrix mb-0">

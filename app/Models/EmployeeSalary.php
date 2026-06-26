@@ -58,6 +58,8 @@ class EmployeeSalary extends Model
 
         'salary_effective_from',
 
+        'salary_payout_from',
+
     ];
 
 
@@ -93,6 +95,8 @@ class EmployeeSalary extends Model
             'professional_tax_applicable' => 'boolean',
 
             'salary_effective_from' => 'date',
+
+            'salary_payout_from' => 'date',
 
         ];
 

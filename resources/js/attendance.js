@@ -224,7 +224,13 @@ document.addEventListener('DOMContentLoaded', async () => {
     const dayModalLabel = document.getElementById('attendanceDayModalLabel');
     const dayModalSubtitle = document.getElementById('attendanceDayModalSubtitle');
 
-    let currentMonth = currentMonthKey();
+    const urlParams = new URLSearchParams(window.location.search);
+    const initialUrlEmployeeId = Number(urlParams.get('employee_id')) || null;
+    const initialUrlMonth = urlParams.get('month');
+    const initialUrlDate = urlParams.get('date');
+    let currentMonth = initialUrlMonth && /^\d{4}-\d{2}$/.test(initialUrlMonth)
+        ? initialUrlMonth
+        : currentMonthKey();
     let capabilities = { can_mark: false, can_view_all: false };
     let employees = [];
     let employeeAutocomplete = null;
@@ -288,19 +294,72 @@ document.addEventListener('DOMContentLoaded', async () => {
             return;
         }
 
-        const scopedEmployees = filteredEmployees();
         const selected = selectedEmployeeId();
 
-        if (selected && scopedEmployees.some((employee) => Number(employee.id) === selected)) {
-            setEmployeeSelection(findEmployeeById(selected));
+        if (selected) {
+            const employee = findEmployeeById(selected);
+
+            if (employee) {
+                setEmployeeSelection(employee);
+                return;
+            }
+
+            // Keep explicit selection (e.g. from URL) when the employee record is not cached locally yet.
             return;
         }
 
+        const scopedEmployees = filteredEmployees();
         const defaultId = defaultEmployeeId();
         const defaultEmployee = scopedEmployees.find((employee) => Number(employee.id) === defaultId);
 
         if (defaultEmployee) {
             setEmployeeSelection(defaultEmployee);
+        }
+    };
+
+    const resolveEmployeeForSelection = async (employeeId) => {
+        if (!employeeId) {
+            return null;
+        }
+
+        const cached = findEmployeeById(employeeId);
+
+        if (cached) {
+            return cached;
+        }
+
+        try {
+            const { data } = await api.get(`/employees/${employeeId}`);
+            const employee = data.data?.employee || data.data || null;
+
+            if (employee && !findEmployeeById(employee.id)) {
+                employees.push(employee);
+            }
+
+            return employee;
+        } catch {
+            return null;
+        }
+    };
+
+    const applyUrlEmployeeSelection = async () => {
+        if (!initialUrlEmployeeId || !employeeAutocomplete) {
+            return;
+        }
+
+        const employee = await resolveEmployeeForSelection(initialUrlEmployeeId);
+
+        if (employee) {
+            setEmployeeSelection(employee);
+            return;
+        }
+
+        if (filterEmployeeId) {
+            filterEmployeeId.value = String(initialUrlEmployeeId);
+        }
+
+        if (filterEmployeeInput) {
+            filterEmployeeInput.value = `Employee #${initialUrlEmployeeId}`;
         }
     };
 
@@ -884,5 +943,14 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
 
     await loadFilters();
+
+    if (initialUrlEmployeeId) {
+        await applyUrlEmployeeSelection();
+    }
+
     await loadCalendar();
+
+    if (initialUrlDate && /^\d{4}-\d{2}-\d{2}$/.test(initialUrlDate)) {
+        await openDayModal(initialUrlDate);
+    }
 });

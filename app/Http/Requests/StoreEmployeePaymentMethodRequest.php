@@ -37,6 +37,30 @@ class StoreEmployeePaymentMethodRequest extends FormRequest
             'account_holder_name' => ['nullable', 'required_if:payment_mode,bank_transfer', 'string', 'max:100'],
             'account_number' => ['nullable', 'required_if:payment_mode,bank_transfer', 'string', 'max:30'],
             'ifsc_code' => ['nullable', 'required_if:payment_mode,bank_transfer', 'string', 'max:20', 'regex:/^[A-Z]{4}0[A-Z0-9]{6}$/i'],
+            'proofs' => ['nullable', 'array', 'min:1'],
+            'proofs.*' => ['required', 'file', 'mimes:pdf,jpg,jpeg,png', 'max:5120'],
         ];
+    }
+
+    public function withValidator($validator): void
+    {
+        $validator->after(function ($validator) {
+            if ($validator->errors()->isNotEmpty()) {
+                return;
+            }
+
+            if ($this->input('payment_mode') !== 'bank_transfer') {
+                return;
+            }
+
+            if (! $this->hasFile('proofs')) {
+                $validator->errors()->add('proofs', 'Please attach at least one bank proof document.');
+            }
+        });
+    }
+
+    public function proofFiles(): array
+    {
+        return array_values($this->file('proofs', []));
     }
 }

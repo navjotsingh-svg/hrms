@@ -174,11 +174,40 @@ class EmployeeController extends Controller
             'status' => ['required', Rule::in(['active', 'inactive'])],
         ]);
 
-        $employee = $this->employeeService->update($employee, $validated);
+        $employee = $this->employeeService->updateStatus(
+            $employee,
+            $validated['status'],
+            $request->user(),
+        );
+
+        $message = $validated['status'] === 'inactive'
+            ? 'Employee deactivated. Portal access was disabled.'
+            : 'Employee status updated successfully.';
 
         return $this->success(
             ['employee' => new EmployeeResource($employee)],
-            'Employee status updated successfully.'
+            $message,
+        );
+    }
+
+    public function updatePortalAccess(Request $request, Employee $employee): JsonResponse
+    {
+        $this->ensureAccessibleEmployee($request, $employee);
+        $this->employeeAccessService->assertCanManage($request->user());
+
+        $validated = $request->validate([
+            'portal_access' => ['required', 'boolean'],
+        ]);
+
+        $result = $this->employeeService->updatePortalAccess(
+            $employee,
+            (bool) $validated['portal_access'],
+            $request->user(),
+        );
+
+        return $this->success(
+            ['employee' => new EmployeeResource($result['employee'])],
+            $result['message'],
         );
     }
 

@@ -13,7 +13,7 @@
                 </ol>
             </nav>
             <h1 class="page-title mb-1">Edit Employee Profile</h1>
-            <p class="page-subtitle mb-0">Update personal, bank, compliance, and document details. Changes save immediately without approval.</p>
+            <p class="page-subtitle mb-0">Update personal, bank, compliance, salary revisions, and document details. Changes save immediately without approval.</p>
         </div>
         <a href="{{ route('web.employees.show', ['employee' => $employeeId]) }}" class="btn btn-outline-secondary">Back to Profile</a>
     </div>

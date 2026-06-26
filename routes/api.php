@@ -29,6 +29,9 @@ Route::prefix('v1')->name('api.')->group(function () {
         Route::post('profile/personal-sections', [ProfileController::class, 'storePersonalSection'])->name('profile.personal-sections.store');
         Route::post('profile/compliance-fields', [ProfileController::class, 'storeComplianceField'])->name('profile.compliance-fields.store');
         Route::post('profile/payment-methods', [ProfileController::class, 'storePaymentMethod'])->name('profile.payment-methods.store');
+        Route::get('profile/payment-method-proofs/{employeePaymentMethodProof}/download', [ProfileController::class, 'downloadPaymentMethodProof'])
+            ->name('profile.payment-method-proofs.download')
+            ->whereNumber('employeePaymentMethodProof');
         Route::post('profile/documents', [ProfileController::class, 'storeDocument'])->name('profile.documents.store');
         Route::get('profile/documents/{employeeDocument}/download', [ProfileController::class, 'downloadDocument'])
             ->name('profile.documents.download')
@@ -51,6 +54,10 @@ Route::prefix('v1')->name('api.')->group(function () {
 
         Route::middleware('company.member')->group(function () {
             Route::middleware('company.permission:home.moments.view')->group(function () {
+                Route::get('home/moments/summary', [\App\Http\Controllers\Api\V1\MomentController::class, 'summary'])
+                    ->name('home.moments.summary');
+                Route::patch('home/moments/mark-seen', [\App\Http\Controllers\Api\V1\MomentController::class, 'markSeen'])
+                    ->name('home.moments.mark-seen');
                 Route::get('home/moments', [\App\Http\Controllers\Api\V1\MomentController::class, 'index'])
                     ->name('home.moments.index');
                 Route::get('home/moments/{moment}/comments', [\App\Http\Controllers\Api\V1\MomentController::class, 'comments'])
@@ -67,6 +74,8 @@ Route::prefix('v1')->name('api.')->group(function () {
             Route::middleware('company.permission:home.moments.post')->group(function () {
                 Route::post('home/moments', [\App\Http\Controllers\Api\V1\MomentController::class, 'store'])
                     ->name('home.moments.store');
+                Route::put('home/moments/templates', [\App\Http\Controllers\Api\V1\MomentController::class, 'updateTemplates'])
+                    ->name('home.moments.templates.update');
             });
 
             Route::middleware('company.permission:home.dashboard.view')->group(function () {
@@ -79,8 +88,22 @@ Route::prefix('v1')->name('api.')->group(function () {
                     ->name('home.dashboard.widgets.sync');
             });
 
+            Route::get('notifications/summary', [\App\Http\Controllers\Api\V1\NotificationController::class, 'summary'])
+                ->name('notifications.summary');
+            Route::get('notifications', [\App\Http\Controllers\Api\V1\NotificationController::class, 'index'])
+                ->name('notifications.index');
+            Route::post('notifications/read-all', [\App\Http\Controllers\Api\V1\NotificationController::class, 'markAllRead'])
+                ->name('notifications.read-all');
+            Route::post('notifications/{notification}/read', [\App\Http\Controllers\Api\V1\NotificationController::class, 'markRead'])
+                ->name('notifications.read')
+                ->whereNumber('notification');
+
             Route::get('request-hub/summary', [\App\Http\Controllers\Api\V1\RequestHubController::class, 'summary'])
                 ->name('request-hub.summary');
+            Route::get('request-hub/{category}/{entityId}', [\App\Http\Controllers\Api\V1\RequestHubController::class, 'show'])
+                ->name('request-hub.show')
+                ->where('category', '[a-z_]+')
+                ->where('entityId', '[0-9]+');
             Route::get('request-hub/pending', [\App\Http\Controllers\Api\V1\RequestHubController::class, 'pending'])
                 ->name('request-hub.pending');
             Route::post('request-hub/bulk-review', [\App\Http\Controllers\Api\V1\RequestHubController::class, 'bulkReview'])
@@ -113,6 +136,9 @@ Route::prefix('v1')->name('api.')->group(function () {
             Route::patch('employee-payment-methods/{employeePaymentMethod}/reject', [\App\Http\Controllers\Api\V1\EmployeePaymentMethodController::class, 'reject'])
                 ->name('employee-payment-methods.reject')
                 ->whereNumber('employeePaymentMethod');
+            Route::get('employee-payment-method-proofs/{employeePaymentMethodProof}/download', [\App\Http\Controllers\Api\V1\EmployeePaymentMethodController::class, 'downloadProof'])
+                ->name('employee-payment-method-proofs.download')
+                ->whereNumber('employeePaymentMethodProof');
 
             Route::get('employee-family-members/pending', [\App\Http\Controllers\Api\V1\EmployeeFamilyMemberController::class, 'pending'])
                 ->name('employee-family-members.pending');
@@ -363,6 +389,9 @@ Route::prefix('v1')->name('api.')->group(function () {
                 Route::patch('employees/{employee}/status', [\App\Http\Controllers\Api\V1\EmployeeController::class, 'updateStatus'])
                     ->name('employees.status')
                     ->whereNumber('employee');
+                Route::patch('employees/{employee}/portal-access', [\App\Http\Controllers\Api\V1\EmployeeController::class, 'updatePortalAccess'])
+                    ->name('employees.portal-access')
+                    ->whereNumber('employee');
                 Route::post('employees/{employee}/resend-welcome-email', [\App\Http\Controllers\Api\V1\EmployeeController::class, 'resendWelcomeEmail'])
                     ->name('employees.resend-welcome-email')
                     ->whereNumber('employee');
@@ -407,6 +436,11 @@ Route::prefix('v1')->name('api.')->group(function () {
             });
 
             Route::middleware('company.permission:attendance.view')->group(function () {
+                Route::get('holidays', [\App\Http\Controllers\Api\V1\HolidayController::class, 'index'])
+                    ->name('holidays.index');
+                Route::get('holidays/{holiday}', [\App\Http\Controllers\Api\V1\HolidayController::class, 'show'])
+                    ->name('holidays.show')
+                    ->whereNumber('holiday');
                 Route::get('attendance/status', [\App\Http\Controllers\Api\V1\AttendanceController::class, 'status'])
                     ->name('attendance.status');
                 Route::get('attendance/calendar', [\App\Http\Controllers\Api\V1\AttendanceController::class, 'calendar'])
@@ -452,6 +486,9 @@ Route::prefix('v1')->name('api.')->group(function () {
                     ->name('attendance-regularizations.summary');
                 Route::get('attendance-regularizations', [\App\Http\Controllers\Api\V1\AttendanceRegularizationController::class, 'index'])
                     ->name('attendance-regularizations.index');
+                Route::get('attendance-regularizations/batch/{batchId}', [\App\Http\Controllers\Api\V1\AttendanceRegularizationController::class, 'showBatch'])
+                    ->name('attendance-regularizations.batch.show')
+                    ->whereUuid('batchId');
                 Route::get('attendance-regularizations/{attendance_regularization}', [\App\Http\Controllers\Api\V1\AttendanceRegularizationController::class, 'show'])
                     ->name('attendance-regularizations.show')
                     ->whereNumber('attendance_regularization');
@@ -545,8 +582,16 @@ Route::prefix('v1')->name('api.')->group(function () {
                     ->name('portal-start.show');
                 Route::put('portal-start', [\App\Http\Controllers\Api\V1\PortalStartController::class, 'update'])
                     ->name('portal-start.update');
-                Route::apiResource('holidays', \App\Http\Controllers\Api\V1\HolidayController::class)
-                    ->names('holidays')
+                Route::post('holidays', [\App\Http\Controllers\Api\V1\HolidayController::class, 'store'])
+                    ->name('holidays.store');
+                Route::put('holidays/{holiday}', [\App\Http\Controllers\Api\V1\HolidayController::class, 'update'])
+                    ->name('holidays.update')
+                    ->whereNumber('holiday');
+                Route::patch('holidays/{holiday}', [\App\Http\Controllers\Api\V1\HolidayController::class, 'update'])
+                    ->name('holidays.patch')
+                    ->whereNumber('holiday');
+                Route::delete('holidays/{holiday}', [\App\Http\Controllers\Api\V1\HolidayController::class, 'destroy'])
+                    ->name('holidays.destroy')
                     ->whereNumber('holiday');
             });
 
@@ -589,6 +634,9 @@ Route::prefix('v1')->name('api.')->group(function () {
                     ->name('payroll-periods.generate');
                 Route::post('payroll-periods/regenerate', [\App\Http\Controllers\Api\V1\PayrollController::class, 'regenerate'])
                     ->name('payroll-periods.regenerate');
+                Route::post('payroll-periods/{payrollPeriod}/mark-paid', [\App\Http\Controllers\Api\V1\PayrollController::class, 'markPaid'])
+                    ->name('payroll-periods.mark-paid')
+                    ->whereNumber('payrollPeriod');
                 Route::get('payroll-periods/{payrollPeriod}/payslips', [\App\Http\Controllers\Api\V1\PayrollController::class, 'payslips'])
                     ->name('payroll-periods.payslips')
                     ->whereNumber('payrollPeriod');
@@ -768,6 +816,9 @@ Route::prefix('v1')->name('api.')->group(function () {
 
                 Route::get('hiring-candidates', [\App\Http\Controllers\Api\V1\HiringCandidateController::class, 'index'])
                     ->name('hiring-candidates.index');
+                Route::get('hiring-candidates/{candidate}', [\App\Http\Controllers\Api\V1\HiringCandidateController::class, 'show'])
+                    ->name('hiring-candidates.show')
+                    ->whereNumber('candidate');
                 Route::post('hiring-candidates', [\App\Http\Controllers\Api\V1\HiringCandidateController::class, 'store'])
                     ->name('hiring-candidates.store');
                 Route::patch('hiring-candidates/{candidate}/stage', [\App\Http\Controllers\Api\V1\HiringCandidateController::class, 'updateStage'])
@@ -844,6 +895,9 @@ Route::prefix('v1')->name('api.')->group(function () {
                 Route::get('employees/{employee}/profile/documents/{employeeDocument}/download', [\App\Http\Controllers\Api\V1\EmployeeProfileController::class, 'downloadDocument'])
                     ->name('employees.profile.documents.download')
                     ->whereNumber(['employee', 'employeeDocument']);
+                Route::get('employees/{employee}/profile/payment-method-proofs/{employeePaymentMethodProof}/download', [\App\Http\Controllers\Api\V1\EmployeeProfileController::class, 'downloadPaymentMethodProof'])
+                    ->name('employees.profile.payment-method-proofs.download')
+                    ->whereNumber(['employee', 'employeePaymentMethodProof']);
             });
         });
     });

@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Api\V1;
 
+use App\Http\Concerns\ValidatesReviewNotes;
 use App\Http\Controllers\Controller;
 use App\Http\Concerns\ApiResponse;
 use App\Models\JobRequisition;
@@ -12,7 +13,7 @@ use Illuminate\Validation\Rule;
 
 class JobRequisitionController extends Controller
 {
-    use ApiResponse;
+    use ApiResponse, ValidatesReviewNotes;
 
     public function __construct(private HiringService $hiringService) {}
 
@@ -57,19 +58,25 @@ class JobRequisitionController extends Controller
 
     public function approve(Request $request, JobRequisition $jobRequisition): JsonResponse
     {
-        $requisition = $this->hiringService->approveRequisition($request->user(), $jobRequisition);
+        $requisition = $this->hiringService->approveRequisition(
+            $request->user(),
+            $jobRequisition,
+            $this->optionalReviewNotes($request),
+        );
 
         return $this->success(['requisition' => $this->format($requisition)], 'Requisition approved and job draft created.');
     }
 
     public function reject(Request $request, JobRequisition $jobRequisition): JsonResponse
     {
-        $validated = $request->validate(['reason' => ['nullable', 'string', 'max:1000']]);
+        $validated = $request->validate([
+            'reason' => ['required', 'string', 'max:1000'],
+        ]);
 
         $requisition = $this->hiringService->rejectRequisition(
             $request->user(),
             $jobRequisition,
-            $validated['reason'] ?? null
+            $validated['reason'],
         );
 
         return $this->success(['requisition' => $this->format($requisition)], 'Requisition rejected.');

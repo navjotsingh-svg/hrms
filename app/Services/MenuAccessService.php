@@ -23,19 +23,25 @@ class MenuAccessService
             return false;
         }
 
-        if ($user->hasFullAccess()) {
-            return true;
-        }
-
         if (! empty($config['feature']) && ! config('hrms.'.$config['feature'])) {
             return false;
         }
 
+        $allowed = false;
+
         if (! empty($config['rule'])) {
-            return $this->evaluateRule($user, $config['rule']);
+            $allowed = $this->evaluateRule($user, $config['rule']);
         }
 
-        return $this->hasAnyPermission($user, $config['permissions'] ?? []);
+        if (! empty($config['permissions'])) {
+            $allowed = $allowed || $this->hasAnyPermission($user, $config['permissions']);
+        }
+
+        if (! empty($config['rule']) || ! empty($config['permissions'])) {
+            return $allowed;
+        }
+
+        return false;
     }
 
     /** @param  array<int, string>  $keys */

@@ -60,7 +60,7 @@
 
         attendanceRegularizeIndex: @json(route('web.attendance.regularize.index')),
 
-        holidaysIndex: @json(route('web.masters.attendance.holidays.index')),
+        holidaysIndex: @json(route('web.attendance.holidays')),
 
         holidayCreate: @json(route('web.masters.attendance.holidays.create')),
 

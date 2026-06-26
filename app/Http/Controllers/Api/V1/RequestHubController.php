@@ -15,6 +15,13 @@ class RequestHubController extends Controller
 
     public function __construct(private RequestHubService $requestHubService) {}
 
+    public function show(Request $request, string $category, string $entityId): JsonResponse
+    {
+        return $this->success([
+            'request' => $this->requestHubService->showForUser($request->user(), $category, $entityId),
+        ]);
+    }
+
     public function summary(Request $request): JsonResponse
     {
         return $this->success($this->requestHubService->summaryForUser($request->user()));
@@ -65,12 +72,20 @@ class RequestHubController extends Controller
     {
         $validated = $request->validate([
             'status' => ['nullable', Rule::in(['pending', 'approved', 'rejected', 'cancelled'])],
+            'date_from' => ['nullable', 'date'],
+            'date_to' => ['nullable', 'date'],
         ]);
 
+        $requests = $this->requestHubService->mineForUser(
+            $request->user(),
+            $validated['status'] ?? null,
+        );
+
         return $this->success([
-            'requests' => $this->requestHubService->mineForUser(
-                $request->user(),
-                $validated['status'] ?? null,
+            'requests' => $this->requestHubService->filterByDateRange(
+                $requests,
+                $validated['date_from'] ?? null,
+                $validated['date_to'] ?? null,
             ),
         ]);
     }
@@ -79,12 +94,20 @@ class RequestHubController extends Controller
     {
         $validated = $request->validate([
             'status' => ['nullable', Rule::in(['approved', 'rejected', 'cancelled'])],
+            'date_from' => ['nullable', 'date'],
+            'date_to' => ['nullable', 'date'],
         ]);
 
+        $requests = $this->requestHubService->teamForUser(
+            $request->user(),
+            $validated['status'] ?? null,
+        );
+
         return $this->success([
-            'requests' => $this->requestHubService->teamForUser(
-                $request->user(),
-                $validated['status'] ?? null,
+            'requests' => $this->requestHubService->filterByDateRange(
+                $requests,
+                $validated['date_from'] ?? null,
+                $validated['date_to'] ?? null,
             ),
         ]);
     }

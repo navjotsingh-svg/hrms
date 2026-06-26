@@ -73,10 +73,36 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
     };
 
-    const renderPortalBadge = (employee) => {
-        return employee.has_portal_access
-            ? '<span class="company-status-pill company-status-pill--active">Active</span>'
-            : '<span class="company-status-pill company-status-pill--inactive">None</span>';
+    const renderPortalCell = (employee) => {
+        const hasPortal = Boolean(employee.has_portal_access);
+        const switchId = `employee-portal-${employee.id}`;
+        const isInactive = employee.status !== 'active';
+        const disabled = !canManage || isInactive ? 'disabled' : '';
+
+        return `
+            <div class="company-status-cell">
+                <div class="form-check form-switch company-status-switch company-status-switch--solo mb-0">
+                    <input
+                        class="form-check-input"
+                        type="checkbox"
+                        role="switch"
+                        id="${switchId}"
+                        data-portal-toggle="${employee.id}"
+                        ${hasPortal ? 'checked' : ''}
+                        ${disabled}
+                        aria-label="Toggle portal access"
+                    >
+                </div>
+            </div>
+        `;
+    };
+
+    const setPortalToggle = (employeeId, hasPortal) => {
+        const toggle = tableBody.querySelector(`[data-portal-toggle="${employeeId}"]`);
+
+        if (toggle) {
+            toggle.checked = hasPortal;
+        }
     };
 
     const MAIL_ICON = '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16"><path d="M0 4a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H2a2 2 0 0 1-2-2zm2-1a1 1 0 0 0-1 1v.217l7 4.2 7-4.2V4a1 1 0 0 0-1-1zm13 2.383-4.708 2.825L15 11.105zm-.034 6.876-5.64-3.471L8 9.583l-1.326-.795-5.64 3.47A1 1 0 0 0 2 13h12a1 1 0 0 0 .966-.741M1 11.105l4.708-2.897L1 5.383z"/></svg>';
@@ -155,7 +181,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                 <td>${employee.employee_code || '—'}</td>
                 <td>${departmentName}</td>
                 <td>${roleName}</td>
-                <td>${renderPortalBadge(employee)}</td>
+                <td>${renderPortalCell(employee)}</td>
                 <td>${renderStatusCell(employee)}</td>
                 ${renderActions(employee)}
             </tr>
@@ -297,6 +323,43 @@ document.addEventListener('DOMContentLoaded', async () => {
     });
 
     tableBody.addEventListener('change', async (event) => {
+        const portalToggle = event.target.closest('[data-portal-toggle]');
+
+        if (portalToggle && canManage) {
+            const employeeId = portalToggle.dataset.portalToggle;
+            const portalAccess = portalToggle.checked;
+            const previousChecked = !portalToggle.checked;
+
+            if (portalAccess && !window.confirm('Enable portal access? A welcome email with login credentials will be sent to the employee.')) {
+                portalToggle.checked = previousChecked;
+                return;
+            }
+
+            if (!portalAccess && !window.confirm('Disable portal access? The employee will be signed out and cannot log in until access is restored.')) {
+                portalToggle.checked = previousChecked;
+                return;
+            }
+
+            portalToggle.disabled = true;
+
+            try {
+                const { data } = await api.patch(`/employees/${employeeId}/portal-access`, {
+                    portal_access: portalAccess,
+                });
+                setPortalToggle(employeeId, Boolean(data.data.employee.has_portal_access));
+                showAlert(data.message || 'Portal access updated successfully.');
+                await loadEmployees(currentPage);
+            } catch (error) {
+                portalToggle.checked = previousChecked;
+                setPortalToggle(employeeId, previousChecked);
+                showAlert(getErrorMessage(error), 'danger');
+            } finally {
+                portalToggle.disabled = false;
+            }
+
+            return;
+        }
+
         const toggle = event.target.closest('[data-status-toggle]');
 
         if (!toggle || !canManage) {
@@ -312,7 +375,9 @@ document.addEventListener('DOMContentLoaded', async () => {
         try {
             const { data } = await api.patch(`/employees/${employeeId}/status`, { status });
             setStatusToggle(employeeId, data.data.employee.status);
+            setPortalToggle(employeeId, Boolean(data.data.employee.has_portal_access));
             showAlert(data.message || 'Employee status updated successfully.');
+            await loadEmployees(currentPage);
         } catch (error) {
             toggle.checked = previousChecked;
             setStatusToggle(employeeId, previousChecked ? 'active' : 'inactive');

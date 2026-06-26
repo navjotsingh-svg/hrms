@@ -472,6 +472,21 @@
                 </div>
             </div>
         </div>
+
+        <div class="wizard-form-section d-none" id="salaryRevisionNotesSection">
+            <div class="wizard-form-section-head">
+                <span class="wizard-form-section-icon" aria-hidden="true">📝</span>
+                <div>
+                    <h6 class="wizard-form-section-title">Salary Revision Note</h6>
+                    <p class="wizard-form-section-desc">Optional note saved in the salary revision history when compensation changes.</p>
+                </div>
+            </div>
+            <div class="wizard-form-section-body">
+                <label for="salary_revision_notes" class="form-label">Revision Notes</label>
+                <textarea class="form-control" id="salary_revision_notes" name="salary_revision_notes" rows="2" placeholder="e.g. Annual increment, promotion, correction"></textarea>
+                <div class="invalid-feedback d-block" data-error="salary_revision_notes"></div>
+            </div>
+        </div>
     </div>
 
     {{-- Step 4: Review --}}

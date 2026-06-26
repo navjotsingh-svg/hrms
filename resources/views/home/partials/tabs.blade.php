@@ -24,7 +24,12 @@
                         href="{{ $tab['href'] }}"
                         role="tab"
                         @if ($active === $tab['key']) aria-current="page" @endif
-                    >{{ $tab['label'] }}</a>
+                    >
+                        {{ $tab['label'] }}
+                        @if ($tab['key'] === 'moments')
+                            <span class="moments-tab-badge d-none" id="homeTabMomentsBadge" aria-hidden="true"></span>
+                        @endif
+                    </a>
                 </li>
             @endforeach
         </ul>

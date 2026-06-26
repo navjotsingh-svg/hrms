@@ -6,6 +6,7 @@ use App\Http\Resources\EmployeePersonalSectionResource;
 use App\Models\DocumentType;
 use App\Models\Employee;
 use App\Models\EmployeeDocument;
+use App\Models\EmployeePaymentMethodProof;
 use App\Models\User;
 use Illuminate\Support\Collection;
 use Symfony\Component\HttpKernel\Exception\AccessDeniedHttpException;
@@ -60,6 +61,7 @@ class EmployeeProfileService
             'salaryRevisions.revisedBy',
             'paymentMethods.submittedBy.role',
             'paymentMethods.reviewedBy',
+            'paymentMethods.proofs',
             'complianceFields.submittedBy.role',
             'complianceFields.reviewedBy',
             'familyMembers.submittedBy.role',
@@ -120,6 +122,7 @@ class EmployeeProfileService
                 'esi_applicable',
                 'professional_tax_applicable',
                 'salary_effective_from',
+                'salary_payout_from',
             ])->all(),
             $user,
             $data['revision_notes'] ?? null,
@@ -138,9 +141,18 @@ class EmployeeProfileService
         );
     }
 
-    public function submitPaymentMethod(User $user, Employee $employee, array $data): array
+    public function submitPaymentMethod(User $user, Employee $employee, array $data, array $proofFiles = []): array
     {
-        return $this->paymentMethodService->submit($user, $employee, $data);
+        return $this->paymentMethodService->submit($user, $employee, $data, $proofFiles);
+    }
+
+    public function downloadPaymentMethodProof(User $user, Employee $employee, EmployeePaymentMethodProof $proof): array
+    {
+        if ((int) $proof->employee_id !== (int) $employee->id) {
+            throw new NotFoundHttpException('Bank proof not found.');
+        }
+
+        return $this->paymentMethodService->downloadProofForUser($user, $proof);
     }
 
     public function submitComplianceField(User $user, Employee $employee, array $data): array

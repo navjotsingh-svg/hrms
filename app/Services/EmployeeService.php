@@ -14,6 +14,7 @@ use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Str;
+use Illuminate\Validation\ValidationException;
 use Symfony\Component\HttpKernel\Exception\AccessDeniedHttpException;
 
 class EmployeeService
@@ -30,6 +31,7 @@ class EmployeeService
         'esi_applicable',
         'professional_tax_applicable',
         'salary_effective_from',
+        'salary_payout_from',
     ];
 
     public function __construct(private EmployeeAccessService $employeeAccessService, private ActivityLogService $activityLogService) {}
@@ -177,6 +179,7 @@ class EmployeeService
         unset($data['give_portal_access']);
 
         $salaryData = $this->extractSalaryData($data);
+        $salaryRevisionNotes = $this->extractSalaryRevisionNotes($data);
         $departmentIds = $this->extractDepartmentIds($data);
         $weeklyOffData = $this->extractWeeklyOffData($data);
         $leaveTypeIds = $this->extractLeaveTypeIds($data);
@@ -187,12 +190,26 @@ class EmployeeService
             'status', 'employment_type', 'designation', 'manager_id', 'shift_id', 'phone', 'date_of_joining', 'probation_status',
         ];
         $before = $employee->only($trackedFields);
+        $actor = request()?->user();
+        $salaryWasInitialSync = false;
 
-        DB::transaction(function () use ($employee, $data, $givePortalAccess, $salaryData, $departmentIds, $weeklyOffData, $leaveTypeIds, &$plainPassword) {
+        DB::transaction(function () use ($employee, $data, $givePortalAccess, $salaryData, $salaryRevisionNotes, $departmentIds, $weeklyOffData, $leaveTypeIds, $actor, &$plainPassword, &$salaryWasInitialSync) {
             $employee->update($data);
 
             if ($salaryData !== null) {
-                $this->syncSalary($employee, $salaryData);
+                $existingSalary = EmployeeSalary::query()->where('employee_id', $employee->id)->first();
+
+                if ($existingSalary) {
+                    $this->reviseSalary(
+                        $employee,
+                        $salaryData,
+                        $actor,
+                        $salaryRevisionNotes ?? 'Updated from employee record',
+                    );
+                } else {
+                    $this->syncSalary($employee, $salaryData);
+                    $salaryWasInitialSync = true;
+                }
             }
 
             $this->syncDepartments($employee, $departmentIds);
@@ -236,6 +253,10 @@ class EmployeeService
                     'role_id' => $employee->role_id,
                 ]);
             }
+
+            if ($employee->status === 'inactive' && $employee->user_id) {
+                $this->revokePortalAccess($employee, $actor);
+            }
         });
 
         $employee = $employee->fresh()->load(['department', 'departments', 'role', 'manager', 'shift', 'company', 'salary', 'weeklyOffDays', 'leaveTypes']);
@@ -271,7 +292,7 @@ class EmployeeService
                 );
             }
 
-            if ($salaryData !== null) {
+            if ($salaryWasInitialSync) {
                 $this->activityLogService->logChange(
                     $actor,
                     'employees',
@@ -490,6 +511,145 @@ class EmployeeService
         }
     }
 
+    /** @return array{employee: Employee, message: string, plain_password: ?string} */
+    public function grantPortalAccess(Employee $employee, ?User $actor = null): array
+    {
+        if ($employee->status !== 'active') {
+            throw ValidationException::withMessages([
+                'portal_access' => ['Portal access can only be enabled for active employees.'],
+            ]);
+        }
+
+        $employee->loadMissing(['user', 'role', 'company']);
+
+        if ($employee->user_id) {
+            return [
+                'employee' => $employee,
+                'message' => 'Employee already has portal access.',
+                'plain_password' => null,
+            ];
+        }
+
+        $plainPassword = Str::password(12, symbols: false);
+        $fullName = trim("{$employee->first_name} ".($employee->last_name ?? ''));
+
+        DB::transaction(function () use ($employee, $plainPassword, $fullName, $actor) {
+            $user = User::create([
+                'company_id' => $employee->company_id,
+                'role_id' => $employee->role_id,
+                'name' => $fullName,
+                'email' => $employee->email,
+                'password' => $plainPassword,
+                'email_verified_at' => now(),
+            ]);
+
+            $employee->update([
+                'user_id' => $user->id,
+                'portal_access_date' => now()->toDateString(),
+            ]);
+
+            if ($actor) {
+                $this->activityLogService->logChange(
+                    $actor,
+                    'employees',
+                    'portal_access.granted',
+                    $employee,
+                    (int) $employee->id,
+                    'Portal access granted to employee.',
+                    [],
+                    ['portal_access_date' => $employee->portal_access_date],
+                    request(),
+                );
+            }
+        });
+
+        $employee = $employee->fresh()->load(['department', 'departments', 'role', 'manager', 'shift', 'company']);
+
+        try {
+            Mail::to($employee->email)->send(new EmployeeWelcomeMail($employee, $plainPassword));
+        } catch (\Throwable $exception) {
+            report($exception);
+        }
+
+        return [
+            'employee' => $employee,
+            'message' => 'Portal access enabled. Welcome email sent with login credentials.',
+            'plain_password' => $plainPassword,
+        ];
+    }
+
+    public function revokePortalAccess(Employee $employee, ?User $actor = null, bool $logChange = true): Employee
+    {
+        $employee->loadMissing('user');
+
+        if (! $employee->user_id && ! $employee->portal_access_date) {
+            return $employee->fresh()->load(['department', 'departments', 'role', 'manager', 'shift', 'company']);
+        }
+
+        DB::transaction(function () use ($employee, $actor, $logChange) {
+            $user = $employee->user;
+
+            $employee->update([
+                'user_id' => null,
+                'portal_access_date' => null,
+            ]);
+
+            if ($user) {
+                $user->tokens()->delete();
+                $user->delete();
+            }
+
+            if ($logChange && $actor) {
+                $this->activityLogService->logChange(
+                    $actor,
+                    'employees',
+                    'portal_access.revoked',
+                    $employee,
+                    (int) $employee->id,
+                    'Portal access disabled for employee.',
+                    [],
+                    [],
+                    request(),
+                );
+            }
+        });
+
+        return $employee->fresh()->load(['department', 'departments', 'role', 'manager', 'shift', 'company']);
+    }
+
+    /** @return array{employee: Employee, message: string} */
+    public function updatePortalAccess(Employee $employee, bool $enabled, ?User $actor = null): array
+    {
+        if ($enabled) {
+            $result = $this->grantPortalAccess($employee, $actor);
+
+            return [
+                'employee' => $result['employee'],
+                'message' => $result['message'],
+            ];
+        }
+
+        $employee = $this->revokePortalAccess($employee, $actor);
+
+        return [
+            'employee' => $employee,
+            'message' => 'Portal access disabled. The employee can no longer sign in.',
+        ];
+    }
+
+    public function updateStatus(Employee $employee, string $status, ?User $actor = null): Employee
+    {
+        DB::transaction(function () use ($employee, $status, $actor) {
+            $employee->update(['status' => $status]);
+
+            if ($status === 'inactive' && $employee->user_id) {
+                $this->revokePortalAccess($employee, $actor);
+            }
+        });
+
+        return $employee->fresh()->load(['department', 'departments', 'role', 'manager', 'shift', 'company']);
+    }
+
     public function delete(Employee $employee): void
     {
         DB::transaction(function () use ($employee) {
@@ -538,6 +698,71 @@ class EmployeeService
         return $salary !== [] ? $this->normalizeSalaryData($salary) : null;
     }
 
+    private function extractSalaryRevisionNotes(array &$data): ?string
+    {
+        if (! array_key_exists('salary_revision_notes', $data)) {
+            return null;
+        }
+
+        $notes = trim((string) ($data['salary_revision_notes'] ?? ''));
+        unset($data['salary_revision_notes']);
+
+        return $notes !== '' ? $notes : null;
+    }
+
+    private function salarySnapshotMatches(EmployeeSalary $existing, array $normalized): bool
+    {
+        foreach (self::SALARY_KEYS as $key) {
+            $existingValue = $existing->{$key};
+            $newValue = $normalized[$key] ?? null;
+
+            if (in_array($key, ['pf_applicable', 'esi_applicable', 'professional_tax_applicable'], true)) {
+                if ((bool) $existingValue !== (bool) $newValue) {
+                    return false;
+                }
+
+                continue;
+            }
+
+            if ($key === 'salary_effective_from' || $key === 'salary_payout_from') {
+                $existingDate = $existingValue?->format('Y-m-d');
+                $newDate = $newValue ? \Carbon\Carbon::parse($newValue)->format('Y-m-d') : null;
+
+                if ($existingDate !== $newDate) {
+                    return false;
+                }
+
+                continue;
+            }
+
+            if (round((float) $existingValue, 2) !== round((float) $newValue, 2)) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    /** @return array<string, mixed> */
+    private function salarySnapshotForLog(EmployeeSalary $salary): array
+    {
+        return $this->sanitizeSalaryForLog([
+            'annual_ctc' => (float) $salary->annual_ctc,
+            'basic_salary' => (float) $salary->basic_salary,
+            'hra_percent' => (float) $salary->hra_percent,
+            'special_allowance_percent' => (float) $salary->special_allowance_percent,
+            'conveyance_allowance' => (float) $salary->conveyance_allowance,
+            'medical_allowance' => (float) $salary->medical_allowance,
+            'other_allowance' => (float) $salary->other_allowance,
+            'pf_applicable' => (bool) $salary->pf_applicable,
+            'esi_applicable' => (bool) $salary->esi_applicable,
+            'professional_tax_applicable' => (bool) $salary->professional_tax_applicable,
+            'salary_effective_from' => $salary->salary_effective_from?->format('Y-m-d'),
+            'salary_payout_from' => $salary->salary_payout_from?->format('Y-m-d'),
+            'monthly_gross' => $salary->monthly_gross,
+        ]);
+    }
+
     private function normalizeSalaryData(array $salary): array
     {
         $annualCtc = (float) ($salary['annual_ctc'] ?? 0);
@@ -557,6 +782,10 @@ class EmployeeService
         $salary['pf_applicable'] = (bool) ($salary['pf_applicable'] ?? true);
         $salary['esi_applicable'] = (bool) ($salary['esi_applicable'] ?? false);
         $salary['professional_tax_applicable'] = (bool) ($salary['professional_tax_applicable'] ?? true);
+
+        if (empty($salary['salary_payout_from']) && ! empty($salary['salary_effective_from'])) {
+            $salary['salary_payout_from'] = $salary['salary_effective_from'];
+        }
 
         return $salary;
     }
@@ -706,6 +935,12 @@ class EmployeeService
         return DB::transaction(function () use ($employee, $normalized, $revisedBy, $revisionNotes) {
             $existing = EmployeeSalary::query()->where('employee_id', $employee->id)->first();
 
+            if ($existing && $this->salarySnapshotMatches($existing, $normalized)) {
+                return $existing;
+            }
+
+            $previousSnapshot = $existing ? $this->salarySnapshotForLog($existing) : [];
+
             if ($existing) {
                 EmployeeSalaryRevision::create([
                     'company_id' => $employee->company_id,
@@ -724,12 +959,29 @@ class EmployeeService
                     'esi_applicable' => $existing->esi_applicable,
                     'professional_tax_applicable' => $existing->professional_tax_applicable,
                     'salary_effective_from' => $existing->salary_effective_from,
+                    'salary_payout_from' => $existing->salary_payout_from,
                     'revision_notes' => $revisionNotes,
                     'revised_at' => now(),
                 ]);
             }
 
-            return $this->persistSalary($employee, $normalized, $existing);
+            $updated = $this->persistSalary($employee, $normalized, $existing);
+
+            if ($revisedBy && $existing) {
+                $this->activityLogService->logChange(
+                    $revisedBy,
+                    'employees',
+                    'salary.revised',
+                    $employee,
+                    (int) $employee->id,
+                    'Employee salary revised.',
+                    $previousSnapshot,
+                    $this->sanitizeSalaryForLog($normalized),
+                    request(),
+                );
+            }
+
+            return $updated;
         });
     }
 

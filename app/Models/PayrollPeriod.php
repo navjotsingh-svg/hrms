@@ -8,6 +8,10 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class PayrollPeriod extends Model
 {
+    public const STATUS_PROCESSED = 'processed';
+
+    public const STATUS_PAID = 'paid';
+
     protected $fillable = [
         'company_id',
         'year',
@@ -16,6 +20,8 @@ class PayrollPeriod extends Model
         'status',
         'processed_by_user_id',
         'processed_at',
+        'paid_by_user_id',
+        'paid_at',
     ];
 
     protected function casts(): array
@@ -24,6 +30,7 @@ class PayrollPeriod extends Model
             'year' => 'integer',
             'month' => 'integer',
             'processed_at' => 'datetime',
+            'paid_at' => 'datetime',
         ];
     }
 
@@ -35,6 +42,24 @@ class PayrollPeriod extends Model
     public function processedBy(): BelongsTo
     {
         return $this->belongsTo(User::class, 'processed_by_user_id');
+    }
+
+    public function paidBy(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'paid_by_user_id');
+    }
+
+    public function isPaid(): bool
+    {
+        return $this->status === self::STATUS_PAID;
+    }
+
+    public function statusLabel(): string
+    {
+        return match ($this->status) {
+            self::STATUS_PAID => 'Paid',
+            default => 'Processed',
+        };
     }
 
     public function payslips(): HasMany

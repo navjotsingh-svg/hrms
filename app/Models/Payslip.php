@@ -64,7 +64,7 @@ class Payslip extends Model
 
     public function totalPayable(): float
     {
-        return (float) $this->net_pay + (float) $this->expense_reimbursements;
+        return (float) $this->net_pay;
     }
 
     public function periodLabel(): string

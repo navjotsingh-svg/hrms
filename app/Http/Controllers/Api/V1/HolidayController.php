@@ -21,6 +21,8 @@ class HolidayController extends Controller
 
     public function index(Request $request): JsonResponse
     {
+        $canManage = $request->user()->canManageAttendanceMasters();
+
         $validated = $request->validate([
             'search' => ['nullable', 'string', 'max:255'],
             'year' => ['nullable', 'integer', 'min:2000', 'max:2100'],
@@ -28,6 +30,10 @@ class HolidayController extends Controller
             'per_page' => ['nullable', 'integer', Rule::in([10, 25, 50])],
             'page' => ['nullable', 'integer', 'min:1'],
         ]);
+
+        if (! $canManage) {
+            $validated['status'] = 'active';
+        }
 
         $holidays = $this->holidayService->listForCompany(
             $request->user()->company_id,
@@ -64,6 +70,10 @@ class HolidayController extends Controller
     public function show(Request $request, Holiday $holiday): JsonResponse
     {
         $this->ensureCompanyHoliday($request, $holiday);
+
+        if (! $request->user()->canManageAttendanceMasters() && $holiday->status !== 'active') {
+            abort(404);
+        }
 
         return $this->success(['holiday' => new HolidayResource($holiday)]);
     }

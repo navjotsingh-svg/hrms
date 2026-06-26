@@ -28,6 +28,38 @@
             </button>
         @endif
 
+        <div class="dropdown" id="notificationsMenu">
+            <button
+                type="button"
+                class="btn btn-link topbar-notifications-btn p-0 position-relative"
+                data-bs-toggle="dropdown"
+                data-bs-auto-close="outside"
+                aria-expanded="false"
+                aria-label="Notifications"
+                title="Notifications"
+            >
+                <svg class="topbar-notifications-icon" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                    <path d="M12 2a6 6 0 0 0-6 6v2.126c0 .414-.146.814-.41 1.13L4.3 13.43A1.5 1.5 0 0 0 5.5 16h13a1.5 1.5 0 0 0 1.2-2.57l-1.29-2.174A2 2 0 0 1 18 10.126V8a6 6 0 0 0-6-6Zm0 20a3 3 0 0 0 2.995-2.824L15 19h-6a3 3 0 0 0 2.824 2.995L12 22Z"/>
+                </svg>
+                <span class="topbar-notifications-badge" id="notificationsBadge" hidden></span>
+            </button>
+            <div class="dropdown-menu dropdown-menu-end shadow-sm border-0 notifications-dropdown">
+                <div class="notifications-dropdown-header">
+                    <span class="notifications-dropdown-title">Notifications</span>
+                    <button type="button" class="btn btn-link btn-sm p-0 notifications-mark-all" id="notificationsMarkAllRead">
+                        Mark all read
+                    </button>
+                </div>
+                <div class="notifications-pending" id="notificationsPendingActions" hidden></div>
+                <div class="notifications-list" id="notificationsList">
+                    <div class="notifications-empty">Loading…</div>
+                </div>
+                <div class="notifications-dropdown-footer">
+                    <a href="{{ route('web.requests.index') }}" class="notifications-view-all">View all requests</a>
+                </div>
+            </div>
+        </div>
+
         <div class="dropdown">
             <a class="topbar-user dropdown-toggle text-decoration-none" href="#" role="button" data-bs-toggle="dropdown" aria-expanded="false">
                 <div class="topbar-avatar">{{ strtoupper(substr(Auth::user()->name, 0, 1)) }}</div>

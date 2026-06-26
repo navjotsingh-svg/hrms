@@ -2,13 +2,14 @@ import api, { getErrorMessage } from './api';
 import { compressImageFiles } from './image-compress';
 import {
     bindRequestReviewHandlers,
-    renderHeaderReviewActions,
+    mountRequestShowActions,
 } from './request-review';
 
 document.addEventListener('DOMContentLoaded', async () => {
     const card = document.getElementById('leaveShowCard');
     const alertBox = document.getElementById('leaveShowAlert');
-    const headerActions = document.getElementById('leaveShowHeaderActions');
+    const toolbarEl = document.getElementById('leaveShowCardToolbar');
+    const detailsEl = document.getElementById('leaveShowCardDetails');
     const leaveId = card?.dataset.leaveId;
 
     if (!card || !leaveId) return;
@@ -54,11 +55,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         });
     };
 
-    const renderHeader = (item) => {
-        if (!headerActions) {
-            return;
-        }
-
+    const render = (item) => {
         const actionItem = {
             category: 'leave',
             entity_id: item.id,
@@ -67,18 +64,6 @@ document.addEventListener('DOMContentLoaded', async () => {
             review_kind: 'leave',
             review_target: String(item.id),
         };
-
-        if (item.can_review || item.can_cancel) {
-            headerActions.innerHTML = renderHeaderReviewActions(actionItem);
-            headerActions.classList.remove('d-none');
-        } else {
-            headerActions.innerHTML = '';
-            headerActions.classList.add('d-none');
-        }
-    };
-
-    const render = (item) => {
-        renderHeader(item);
 
         const attachments = (item.attachments || []).map((file) => `
             <li><a href="${file.file_url}" target="_blank" rel="noopener">${file.original_name}</a></li>
@@ -105,7 +90,10 @@ document.addEventListener('DOMContentLoaded', async () => {
             </div>
         ` : '';
 
-        card.querySelector('.content-card-body').innerHTML = `
+        mountRequestShowActions(toolbarEl, actionItem);
+
+        if (detailsEl) {
+            detailsEl.innerHTML = `
             <div class="row g-4">
                 ${proofAlert}
                 <div class="col-md-6"><span class="text-muted">Employee</span><div class="fw-semibold">${item.employee?.full_name || '—'}</div></div>
@@ -122,6 +110,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                 ${uploadSection}
             </div>
         `;
+        }
 
         bindUploadForm();
     };
@@ -131,8 +120,14 @@ document.addEventListener('DOMContentLoaded', async () => {
             const { data } = await api.get(`/leave-requests/${leaveId}`);
             render(data.data.leave_request);
         } catch (error) {
-            card.querySelector('.content-card-body').innerHTML = `<div class="text-danger py-4 text-center">${getErrorMessage(error)}</div>`;
-            headerActions?.classList.add('d-none');
+            if (toolbarEl) {
+                toolbarEl.innerHTML = '';
+                toolbarEl.classList.add('d-none');
+            }
+
+            if (detailsEl) {
+                detailsEl.innerHTML = `<div class="text-danger py-4 text-center">${getErrorMessage(error)}</div>`;
+            }
         }
     };
 

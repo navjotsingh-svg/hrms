@@ -4,12 +4,12 @@
     $homeKeys = ['home', 'home.dashboard', 'home.moments'];
     $peopleKeys = ['people', 'employees'];
     $attendanceKeys = [
-        'attendance', 'attendance.team', 'attendance.today', 'attendance.regularize',
+        'attendance', 'attendance.holidays', 'attendance.team', 'attendance.today', 'attendance.regularize',
         'masters.weekly_off', 'masters.portal_start',
     ];
     $leaveKeys = [
         'leave.management', 'leave.calendar', 'leave.apply', 'leave.balances',
-        'masters.holidays', 'masters.leave_types', 'masters.leave_balances',
+        'masters.leave_types', 'masters.leave_balances',
     ];
     $payrollKeys = ['payroll.manage', 'payroll.payslips'];
     $performanceKeys = [
@@ -99,7 +99,8 @@
                                 'label' => 'Moments',
                                 'icon' => 'moments',
                                 'active' => request()->routeIs('web.home.moments'),
-                                'badge' => 'new',
+                                'badge' => null,
+                                'badgeId' => 'sidebarMomentsBadge',
                             ])
                         @endif
                     @endcomponent
@@ -163,6 +164,14 @@
                                 'label' => 'Attendance',
                                 'icon' => 'calendar',
                                 'active' => request()->routeIs('web.attendance.index'),
+                            ])
+                        @endif
+                        @if ($user->canSeeMenu('attendance.holidays'))
+                            @include('layouts.partials.sidebar-link', [
+                                'href' => route('web.attendance.holidays'),
+                                'label' => 'Holidays',
+                                'icon' => 'holiday',
+                                'active' => request()->routeIs('web.attendance.holidays', 'web.masters.attendance.holidays.*'),
                             ])
                         @endif
                         @if ($user->canSeeMenu('attendance.team'))
@@ -245,14 +254,6 @@
                                 'label' => 'Balances',
                                 'icon' => 'balance',
                                 'active' => request()->routeIs('web.leave.balances'),
-                            ])
-                        @endif
-                        @if ($user->canSeeMenu('masters.holidays'))
-                            @include('layouts.partials.sidebar-link', [
-                                'href' => route('web.masters.attendance.holidays.index'),
-                                'label' => 'Holidays',
-                                'icon' => 'holiday',
-                                'active' => request()->routeIs('web.masters.attendance.holidays.*'),
                             ])
                         @endif
                         @if ($user->canSeeMenu('masters.leave_types'))

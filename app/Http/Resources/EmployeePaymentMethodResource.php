@@ -2,6 +2,7 @@
 
 namespace App\Http\Resources;
 
+use App\Http\Resources\EmployeePaymentMethodProofResource;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
 
@@ -39,6 +40,7 @@ class EmployeePaymentMethodResource extends JsonResource
                 'id' => $this->reviewedBy->id,
                 'name' => $this->reviewedBy->name,
             ] : null),
+            'proofs' => EmployeePaymentMethodProofResource::collection($this->whenLoaded('proofs')),
         ];
     }
 }

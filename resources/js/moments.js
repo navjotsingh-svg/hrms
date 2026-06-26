@@ -1,4 +1,5 @@
 import api, { getErrorMessage } from './api';
+import { applyMomentsUnreadBadges, markMomentsFeedSeen } from './moments-badges';
 
 const REACTIONS = [
     { key: 'like', label: 'Like', emoji: '👍' },
@@ -13,6 +14,14 @@ const COMMENT_EMOJIS = [
     '👍', '👏', '🙌', '🤝', '💪', '❤️', '💙', '💚', '🎉', '🎊',
     '✨', '🔥', '💯', '💡', '🙏', '👋', '🤗', '😂', '😅', '😢',
 ];
+
+const CELEBRATION_TYPES = new Set(['birthday', 'work_anniversary', 'new_joinee']);
+
+const TEMPLATE_FIELD_BY_TYPE = {
+    birthday: 'birthday_template',
+    work_anniversary: 'work_anniversary_template',
+    new_joinee: 'new_joinee_template',
+};
 
 const TYPE_LABELS = {
     post: 'Post',
@@ -66,10 +75,17 @@ document.addEventListener('DOMContentLoaded', async () => {
     const alertBox = document.getElementById('momentsAlert');
     const pagination = document.getElementById('momentsPagination');
     const postForm = document.getElementById('momentsPostForm');
+    const postType = document.getElementById('momentsPostType');
+    const postEmployeeWrap = document.getElementById('momentsPostEmployeeWrap');
+    const postEmployee = document.getElementById('momentsPostEmployee');
+    const postTemplateHint = document.getElementById('momentsPostTemplateHint');
     const postContent = document.getElementById('momentsPostContent');
     const postAttachments = document.getElementById('momentsPostAttachments');
     const postAttachmentPreview = document.getElementById('momentsPostAttachmentPreview');
     const postBtn = document.getElementById('momentsPostBtn');
+    const templatesCard = document.getElementById('momentsTemplatesCard');
+    const templatesForm = document.getElementById('momentsTemplatesForm');
+    const templatesToggle = document.getElementById('momentsTemplatesToggle');
     const refreshBtn = document.getElementById('momentsRefreshBtn');
     const filterButtons = Array.from(document.querySelectorAll('[data-moments-filter]'));
     const canComment = pageRoot?.dataset.canComment === '1';
@@ -79,6 +95,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     let currentFilter = '';
     let currentPage = 1;
     let selectedPostFiles = [];
+    let momentEmployees = [];
+    let momentTemplates = null;
     const momentsById = new Map();
     const loadedComments = new Map();
     const commentPanelOpen = new Map();
@@ -123,7 +141,95 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     const updatePostBtnState = () => {
         if (!postBtn) return;
-        postBtn.disabled = !postContent?.value.trim() && selectedPostFiles.length === 0;
+
+        const type = postType?.value || 'post';
+        const needsEmployee = CELEBRATION_TYPES.has(type);
+        const hasEmployee = !needsEmployee || Boolean(postEmployee?.value);
+        const hasContent = Boolean(postContent?.value.trim()) || selectedPostFiles.length > 0;
+
+        postBtn.disabled = !hasEmployee || !hasContent;
+    };
+
+    const renderTemplateMessage = (type, employeeId) => {
+        if (!momentTemplates || !employeeId || !CELEBRATION_TYPES.has(type)) {
+            return '';
+        }
+
+        const employee = momentEmployees.find((item) => String(item.id) === String(employeeId));
+        const templateKey = TEMPLATE_FIELD_BY_TYPE[type];
+        const template = momentTemplates[templateKey] || '';
+
+        if (!employee || !template) {
+            return '';
+        }
+
+        return template
+            .replaceAll('{name}', employee.full_name || '')
+            .replaceAll('{employee_code}', employee.employee_code || '')
+            .replaceAll('{years}', '1');
+    };
+
+    const handlePostTypeChange = () => {
+        const type = postType?.value || 'post';
+        const isCelebration = CELEBRATION_TYPES.has(type);
+
+        postEmployeeWrap?.classList.toggle('d-none', !isCelebration);
+
+        if (postTemplateHint) {
+            postTemplateHint.textContent = isCelebration
+                ? 'Pick a team member — the message field will pre-fill from your company template (you can edit it).'
+                : '';
+        }
+
+        if (postContent) {
+            postContent.placeholder = isCelebration
+                ? 'Celebration message (optional — template used if left blank)'
+                : 'Write something to celebrate or update the team...';
+        }
+
+        if (isCelebration && postEmployee?.value) {
+            postContent.value = renderTemplateMessage(type, postEmployee.value);
+        } else if (!isCelebration) {
+            postContent.value = '';
+        }
+
+        updatePostBtnState();
+    };
+
+    const populateEmployeeSelect = () => {
+        if (!postEmployee) return;
+
+        postEmployee.innerHTML = '<option value="">Select employee</option>' + momentEmployees
+            .map((employee) => `<option value="${employee.id}">${escapeHtml(employee.full_name)}${employee.employee_code ? ` (${escapeHtml(employee.employee_code)})` : ''}</option>`)
+            .join('');
+    };
+
+    const loadSummary = async () => {
+        try {
+            const { data } = await api.get('/home/moments/summary');
+            const summary = data.data || {};
+
+            momentEmployees = summary.employees || [];
+            momentTemplates = summary.templates || null;
+
+            populateEmployeeSelect();
+
+            if (summary.unread) {
+                applyMomentsUnreadBadges(summary.unread);
+            }
+
+            if (templatesCard && summary.can_manage_templates) {
+                templatesCard.classList.remove('d-none');
+
+                if (momentTemplates) {
+                    document.getElementById('momentsTemplateBirthday').value = momentTemplates.birthday_template || '';
+                    document.getElementById('momentsTemplateAnniversary').value = momentTemplates.work_anniversary_template || '';
+                    document.getElementById('momentsTemplateNewJoinee').value = momentTemplates.new_joinee_template || '';
+                }
+            }
+        } catch (error) {
+            console.error(getErrorMessage(error));
+        }
     };
 
     const renderPostAttachmentPreview = () => {
@@ -162,27 +268,62 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     const renderAuthor = (moment) => {
         if (moment.type !== 'post') {
-            const name = moment.author?.name || moment.metadata?.employee_name || 'Team Member';
+            const metadata = moment.metadata || {};
+            const celebratedName = metadata.employee_name || moment.author?.celebrated_name || moment.author?.name || 'Team Member';
+            const isUserCelebration = moment.author?.type === 'user';
+
             return `
                 <div class="moments-card-author">
                     <span class="moments-card-avatar moments-card-avatar--system">🎉</span>
                     <div>
-                        <div class="fw-semibold">${escapeHtml(name)}</div>
-                        <div class="small text-muted">Company celebration</div>
+                        <div class="fw-semibold">${escapeHtml(celebratedName)}</div>
+                        <div class="small text-muted">${isUserCelebration
+                            ? `Posted by ${escapeHtml(moment.author?.name || 'Team member')} · ${formatTime(moment.published_at)}`
+                            : `Company celebration · ${formatTime(moment.published_at)}`}</div>
                     </div>
                 </div>
             `;
         }
+
+        const postCount = moment.author?.post_count || 0;
+        const postCountLabel = postCount
+            ? `${postCount} post${postCount === 1 ? '' : 's'}`
+            : '';
 
         return `
             <div class="moments-card-author">
                 <span class="moments-card-avatar">${escapeHtml((moment.author?.name || 'U').slice(0, 1).toUpperCase())}</span>
                 <div>
                     <div class="fw-semibold">${escapeHtml(moment.author?.name || 'Team Member')}</div>
-                    <div class="small text-muted">${formatTime(moment.published_at)}</div>
+                    <div class="small text-muted">
+                        ${formatTime(moment.published_at)}${postCountLabel ? ` · ${postCountLabel}` : ''}
+                    </div>
                 </div>
             </div>
         `;
+    };
+
+    const renderAuthorStats = (stats = []) => {
+        const card = document.getElementById('momentsAuthorStatsCard');
+        const container = document.getElementById('momentsAuthorStats');
+
+        if (!container) {
+            return;
+        }
+
+        if (!stats.length) {
+            card?.classList.add('d-none');
+            container.innerHTML = '';
+            return;
+        }
+
+        card?.classList.remove('d-none');
+        container.innerHTML = stats.map((entry) => `
+            <div class="moments-author-stat">
+                <span class="moments-author-stat-name">${escapeHtml(entry.name || 'Team Member')}</span>
+                <span class="moments-author-stat-count">${entry.post_count} post${entry.post_count === 1 ? '' : 's'}</span>
+            </div>
+        `).join('');
     };
 
     const renderAttachments = (moment) => {
@@ -365,6 +506,11 @@ document.addEventListener('DOMContentLoaded', async () => {
             }
 
             renderPagination(data.data?.pagination);
+            renderAuthorStats(data.data?.author_stats || []);
+
+            if (data.data?.unread) {
+                applyMomentsUnreadBadges(data.data.unread);
+            }
         } catch (error) {
             showAlert(getErrorMessage(error), 'danger');
         }
@@ -408,10 +554,23 @@ document.addEventListener('DOMContentLoaded', async () => {
     const resetPostForm = () => {
         if (postContent) postContent.value = '';
         if (postAttachments) postAttachments.value = '';
+        if (postType) postType.value = 'post';
+        if (postEmployee) postEmployee.value = '';
         selectedPostFiles = [];
         renderPostAttachmentPreview();
+        handlePostTypeChange();
         updatePostBtnState();
     };
+
+    postType?.addEventListener('change', handlePostTypeChange);
+
+    postEmployee?.addEventListener('change', () => {
+        const type = postType?.value || 'post';
+        if (CELEBRATION_TYPES.has(type) && postEmployee?.value) {
+            postContent.value = renderTemplateMessage(type, postEmployee.value);
+        }
+        updatePostBtnState();
+    });
 
     postContent?.addEventListener('input', updatePostBtnState);
 
@@ -450,6 +609,14 @@ document.addEventListener('DOMContentLoaded', async () => {
 
         try {
             const formData = new FormData();
+            const type = postType?.value || 'post';
+
+            formData.append('type', type);
+
+            if (CELEBRATION_TYPES.has(type) && postEmployee?.value) {
+                formData.append('employee_id', postEmployee.value);
+            }
+
             if (content) {
                 formData.append('content', content);
             }
@@ -467,6 +634,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             currentFilter = '';
             filterButtons.forEach((button) => button.classList.toggle('active', button.dataset.momentsFilter === ''));
             await load(1);
+            await loadSummary();
         } catch (error) {
             showAlert(getErrorMessage(error), 'danger');
         } finally {
@@ -584,7 +752,41 @@ document.addEventListener('DOMContentLoaded', async () => {
         await load(Number(button.dataset.page));
     });
 
-    refreshBtn?.addEventListener('click', () => load(currentPage));
+    refreshBtn?.addEventListener('click', async () => {
+        await load(currentPage);
+        await loadSummary();
+    });
 
-    await load();
+    templatesToggle?.addEventListener('click', () => {
+        const expanded = templatesForm?.classList.toggle('d-none') === false;
+        templatesToggle.setAttribute('aria-expanded', expanded ? 'true' : 'false');
+        templatesToggle.textContent = expanded ? 'Hide templates' : 'Edit templates';
+    });
+
+    templatesForm?.addEventListener('submit', async (event) => {
+        event.preventDefault();
+        const saveBtn = document.getElementById('momentsTemplatesSaveBtn');
+        saveBtn.disabled = true;
+
+        try {
+            const payload = {
+                birthday_template: document.getElementById('momentsTemplateBirthday')?.value.trim(),
+                work_anniversary_template: document.getElementById('momentsTemplateAnniversary')?.value.trim(),
+                new_joinee_template: document.getElementById('momentsTemplateNewJoinee')?.value.trim(),
+            };
+
+            const { data } = await api.put('/home/moments/templates', payload);
+            momentTemplates = data.data?.templates || momentTemplates;
+            showAlert(data.message || 'Templates saved.');
+        } catch (error) {
+            showAlert(getErrorMessage(error), 'danger');
+        } finally {
+            saveBtn.disabled = false;
+        }
+    });
+
+    await loadSummary();
+    await load(1);
+    await markMomentsFeedSeen();
+    handlePostTypeChange();
 });

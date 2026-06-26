@@ -3,6 +3,7 @@ import api, { getErrorMessage } from './api';
 import {
     renderActionGroup,
     renderEditIconButton,
+    renderViewIconButton,
 } from './action-icons';
 
 const cfg = window.HRMS_HIRING || {};
@@ -159,6 +160,136 @@ const renderStageSelect = (candidateId, currentStage) => {
         <select class="form-select form-select-sm" data-stage-select="${candidateId}" style="min-width: 130px;">
             ${STAGES.map((stage) => `<option value="${stage}" ${stage === currentStage ? 'selected' : ''}>${escapeHtml(stage.replace(/_/g, ' '))}</option>`).join('')}
         </select>
+    `;
+};
+
+const detailField = (label, value) => `
+    <div class="col-sm-6">
+        <div class="small text-muted">${escapeHtml(label)}</div>
+        <div>${value || '—'}</div>
+    </div>
+`;
+
+const renderCandidateDetail = (candidate) => {
+    const stageLogs = (candidate.stage_logs || []).length
+        ? `<div class="list-group list-group-flush">
+            ${candidate.stage_logs.map((log) => `
+                <div class="list-group-item px-0">
+                    <div class="d-flex flex-wrap justify-content-between gap-2">
+                        <div>
+                            <strong>${escapeHtml((log.from_stage || 'new').replace(/_/g, ' '))}</strong>
+                            <span class="text-muted"> → </span>
+                            <strong>${escapeHtml((log.to_stage || '').replace(/_/g, ' '))}</strong>
+                        </div>
+                        <div class="small text-muted">${formatDateTime(log.created_at)}</div>
+                    </div>
+                    ${log.actor_name ? `<div class="small text-muted">By ${escapeHtml(log.actor_name)}</div>` : ''}
+                    ${log.notes ? `<div class="small mt-1">${escapeHtml(log.notes)}</div>` : ''}
+                </div>
+            `).join('')}
+        </div>`
+        : '<p class="text-muted mb-0">No stage history yet.</p>';
+
+    const interviews = (candidate.interviews || []).length
+        ? `<div class="table-responsive">
+            <table class="table table-sm align-middle mb-0">
+                <thead>
+                    <tr>
+                        <th>Interview</th>
+                        <th>Scheduled</th>
+                        <th>Status</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    ${candidate.interviews.map((interview) => `
+                        <tr>
+                            <td>
+                                <div>${escapeHtml(interview.title)}</div>
+                                <div class="small text-muted">${escapeHtml(interview.job?.title || '—')}</div>
+                                ${interview.location ? `<div class="small text-muted">${escapeHtml(interview.location)}</div>` : ''}
+                                ${interview.meeting_link ? `<div class="small"><a href="${escapeHtml(interview.meeting_link)}" target="_blank" rel="noopener">Meeting link</a></div>` : ''}
+                            </td>
+                            <td>${formatDateTime(interview.scheduled_at)}</td>
+                            <td>${statusPill(interview.status)}</td>
+                        </tr>
+                    `).join('')}
+                </tbody>
+            </table>
+        </div>`
+        : '<p class="text-muted mb-0">No interviews scheduled.</p>';
+
+    const offers = (candidate.offers || []).length
+        ? `<div class="table-responsive">
+            <table class="table table-sm align-middle mb-0">
+                <thead>
+                    <tr>
+                        <th>Offer</th>
+                        <th>CTC</th>
+                        <th>Joining</th>
+                        <th>Status</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    ${candidate.offers.map((offer) => `
+                        <tr>
+                            <td>
+                                <div>${escapeHtml(offer.title)}</div>
+                                <div class="small text-muted">${escapeHtml(offer.job?.title || '—')}</div>
+                            </td>
+                            <td>${offer.offered_ctc ?? '—'}</td>
+                            <td>${escapeHtml(offer.joining_date || '—')}</td>
+                            <td>${statusPill(offer.status)}</td>
+                        </tr>
+                    `).join('')}
+                </tbody>
+            </table>
+        </div>`
+        : '<p class="text-muted mb-0">No offers created.</p>';
+
+    return `
+        <div class="mb-4">
+            <div class="d-flex flex-wrap align-items-center gap-2 mb-3">
+                <h2 class="h5 mb-0">${escapeHtml(candidate.full_name)}</h2>
+                ${statusPill(candidate.stage)}
+            </div>
+            <div class="row g-3">
+                ${detailField('Email', escapeHtml(candidate.email))}
+                ${detailField('Phone', escapeHtml(candidate.phone || '—'))}
+                ${detailField('Job', escapeHtml(candidate.job?.title || '—'))}
+                ${detailField('Source', escapeHtml(candidate.source || '—'))}
+                ${detailField('Applied', formatDateTime(candidate.applied_at))}
+                ${detailField('Recruiter', escapeHtml(candidate.assigned_recruiter?.name || '—'))}
+                ${candidate.hired_at ? detailField('Hired', formatDateTime(candidate.hired_at)) : ''}
+                ${candidate.rejected_at ? detailField('Rejected', formatDateTime(candidate.rejected_at)) : ''}
+                ${candidate.employee ? detailField('Employee record', escapeHtml(`${candidate.employee.full_name}${candidate.employee.employee_code ? ` (${candidate.employee.employee_code})` : ''}`)) : ''}
+            </div>
+            ${candidate.rejection_reason ? `
+                <div class="mt-3">
+                    <div class="small text-muted">Rejection reason</div>
+                    <div>${escapeHtml(candidate.rejection_reason)}</div>
+                </div>
+            ` : ''}
+            ${candidate.notes ? `
+                <div class="mt-3">
+                    <div class="small text-muted">Notes</div>
+                    <div class="text-pre-wrap">${escapeHtml(candidate.notes)}</div>
+                </div>
+            ` : ''}
+            ${candidate.resume_url ? `
+                <div class="mt-3">
+                    <a href="${escapeHtml(candidate.resume_url)}" target="_blank" rel="noopener" class="btn btn-outline-primary btn-sm">View resume</a>
+                </div>
+            ` : ''}
+        </div>
+
+        <h3 class="h6 mb-2">Stage history</h3>
+        <div class="mb-4">${stageLogs}</div>
+
+        <h3 class="h6 mb-2">Interviews</h3>
+        <div class="mb-4">${interviews}</div>
+
+        <h3 class="h6 mb-2">Offers</h3>
+        <div>${offers}</div>
     `;
 };
 
@@ -456,7 +587,34 @@ const initCandidates = async () => {
 
     const modalEl = document.getElementById('candidateModal');
     const modal = modalEl ? Modal.getOrCreateInstance(modalEl) : null;
+    const detailModalEl = document.getElementById('candidateDetailModal');
+    const detailModal = detailModalEl ? Modal.getOrCreateInstance(detailModalEl) : null;
+    const detailBody = document.getElementById('candidateDetailBody');
+    const detailTitle = document.getElementById('candidateDetailModalLabel');
     let currentPage = 1;
+
+    const openCandidateDetail = async (candidateId) => {
+        if (!detailBody) return;
+
+        detailTitle.textContent = 'Candidate Details';
+        detailBody.innerHTML = '<div class="text-muted py-4 text-center">Loading…</div>';
+        detailModal?.show();
+
+        try {
+            const { data } = await api.get(`/hiring-candidates/${candidateId}`);
+            const candidate = data.data?.candidate;
+
+            if (!candidate) {
+                detailBody.innerHTML = '<div class="text-danger py-4 text-center">Candidate not found.</div>';
+                return;
+            }
+
+            detailTitle.textContent = candidate.full_name || 'Candidate Details';
+            detailBody.innerHTML = renderCandidateDetail(candidate);
+        } catch (error) {
+            detailBody.innerHTML = `<div class="text-danger py-4 text-center">${escapeHtml(getErrorMessage(error))}</div>`;
+        }
+    };
 
     const load = async (pageNum = 1) => {
         currentPage = pageNum;
@@ -479,7 +637,7 @@ const initCandidates = async () => {
                     <td>${escapeHtml(candidate.job?.title || '—')}</td>
                     <td>${escapeHtml(candidate.source || '—')}</td>
                     <td>${renderStageSelect(candidate.id, candidate.stage)}</td>
-                    <td class="text-end">—</td>
+                    <td class="text-end">${renderActionGroup(renderViewIconButton('data-view-candidate', candidate.id, `View ${candidate.full_name}`))}</td>
                 </tr>
             `).join('');
         }
@@ -532,6 +690,13 @@ const initCandidates = async () => {
             }
         });
     }
+
+    body.addEventListener('click', async (e) => {
+        const viewBtn = e.target.closest('[data-view-candidate]');
+        if (!viewBtn) return;
+
+        await openCandidateDetail(viewBtn.dataset.viewCandidate);
+    });
 
     ['candidateStageFilter', 'candidateSearchFilter'].forEach((id) => {
         document.getElementById(id)?.addEventListener('change', () => load(1).catch((err) => showAlert(getErrorMessage(err), 'danger')));

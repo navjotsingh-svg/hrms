@@ -50,6 +50,14 @@ class LoginRequest extends FormRequest
             ]);
         }
 
+        if (! Auth::user()?->canSignIn()) {
+            Auth::logout();
+
+            throw ValidationException::withMessages([
+                'email' => 'Your portal access has been disabled. Contact your administrator.',
+            ]);
+        }
+
         RateLimiter::clear($this->throttleKey());
     }
 

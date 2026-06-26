@@ -2,24 +2,28 @@ import api, { getErrorMessage } from './api';
 import { renderExpenseDetailHtml, renderExpenseGroupDetailHtml } from './expense-modals';
 import {
     bindRequestReviewHandlers,
-    renderHeaderReviewActions,
-    reviewToken,
+    mountRequestShowActions,
 } from './request-review';
+import {
+    renderEmployeeNameBlock,
+    renderHubRequestDetailHtml,
+    renderRegularizationBatchDates,
+    renderRegularizationPunchFields,
+} from './request-display';
 
 document.addEventListener('DOMContentLoaded', async () => {
     const card = document.getElementById('requestShowCard');
     const alertBox = document.getElementById('requestShowAlert');
     const titleEl = document.getElementById('requestShowTitle');
     const subtitleEl = document.getElementById('requestShowSubtitle');
-    const headerActions = document.getElementById('requestShowHeaderActions');
+    const toolbarEl = document.getElementById('requestShowCardToolbar');
+    const detailsEl = document.getElementById('requestShowCardDetails');
     const category = card?.dataset.category;
     const entityId = card?.dataset.entityId;
 
     if (!card || !category || !entityId) {
         return;
     }
-
-    let currentItem = null;
 
     const showAlert = (message, type = 'success') => {
         if (!alertBox) return;
@@ -28,9 +32,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         alertBox.classList.remove('d-none');
     };
 
-    const renderHeader = (item) => {
-        currentItem = item;
-
+    const renderPageHeader = (item) => {
         if (titleEl) {
             titleEl.textContent = item.title || item.category_label || 'Request Details';
         }
@@ -38,29 +40,22 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (subtitleEl) {
             subtitleEl.textContent = item.subtitle || '';
         }
+    };
 
-        if (headerActions) {
-            if (item.can_review || item.can_cancel) {
-                headerActions.innerHTML = renderHeaderReviewActions(item);
-                headerActions.classList.remove('d-none');
-            } else {
-                headerActions.innerHTML = '';
-                headerActions.classList.add('d-none');
-            }
+    const setCardBody = (html, actionItem) => {
+        mountRequestShowActions(toolbarEl, actionItem);
+
+        if (detailsEl) {
+            detailsEl.innerHTML = html;
         }
     };
 
     const loadHubItem = async () => {
-        const { data } = await api.get('/request-hub/pending', { params: { per_page: 50, page: 1 } });
-        const requests = data.data?.requests || [];
-        let item = requests.find((entry) => entry.category === category && String(entry.entity_id) === String(entityId));
-
-        if (!item && category === 'regularization-batch') {
-            item = requests.find((entry) => entry.batch_id === entityId);
-        }
+        const { data } = await api.get(`/request-hub/${category}/${entityId}`);
+        const item = data.data?.request;
 
         if (!item) {
-            throw new Error('Request not found or no longer pending.');
+            throw new Error('Request not found.');
         }
 
         return item;
@@ -69,123 +64,144 @@ document.addEventListener('DOMContentLoaded', async () => {
     const renderRegularization = async () => {
         const { data } = await api.get(`/attendance-regularizations/${entityId}`);
         const item = data.data.regularization_request;
-
-        renderHeader({
+        const employeeName = item.employee?.full_name || 'Employee';
+        const employeeCode = item.employee?.employee_code || '';
+        const actionItem = {
             category: 'regularization',
             entity_id: item.id,
-            category_label: 'Attendance Regularization',
-            title: 'Attendance Regularization',
-            subtitle: `${item.employee?.full_name || 'Employee'} · ${item.attendance_date_label || '—'}`,
             can_review: item.can_review,
             can_cancel: item.can_cancel,
             review_kind: 'regularization',
             review_target: String(item.id),
+        };
+
+        renderPageHeader({
+            category_label: 'Attendance Regularization',
+            title: 'Attendance Regularization',
+            subtitle: `${employeeName}${employeeCode ? ` · ${employeeCode}` : ''} · ${item.attendance_date_label || '—'}`,
         });
 
-        card.querySelector('.content-card-body').innerHTML = `
+        setCardBody(`
             <div class="row g-4">
-                <div class="col-md-6"><span class="text-muted">Employee</span><div class="fw-semibold">${item.employee?.full_name || '—'}</div></div>
+                <div class="col-md-6">
+                    <span class="text-muted">Employee</span>
+                    ${renderEmployeeNameBlock(employeeName, employeeCode)}
+                </div>
                 <div class="col-md-6"><span class="text-muted">Date</span><div>${item.attendance_date_label || '—'}</div></div>
-                <div class="col-md-6"><span class="text-muted">Current Punch</span><div>${[item.original_punch_in_label, item.original_punch_out_label].filter(Boolean).join(' · ') || '—'}</div></div>
-                <div class="col-md-6"><span class="text-muted">Requested Punch</span><div>${[item.requested_punch_in_label, item.requested_punch_out_label].filter(Boolean).join(' · ') || '—'}</div></div>
+                ${renderRegularizationPunchFields(item)}
                 <div class="col-md-6"><span class="text-muted">Status</span><div class="fw-semibold text-capitalize">${item.status_label || item.status}</div></div>
                 <div class="col-md-6"><span class="text-muted">Submitted On</span><div>${item.created_at_label || '—'}</div></div>
                 <div class="col-12"><span class="text-muted">Reason</span><div>${item.reason || '—'}</div></div>
                 ${item.review_notes ? `<div class="col-12"><span class="text-muted">Review Notes</span><div>${item.review_notes}</div></div>` : ''}
             </div>
-        `;
+        `, actionItem);
     };
 
     const renderRegularizationBatch = async () => {
-        const { data } = await api.get('/attendance-regularizations/pending');
-        const group = (data.data?.pending_groups || []).find((entry) => entry.batch_id === entityId);
+        const { data } = await api.get(`/attendance-regularizations/batch/${entityId}`);
+        const group = data.data?.group;
 
         if (!group) {
-            throw new Error('Regularization batch not found or no longer pending.');
+            throw new Error('Regularization batch not found.');
         }
 
-        renderHeader({
+        const employeeName = group.employee?.full_name || 'Employee';
+        const employeeCode = group.employee?.employee_code || '';
+        const actionItem = {
             category: 'regularization',
             entity_id: group.request_ids?.[0],
-            category_label: 'Attendance Regularization',
-            title: 'Attendance Regularization Batch',
-            subtitle: `${group.employee?.full_name || 'Employee'} · ${group.day_count || 0} day(s)`,
             can_review: group.can_review,
             can_cancel: false,
             review_kind: 'regularization_batch',
             review_target: group.batch_id,
+        };
+        const singleDay = (group.dates || []).length === 1 ? group.dates[0] : null;
+
+        renderPageHeader({
+            category_label: 'Attendance Regularization',
+            title: 'Attendance Regularization Batch',
+            subtitle: `${employeeName}${employeeCode ? ` · ${employeeCode}` : ''} · ${group.day_count || 0} day(s)`,
         });
 
-        const dates = (group.dates || []).map((day) => `<li>${day.attendance_date_label || day.attendance_date}</li>`).join('');
-
-        card.querySelector('.content-card-body').innerHTML = `
+        setCardBody(`
             <div class="row g-4">
-                <div class="col-md-6"><span class="text-muted">Employee</span><div class="fw-semibold">${group.employee?.full_name || '—'}</div></div>
+                <div class="col-md-6">
+                    <span class="text-muted">Employee</span>
+                    ${renderEmployeeNameBlock(employeeName, employeeCode)}
+                </div>
                 <div class="col-md-6"><span class="text-muted">Days</span><div>${group.day_count || 0}</div></div>
-                <div class="col-12"><span class="text-muted">Dates</span><ul class="mb-0 ps-3">${dates || '<li class="text-muted">—</li>'}</ul></div>
+                ${singleDay ? renderRegularizationPunchFields(singleDay) : ''}
+                <div class="col-12">
+                    <span class="text-muted">Dates</span>
+                    <ul class="mb-0 ps-3">${renderRegularizationBatchDates(group.dates || [])}</ul>
+                </div>
+                <div class="col-md-6"><span class="text-muted">Status</span><div class="fw-semibold text-capitalize">${group.status_label || group.status || '—'}</div></div>
+                <div class="col-md-6"><span class="text-muted">Submitted On</span><div>${group.created_at_label || '—'}</div></div>
                 <div class="col-12"><span class="text-muted">Reason</span><div>${group.reason || '—'}</div></div>
+                ${group.reviewed_at_label ? `<div class="col-12"><span class="text-muted">Reviewed</span><div>${group.reviewed_at_label}${group.reviewed_by_name ? ` by ${group.reviewed_by_name}` : ''}</div></div>` : ''}
             </div>
-        `;
+        `, actionItem);
     };
 
     const renderExpense = async () => {
         const { data } = await api.get(`/expenses/${entityId}`);
         const expense = data.data.expense;
-
-        renderHeader({
+        const actionItem = {
             category: 'expense',
             entity_id: expense.id,
-            category_label: 'Expense',
-            title: expense.expense_type?.name || 'Expense Claim',
-            subtitle: `${expense.employee?.full_name || 'Employee'} · ${expense.amount_label || '—'}`,
             can_review: expense.can_review,
             can_cancel: expense.can_cancel,
             review_kind: 'expense',
             review_target: String(expense.id),
+        };
+
+        renderPageHeader({
+            category_label: 'Expense',
+            title: expense.expense_type?.name || 'Expense Claim',
+            subtitle: `${expense.employee?.full_name || 'Employee'}${expense.employee?.employee_code ? ` · ${expense.employee.employee_code}` : ''} · ${expense.amount_label || '—'}`,
         });
 
-        card.querySelector('.content-card-body').innerHTML = renderExpenseDetailHtml(expense);
+        setCardBody(renderExpenseDetailHtml(expense), actionItem);
     };
 
     const renderExpenseGroup = async () => {
         const { data } = await api.get(`/expense-groups/${entityId}`);
         const group = data.data.expense_group;
-
-        renderHeader({
+        const actionItem = {
             category: 'expense_group',
             entity_id: group.id,
-            category_label: 'Expense Group',
-            title: group.name || 'Expense Group',
-            subtitle: `${group.employee?.full_name || 'Employee'} · ${group.total_amount_label || '—'}`,
             can_review: group.can_review,
             can_cancel: group.can_cancel,
             review_kind: 'expense_group',
             review_target: String(group.id),
+        };
+
+        renderPageHeader({
+            category_label: 'Expense Group',
+            title: group.name || 'Expense Group',
+            subtitle: `${group.employee?.full_name || 'Employee'}${group.employee?.employee_code ? ` · ${group.employee.employee_code}` : ''} · ${group.total_amount_label || '—'}`,
         });
 
-        card.querySelector('.content-card-body').innerHTML = renderExpenseGroupDetailHtml(group);
+        setCardBody(renderExpenseGroupDetailHtml(group), actionItem);
     };
 
     const renderHubBackedRequest = async () => {
         const item = await loadHubItem();
+        const actionItem = {
+            category: item.category,
+            entity_id: item.entity_id,
+            can_review: item.can_review,
+            can_cancel: item.can_cancel,
+            review_kind: item.review_kind,
+            review_target: item.review_target,
+        };
 
-        renderHeader({
-            ...item,
-            title: item.subject || item.category_label,
+        renderPageHeader({
+            title: item.document_type_name || item.subject || item.category_label,
             subtitle: `${item.requester_name || 'Employee'}${item.requester_code ? ` · ${item.requester_code}` : ''}`,
         });
 
-        card.querySelector('.content-card-body').innerHTML = `
-            <div class="row g-4">
-                <div class="col-md-6"><span class="text-muted">Request Type</span><div class="fw-semibold">${item.category_label || 'Request'}</div></div>
-                <div class="col-md-6"><span class="text-muted">Requested By</span><div>${item.requester_name || '—'}</div></div>
-                <div class="col-md-6"><span class="text-muted">Employee ID</span><div>${item.requester_code || '—'}</div></div>
-                <div class="col-md-6"><span class="text-muted">Submitted On</span><div>${item.submitted_at_label || '—'}</div></div>
-                <div class="col-md-6"><span class="text-muted">Status</span><div class="fw-semibold text-capitalize">${item.status_label || item.status}</div></div>
-                <div class="col-12"><span class="text-muted">Details</span><div>${item.detail || '—'}</div></div>
-                ${item.reason ? `<div class="col-12"><span class="text-muted">Reason / Notes</span><div>${item.reason}</div></div>` : ''}
-            </div>
-        `;
+        setCardBody(renderHubRequestDetailHtml(item), actionItem);
     };
 
     const load = async () => {
@@ -212,8 +228,14 @@ document.addEventListener('DOMContentLoaded', async () => {
 
             await renderHubBackedRequest();
         } catch (error) {
-            card.querySelector('.content-card-body').innerHTML = `<div class="text-danger py-4 text-center">${getErrorMessage(error)}</div>`;
-            headerActions?.classList.add('d-none');
+            if (toolbarEl) {
+                toolbarEl.innerHTML = '';
+                toolbarEl.classList.add('d-none');
+            }
+
+            if (detailsEl) {
+                detailsEl.innerHTML = `<div class="text-danger py-4 text-center">${getErrorMessage(error)}</div>`;
+            }
         }
     };
 

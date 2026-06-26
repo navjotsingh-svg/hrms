@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Api\V1;
 
+use App\Http\Concerns\ValidatesReviewNotes;
 use App\Http\Controllers\Controller;
 use App\Http\Concerns\ApiResponse;
 use App\Http\Requests\RejectAttendanceRegularizationRequest;
@@ -15,7 +16,7 @@ use Illuminate\Validation\Rule;
 
 class AttendanceRegularizationController extends Controller
 {
-    use ApiResponse;
+    use ApiResponse, ValidatesReviewNotes;
 
     public function __construct(private AttendanceRegularizationService $regularizationService) {}
 
@@ -127,10 +128,27 @@ class AttendanceRegularizationController extends Controller
         ]);
     }
 
+    public function showBatch(Request $request, string $batchId): JsonResponse
+    {
+        $group = $this->regularizationService->groupForBatch($request->user(), $batchId);
+
+        if (! $group) {
+            abort(404);
+        }
+
+        return $this->success([
+            'group' => $group,
+        ]);
+    }
+
     public function approve(Request $request, AttendanceRegularizationRequest $attendance_regularization): JsonResponse
     {
         $this->ensureCompanyRequest($request, $attendance_regularization);
-        $attendance_regularization = $this->regularizationService->approve($request->user(), $attendance_regularization);
+        $attendance_regularization = $this->regularizationService->approve(
+            $request->user(),
+            $attendance_regularization,
+            $this->optionalReviewNotes($request),
+        );
 
         return $this->success(
             ['regularization_request' => new AttendanceRegularizationResource($attendance_regularization)],
@@ -140,7 +158,11 @@ class AttendanceRegularizationController extends Controller
 
     public function approveBatch(Request $request, string $batchId): JsonResponse
     {
-        $requests = $this->regularizationService->approveBatch($request->user(), $batchId);
+        $requests = $this->regularizationService->approveBatch(
+            $request->user(),
+            $batchId,
+            $this->optionalReviewNotes($request),
+        );
         $count = count($requests);
 
         return $this->success(
@@ -204,17 +226,10 @@ class AttendanceRegularizationController extends Controller
     private function ensureAccessible(Request $request, AttendanceRegularizationRequest $regularization): void
     {
         $this->ensureCompanyRequest($request, $regularization);
-        $user = $request->user();
 
-        if ($user->canViewAllAttendance()) {
-            return;
+        if (! $this->regularizationService->canViewRequest($request->user(), $regularization)) {
+            abort(403);
         }
-
-        if ($user->employee && (int) $user->employee->id === (int) $regularization->employee_id) {
-            return;
-        }
-
-        abort(403);
     }
 
 }

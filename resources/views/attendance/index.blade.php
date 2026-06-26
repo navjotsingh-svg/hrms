@@ -15,11 +15,6 @@
             @if (Auth::user()->canRegularizeAttendance())
                 <a href="{{ route('web.attendance.regularize.index') }}" class="btn btn-outline-primary btn-sm">Regularize</a>
             @endif
-            <div class="d-flex align-items-center gap-2" id="attendanceMonthNav">
-                <button type="button" class="btn btn-outline-secondary btn-sm" id="attendancePrevMonth" aria-label="Previous month">&larr;</button>
-                <span class="fw-semibold min-w-140 text-center" id="attendanceMonthLabel">—</span>
-                <button type="button" class="btn btn-outline-secondary btn-sm" id="attendanceNextMonth" aria-label="Next month">&rarr;</button>
-            </div>
         </div>
     </div>
 @endsection
@@ -98,6 +93,11 @@
 
                     <div class="attendance-cal-shell">
                         <div class="attendance-cal-toolbar">
+                            <div class="attendance-period-nav attendance-period-nav--primary" id="attendanceMonthNav">
+                                <button type="button" class="btn btn-outline-secondary btn-sm attendance-period-nav-btn" id="attendancePrevMonth" aria-label="Previous month">&larr;</button>
+                                <span class="attendance-period-nav-label-text" id="attendanceMonthLabel">—</span>
+                                <button type="button" class="btn btn-outline-secondary btn-sm attendance-period-nav-btn" id="attendanceNextMonth" aria-label="Next month">&rarr;</button>
+                            </div>
                             <div class="dropdown attendance-cal-legends-dropdown ms-auto">
                                 <button class="attendance-cal-legends-toggle dropdown-toggle" type="button" data-bs-toggle="dropdown" aria-expanded="false">
                                     Legends

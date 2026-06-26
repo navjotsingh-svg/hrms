@@ -17,7 +17,7 @@
     <div class="content-card mb-4">
         <div class="content-card-body">
             <h2 class="h6 mb-3">Generate Payroll</h2>
-            <p class="small text-muted mb-3">Approved expense reimbursements are included when payroll is generated or regenerated. Expenses must be approved with “Claim Reimbursement” enabled.</p>
+            <p class="small text-muted mb-3">Payroll is calculated from employee salary components and attendance for the selected month.</p>
             <form id="payrollGenerateForm" class="row g-3 align-items-end">
                 <div class="col-md-3">
                     <label for="payrollYear" class="form-label">Year</label>
@@ -51,32 +51,38 @@
                         'placeholder' => 'Select period first...',
                     ])
                 </div>
-                <div class="col-md-4 d-flex flex-wrap gap-2">
+                <div class="col-md-4 d-flex flex-wrap gap-2 align-items-center">
                     <button type="button" class="btn btn-primary" id="payrollViewBtn" disabled>View Payslip</button>
                     <button type="button" class="btn btn-outline-secondary" id="payrollDownloadBtn" disabled>Download</button>
                     <button type="button" class="btn btn-outline-success" id="payrollExportBtn" disabled>Export Excel</button>
+                    <button type="button" class="btn btn-success" id="payrollMarkPaidBtn" disabled>Mark as Paid</button>
                 </div>
             </div>
 
+            <div id="payrollPeriodStatus" class="payroll-period-status d-none mb-3"></div>
+
             <div id="payrollSummaryWrap" class="d-none mb-4">
-                <div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-2">
+                <div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-3">
                     <h2 class="h6 mb-0">Payout Summary <span class="text-muted fw-normal" id="payrollSummaryPeriodLabel"></span></h2>
                     <span class="text-muted small" id="payrollSummaryTotals"></span>
                 </div>
+
+                <div class="payroll-summary-toolbar mb-3">
+                    <div class="payroll-summary-search-wrap">
+                        <input
+                            type="search"
+                            class="form-control payroll-summary-search"
+                            id="payrollSummarySearch"
+                            placeholder="Search Employees"
+                            autocomplete="off"
+                        >
+                        <span class="payroll-summary-search-icon" aria-hidden="true">&#128269;</span>
+                    </div>
+                </div>
+
                 <div class="table-responsive">
-                    <table class="table table-hover align-middle">
-                        <thead>
-                            <tr>
-                                <th>Full Name</th>
-                                <th class="text-end">Payable Days</th>
-                                <th class="text-end">LOP Days</th>
-                                <th class="text-end">Gross Salary</th>
-                                <th class="text-end">Net Salary</th>
-                                <th class="text-end">Expenses</th>
-                                <th class="text-end">Total Payable</th>
-                                <th class="text-center">Payslip Preview</th>
-                            </tr>
-                        </thead>
+                    <table class="table table-hover align-middle payroll-summary-table">
+                        <thead id="payrollSummaryHead"></thead>
                         <tbody id="payrollSummaryBody"></tbody>
                     </table>
                 </div>
@@ -89,6 +95,17 @@
                 <iframe id="payrollViewerFrame" title="Payslip preview" style="width: 100%; min-height: 720px; border: 1px solid #dee2e6; border-radius: 8px;"></iframe>
             </div>
         </div>
+    </div>
+
+    <div class="offcanvas offcanvas-end payroll-detail-drawer" tabindex="-1" id="payrollDetailDrawer" aria-labelledby="payrollDetailDrawerLabel">
+        <div class="offcanvas-header border-bottom">
+            <div>
+                <h5 class="offcanvas-title" id="payrollDetailDrawerLabel">Detailed Calculations</h5>
+                <div class="small text-muted" id="payrollDetailSubtitle"></div>
+            </div>
+            <button type="button" class="btn-close" data-bs-dismiss="offcanvas" aria-label="Close"></button>
+        </div>
+        <div class="offcanvas-body" id="payrollDetailBody"></div>
     </div>
 
     <script>window.PAYROLL_MODE = 'manage';</script>

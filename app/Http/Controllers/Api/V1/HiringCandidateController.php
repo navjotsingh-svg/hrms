@@ -68,6 +68,67 @@ class HiringCandidateController extends Controller
         return $this->success(['candidate' => $this->format($candidate)], 'Candidate stage updated.');
     }
 
+    public function show(Request $request, Candidate $candidate): JsonResponse
+    {
+        $candidate = $this->hiringService->candidateDetail($request->user(), $candidate);
+
+        return $this->success(['candidate' => $this->formatDetail($candidate)]);
+    }
+
+    private function formatDetail(Candidate $candidate): array
+    {
+        return [
+            ...$this->format($candidate),
+            'resume_url' => $candidate->resume_path ? asset($candidate->resume_path) : null,
+            'rejected_at' => $candidate->rejected_at?->toIso8601String(),
+            'rejection_reason' => $candidate->rejection_reason,
+            'hired_at' => $candidate->hired_at?->toIso8601String(),
+            'employee' => $candidate->employee ? [
+                'id' => $candidate->employee->id,
+                'full_name' => $candidate->employee->full_name,
+                'employee_code' => $candidate->employee->employee_code,
+            ] : null,
+            'stage_logs' => $candidate->stageLogs
+                ->map(fn ($log) => [
+                    'id' => $log->id,
+                    'from_stage' => $log->from_stage,
+                    'to_stage' => $log->to_stage,
+                    'notes' => $log->notes,
+                    'created_at' => $log->created_at?->toIso8601String(),
+                    'actor_name' => $log->actor?->name,
+                ])
+                ->values()
+                ->all(),
+            'interviews' => $candidate->interviews
+                ->map(fn ($interview) => [
+                    'id' => $interview->id,
+                    'title' => $interview->title,
+                    'scheduled_at' => $interview->scheduled_at?->toIso8601String(),
+                    'duration_minutes' => $interview->duration_minutes,
+                    'location' => $interview->location,
+                    'meeting_link' => $interview->meeting_link,
+                    'status' => $interview->status,
+                    'notes' => $interview->notes,
+                    'job' => $interview->job ? ['id' => $interview->job->id, 'title' => $interview->job->title] : null,
+                ])
+                ->values()
+                ->all(),
+            'offers' => $candidate->offers
+                ->map(fn ($offer) => [
+                    'id' => $offer->id,
+                    'title' => $offer->title,
+                    'offered_ctc' => $offer->offered_ctc,
+                    'joining_date' => $offer->joining_date?->format('Y-m-d'),
+                    'status' => $offer->status,
+                    'sent_at' => $offer->sent_at?->toIso8601String(),
+                    'responded_at' => $offer->responded_at?->toIso8601String(),
+                    'job' => $offer->job ? ['id' => $offer->job->id, 'title' => $offer->job->title] : null,
+                ])
+                ->values()
+                ->all(),
+        ];
+    }
+
     private function format(Candidate $candidate): array
     {
         $candidate->loadMissing(['job', 'assignedRecruiter']);

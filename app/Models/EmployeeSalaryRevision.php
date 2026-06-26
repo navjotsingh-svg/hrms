@@ -24,6 +24,7 @@ class EmployeeSalaryRevision extends Model
         'esi_applicable',
         'professional_tax_applicable',
         'salary_effective_from',
+        'salary_payout_from',
         'revision_notes',
         'revised_at',
     ];
@@ -44,6 +45,7 @@ class EmployeeSalaryRevision extends Model
             'esi_applicable' => 'boolean',
             'professional_tax_applicable' => 'boolean',
             'salary_effective_from' => 'date',
+            'salary_payout_from' => 'date',
             'revised_at' => 'datetime',
         ];
     }

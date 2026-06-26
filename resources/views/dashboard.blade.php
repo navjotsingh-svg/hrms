@@ -59,7 +59,6 @@
                                                     <input type="checkbox" class="form-check-input" id="dashboardPendingSelectAll" aria-label="Select all pending requests">
                                                 </th>
                                                 <th>Request By</th>
-                                                <th>Employee ID</th>
                                                 <th>Request Type</th>
                                                 <th>Requested On</th>
                                                 <th>Request Status</th>

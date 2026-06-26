@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Api\V1;
 
+use App\Http\Concerns\ValidatesReviewNotes;
 use App\Http\Controllers\Controller;
 use App\Http\Concerns\ApiResponse;
 use App\Http\Requests\RejectEmployeeDocumentRequest;
@@ -13,7 +14,7 @@ use Illuminate\Http\Request;
 
 class EmployeeFamilyMemberController extends Controller
 {
-    use ApiResponse;
+    use ApiResponse, ValidatesReviewNotes;
 
     public function __construct(private EmployeeFamilyMemberService $familyMemberService) {}
 
@@ -33,7 +34,11 @@ class EmployeeFamilyMemberController extends Controller
     public function approve(Request $request, EmployeeFamilyMember $employeeFamilyMember): JsonResponse
     {
         $this->familyMemberService->assertBelongsToCompany($request->user(), $employeeFamilyMember);
-        $member = $this->familyMemberService->approve($request->user(), $employeeFamilyMember);
+        $member = $this->familyMemberService->approve(
+            $request->user(),
+            $employeeFamilyMember,
+            $this->optionalReviewNotes($request),
+        );
 
         return $this->success(
             ['family_member' => new EmployeeFamilyMemberResource($member)],

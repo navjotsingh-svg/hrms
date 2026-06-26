@@ -6,7 +6,7 @@
     <div class="d-flex flex-wrap align-items-center justify-content-between gap-2">
         <div>
             <h1 class="page-title mb-1">Leave Calendar</h1>
-            <p class="page-subtitle mb-0">View all approved employee leaves by month.</p>
+            <p class="page-subtitle mb-0">View all employee leaves by month, including pending and rejected requests.</p>
         </div>
         <a href="{{ route('web.leave.index') }}" class="btn btn-outline-secondary">Back to Leave Management</a>
     </div>

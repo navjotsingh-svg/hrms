@@ -1,5 +1,67 @@
 import Swal from 'sweetalert2';
 
+const reviewRemarksHtml = (isApprove) => `
+    <p class="request-review-swal-lead mb-3">
+        ${isApprove
+        ? 'You can add an optional remark that the employee will see with this approval.'
+        : 'Please explain why this request is being rejected.'}
+    </p>
+    <label class="request-review-swal-label" for="swal-review-remarks">Remarks</label>
+    <textarea
+        id="swal-review-remarks"
+        class="form-control request-review-swal-textarea"
+        rows="4"
+        maxlength="1000"
+        placeholder="${isApprove ? 'Remarks (optional)' : 'Rejection reason (required)'}"
+    ></textarea>
+`;
+
+export const promptRequestReviewRemarks = async ({ action, count = 1 } = {}) => {
+    const isApprove = action === 'approve';
+    const isBulk = count > 1;
+    const title = isApprove
+        ? (isBulk ? `Approve ${count} requests?` : 'Approve this request?')
+        : (isBulk ? `Reject ${count} requests?` : 'Reject this request?');
+
+    const result = await Swal.fire({
+        title,
+        html: reviewRemarksHtml(isApprove),
+        icon: isApprove ? 'question' : 'warning',
+        showCancelButton: true,
+        confirmButtonText: isApprove ? 'Approve' : 'Reject',
+        cancelButtonText: 'Close',
+        confirmButtonColor: isApprove ? '#198754' : '#dc3545',
+        cancelButtonColor: '#64748b',
+        reverseButtons: true,
+        focusConfirm: false,
+        customClass: {
+            popup: 'request-review-swal',
+            htmlContainer: 'request-review-swal-body',
+            confirmButton: 'request-review-swal-confirm',
+            cancelButton: 'request-review-swal-cancel',
+        },
+        didOpen: () => {
+            document.getElementById('swal-review-remarks')?.focus();
+        },
+        preConfirm: () => {
+            const notes = document.getElementById('swal-review-remarks')?.value?.trim() || '';
+
+            if (!isApprove && !notes) {
+                Swal.showValidationMessage('Rejection reason is required.');
+                return false;
+            }
+
+            return notes;
+        },
+    });
+
+    if (!result.isConfirmed) {
+        return null;
+    }
+
+    return result.value || '';
+};
+
 export const confirmAction = async ({
     title,
     text,

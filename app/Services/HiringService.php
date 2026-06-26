@@ -141,7 +141,7 @@ class HiringService
         return $requisition->fresh(['department', 'requestedBy', 'approver']);
     }
 
-    public function approveRequisition(User $user, JobRequisition $requisition): JobRequisition
+    public function approveRequisition(User $user, JobRequisition $requisition, ?string $notes = null): JobRequisition
     {
         $this->assertCanApproveRequisition($user, $requisition);
 
@@ -149,12 +149,13 @@ class HiringService
             throw ValidationException::withMessages(['status' => 'Only pending requisitions can be approved.']);
         }
 
-        return DB::transaction(function () use ($user, $requisition) {
+        return DB::transaction(function () use ($user, $requisition, $notes) {
             $requisition->update([
                 'status' => JobRequisition::STATUS_APPROVED,
                 'approver_user_id' => $user->id,
                 'approved_at' => now(),
                 'rejection_reason' => null,
+                'approval_notes' => $notes ? trim($notes) : null,
             ]);
 
             $slug = $this->generateUniqueJobSlug($requisition->company_id, $requisition->title);
@@ -177,7 +178,7 @@ class HiringService
         });
     }
 
-    public function rejectRequisition(User $user, JobRequisition $requisition, ?string $reason = null): JobRequisition
+    public function rejectRequisition(User $user, JobRequisition $requisition, string $reason): JobRequisition
     {
         $this->assertCanApproveRequisition($user, $requisition);
 
@@ -189,7 +190,8 @@ class HiringService
             'status' => JobRequisition::STATUS_REJECTED,
             'approver_user_id' => $user->id,
             'approved_at' => now(),
-            'rejection_reason' => $reason,
+            'rejection_reason' => trim($reason),
+            'approval_notes' => null,
         ]);
 
         return $requisition->fresh(['department', 'requestedBy', 'approver']);
@@ -354,6 +356,21 @@ class HiringService
         $this->logStageChange($candidate, null, Candidate::STAGE_APPLIED, $user);
 
         return $candidate->fresh(['job', 'assignedRecruiter']);
+    }
+
+    public function candidateDetail(User $user, Candidate $candidate): Candidate
+    {
+        $this->assertSameCompany($user, $candidate);
+        $this->assertCanManageHiring($user);
+
+        return $candidate->load([
+            'job',
+            'assignedRecruiter',
+            'employee',
+            'stageLogs.actor',
+            'interviews' => fn ($query) => $query->orderByDesc('scheduled_at'),
+            'offers' => fn ($query) => $query->orderByDesc('created_at'),
+        ]);
     }
 
     public function updateCandidateStage(User $user, Candidate $candidate, string $stage, ?string $notes = null): Candidate

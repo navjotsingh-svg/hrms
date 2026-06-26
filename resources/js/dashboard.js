@@ -1,3 +1,4 @@
+import Swal from 'sweetalert2';
 import api, { getErrorMessage } from './api';
 import { initAttendancePunch } from './attendance-punch';
 import {
@@ -6,6 +7,7 @@ import {
     renderRequestActions,
     renderSimplePagination,
 } from './request-review';
+import { renderEmployeeNameBlock } from './request-display';
 
 const AVATAR_COLORS = ['#3b82f6', '#8b5cf6', '#ec4899', '#f59e0b', '#14b8a6', '#6366f1', '#ef4444', '#22c55e'];
 
@@ -199,8 +201,7 @@ const renderPendingApprovals = (items = [], pagination = null, showSection = tru
             <td>
                 ${canSelect ? `<input type="checkbox" class="form-check-input dashboard-pending-select" data-pending-key="${item.key}" aria-label="Select request from ${item.requester_name || 'employee'}" ${selectedPendingKeys.has(item.key) ? 'checked' : ''}>` : ''}
             </td>
-            <td>${item.requester_name || '—'}</td>
-            <td>${item.requester_code || '—'}</td>
+            <td>${renderEmployeeNameBlock(item.requester_name, item.requester_code)}</td>
             <td>${item.category_label || item.subject || 'Request'}</td>
             <td>${item.submitted_at_label || '—'}</td>
             <td><span class="badge text-bg-warning">${item.status_label || 'Pending'}</span></td>
@@ -387,6 +388,15 @@ const loadDashboard = async () => {
     }
 };
 
+const showReviewError = (error) => {
+    Swal.fire({
+        icon: 'error',
+        title: 'Action failed',
+        text: getErrorMessage(error),
+        confirmButtonColor: '#0d6efd',
+    });
+};
+
 document.addEventListener('DOMContentLoaded', async () => {
     if (!document.getElementById('dashboardHomeRoot')) {
         return;
@@ -410,7 +420,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             await loadDashboard();
         },
         onError: (error) => {
-            window.alert(getErrorMessage(error));
+            showReviewError(error);
         },
     });
 
@@ -448,12 +458,13 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (!items.length) return;
 
         try {
-            await bulkReviewRequests(items, 'approve');
+            const result = await bulkReviewRequests(items, 'approve');
+            if (!result) return;
             selectedPendingKeys.clear();
             await loadPendingApprovals(pendingPage);
             await loadDashboard();
         } catch (error) {
-            window.alert(getErrorMessage(error));
+            showReviewError(error);
         }
     });
 
@@ -468,7 +479,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             await loadPendingApprovals(pendingPage);
             await loadDashboard();
         } catch (error) {
-            window.alert(getErrorMessage(error));
+            showReviewError(error);
         }
     });
 

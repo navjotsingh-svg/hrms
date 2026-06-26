@@ -5,7 +5,7 @@
             <div class="modal-header border-bottom-0 pb-0">
                 <div>
                     <h5 class="modal-title" id="leaveCalendarModalLabel">Calendar</h5>
-                    <div class="small text-muted">Approved employee leaves for the selected month</div>
+                    <div class="small text-muted">All employee leaves for the selected month</div>
                 </div>
                 <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
             </div>

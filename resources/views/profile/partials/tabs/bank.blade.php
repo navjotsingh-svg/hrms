@@ -98,6 +98,16 @@
                         <div class="invalid-feedback d-block" data-error="ifsc_code"></div>
                     </div>
                 </div>
+
+                <div id="profileBankProofFields" class="profile-form-section mt-3 d-none">
+                    <h4 class="profile-form-section-title">Bank Proof</h4>
+                    <p class="text-muted small mb-2">Upload cancelled cheque, passbook photo, or bank statement (PDF/JPG/PNG). You can attach multiple files.</p>
+                    <div class="col-md-8">
+                        <label for="profile_bank_proofs" class="form-label">Proof Attachments <span class="text-danger">*</span></label>
+                        <input type="file" class="form-control" id="profile_bank_proofs" name="proofs[]" multiple accept=".pdf,.jpg,.jpeg,.png,image/*,application/pdf">
+                        <div class="invalid-feedback d-block" data-error="proofs"></div>
+                    </div>
+                </div>
             </div>
 
             <div class="d-flex align-items-center gap-3 mt-3">

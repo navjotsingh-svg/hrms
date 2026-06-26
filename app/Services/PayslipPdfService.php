@@ -27,6 +27,7 @@ class PayslipPdfService
         return Pdf::loadView('payroll.payslip-pdf', [
             'payslip' => $payslip,
             'company' => $company,
+            'companyLegalName' => $company?->payslipCompanyName(),
             'logoPath' => $logoPath,
             'periodLabel' => $payslip->payrollPeriod?->label(),
             'monthTitle' => $this->monthTitle($payslip),

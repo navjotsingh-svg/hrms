@@ -127,14 +127,15 @@ class AttendanceController extends Controller
     private function capabilities($user): array
     {
         $canViewAll = $this->attendanceService->canViewAllAttendance($user);
+        $canViewCompanyTeam = $this->attendanceService->canViewCompanyTeamAttendance($user);
         $canViewTeam = ! $canViewAll && $this->attendanceService->canViewTeamAttendance($user);
 
         return [
             'can_mark' => $this->attendanceService->canMarkAttendance($user),
-            'can_view_all' => $canViewAll,
-            'can_view_team' => $canViewTeam,
+            'can_view_all' => $canViewAll || $canViewCompanyTeam,
+            'can_view_team' => $canViewTeam && ! $canViewCompanyTeam,
             'can_manage_attendance_masters' => $user->canManageAttendanceMasters(),
-            'team_employees' => $canViewTeam ? $this->attendanceService->teamEmployeesForUser($user) : [],
+            'team_employees' => ($canViewTeam || $canViewCompanyTeam) ? $this->attendanceService->teamEmployeesForUser($user) : [],
             'self_employee_id' => $user->employee?->id,
             'default_view_own' => $user->isHrManager() && ! $user->isCompanyAdmin(),
         ];

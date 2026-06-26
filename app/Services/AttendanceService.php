@@ -44,30 +44,32 @@ class AttendanceService
 
     public function canViewTeamAttendance(User $user): bool
     {
-        if ($user->hasFullAccess()) {
-            return true;
-        }
+        return $user->canViewTeamAttendance();
+    }
 
-        if (! $user->hasPermission('attendance.view') && ! $user->hasPermission('attendance.manage')) {
-            return false;
-        }
-
-        return $this->employeeAccessService->subordinateIdsForUser($user) !== [];
+    public function canViewCompanyTeamAttendance(User $user): bool
+    {
+        return $user->canViewCompanyTeamAttendance();
     }
 
     public function teamEmployeesForUser(User $user): array
     {
-        $subordinateIds = $this->employeeAccessService->subordinateIdsForUser($user);
+        $query = Employee::query()
+            ->where('company_id', $user->company_id)
+            ->where('status', 'active')
+            ->orderBy('first_name');
 
-        if ($subordinateIds === []) {
-            return [];
+        if (! $this->canViewAllAttendance($user) && ! $this->canViewCompanyTeamAttendance($user)) {
+            $subordinateIds = $this->employeeAccessService->subordinateIdsForUser($user);
+
+            if ($subordinateIds === []) {
+                return [];
+            }
+
+            $query->whereIn('id', $subordinateIds);
         }
 
-        return Employee::query()
-            ->where('company_id', $user->company_id)
-            ->whereIn('id', $subordinateIds)
-            ->where('status', 'active')
-            ->orderBy('first_name')
+        return $query
             ->get()
             ->map(fn (Employee $employee) => [
                 'id' => $employee->id,
@@ -100,7 +102,7 @@ class AttendanceService
             throw new NotFoundHttpException('Employee not found.');
         }
 
-        if ($this->canViewAllAttendance($user)) {
+        if ($this->canViewAllAttendance($user) || $this->canViewCompanyTeamAttendance($user)) {
             return $employee;
         }
 
@@ -810,6 +812,7 @@ class AttendanceService
     public function companyMonthMatrix(User $user, string $month, array $filters = []): array
     {
         $canViewAll = $this->canViewAllAttendance($user);
+        $canViewCompanyTeam = $this->canViewCompanyTeamAttendance($user);
         $canViewTeam = ! $canViewAll && $this->canViewTeamAttendance($user);
 
         if (! $canViewAll && ! $canViewTeam) {
@@ -830,7 +833,7 @@ class AttendanceService
             ->orderBy('first_name')
             ->orderBy('last_name');
 
-        if (! $canViewAll) {
+        if (! $canViewAll && ! $canViewCompanyTeam) {
             $subordinateIds = $this->employeeAccessService->subordinateIdsForUser($user);
 
             if ($subordinateIds === []) {
@@ -1066,7 +1069,7 @@ class AttendanceService
                 'from' => $employees->firstItem(),
                 'to' => $employees->lastItem(),
             ],
-            'scope' => $canViewAll ? 'company' : 'team',
+            'scope' => ($canViewAll || $canViewCompanyTeam) ? 'company' : 'team',
         ];
     }
 
@@ -1235,20 +1238,6 @@ class AttendanceService
         $holiday ??= $this->attendancePolicyService->holidayOnDate($companyId, $dateString);
         $punchSummary = $this->summarizeDayPunches($punches);
 
-        if ($this->portalStartService->isBeforeAttendanceTracking($employee, $dateString)) {
-            return [
-                'status' => 'before_portal',
-                'status_label' => '',
-                'holiday_name' => null,
-                'worked_minutes' => 0,
-                'required_minutes' => $requiredMinutes,
-                'punch_in_label' => null,
-                'punch_out_label' => null,
-                'can_mark' => false,
-                'day_message' => $this->portalStartService->beforeTrackingReason($employee, $dateString),
-            ];
-        }
-
         if ($holiday) {
             return [
                 'status' => 'holiday',
@@ -1260,6 +1249,20 @@ class AttendanceService
                 'punch_out_label' => $punchSummary['punch_out_label'],
                 'can_mark' => false,
                 'day_message' => "Today is a holiday: {$holiday->name}.",
+            ];
+        }
+
+        if ($this->portalStartService->isBeforeAttendanceTracking($employee, $dateString)) {
+            return [
+                'status' => 'before_portal',
+                'status_label' => '',
+                'holiday_name' => null,
+                'worked_minutes' => 0,
+                'required_minutes' => $requiredMinutes,
+                'punch_in_label' => null,
+                'punch_out_label' => null,
+                'can_mark' => false,
+                'day_message' => $this->portalStartService->beforeTrackingReason($employee, $dateString),
             ];
         }
 

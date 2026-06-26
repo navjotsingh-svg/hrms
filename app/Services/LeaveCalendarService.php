@@ -27,7 +27,7 @@ class LeaveCalendarService
         $requests = LeaveRequest::query()
             ->with(['employee', 'leaveType', 'days'])
             ->where('company_id', $user->company_id)
-            ->where('status', LeaveRequest::STATUS_APPROVED)
+            ->whereNot('status', LeaveRequest::STATUS_CANCELLED)
             ->whereDate('from_date', '<=', $gridEnd->toDateString())
             ->whereDate('to_date', '>=', $gridStart->toDateString())
             ->orderBy('from_date')
@@ -46,6 +46,8 @@ class LeaveCalendarService
                 'leave_type' => $request->leaveType?->name,
                 'leave_type_id' => $request->leave_type_id,
                 'color' => $color,
+                'status' => $request->status,
+                'status_label' => ucfirst($request->status),
                 'from_date' => $request->from_date?->format('Y-m-d'),
                 'to_date' => $request->to_date?->format('Y-m-d'),
                 'total_days' => $request->total_days,
@@ -136,6 +138,9 @@ class LeaveCalendarService
             'summary' => [
                 'employees_on_leave' => collect($entries)->pluck('employee_id')->unique()->count(),
                 'leave_requests' => count($entries),
+                'approved' => collect($entries)->where('status', LeaveRequest::STATUS_APPROVED)->count(),
+                'pending' => collect($entries)->where('status', LeaveRequest::STATUS_PENDING)->count(),
+                'rejected' => collect($entries)->where('status', LeaveRequest::STATUS_REJECTED)->count(),
             ],
         ];
     }

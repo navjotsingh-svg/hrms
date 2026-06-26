@@ -26,6 +26,26 @@ const barClassForPosition = (dateString, entry) => {
     return 'is-middle';
 };
 
+const statusClassForEntry = (status) => {
+    if (status === 'pending') return 'is-pending';
+    if (status === 'rejected') return 'is-rejected';
+
+    return '';
+};
+
+const renderSummaryText = (summary) => {
+    const parts = [
+        `${summary.leave_requests} leave request(s)`,
+        `${summary.employees_on_leave} employee(s)`,
+    ];
+
+    if (summary.approved) parts.push(`${summary.approved} approved`);
+    if (summary.pending) parts.push(`${summary.pending} pending`);
+    if (summary.rejected) parts.push(`${summary.rejected} rejected`);
+
+    return parts.join(' · ');
+};
+
 const entriesForDate = (entries, dateString) => entries.filter((entry) => (
     dateString >= entry.from_date && dateString <= entry.to_date
 ));
@@ -56,23 +76,37 @@ export const initLeaveCalendar = ({ prefix = 'leaveCalendar', onLoad = null } = 
     const renderLegends = (leaveTypes) => {
         if (!legendsEl) return;
 
-        if (!leaveTypes.length) {
-            legendsEl.innerHTML = '<div class="text-muted small">No leave types configured.</div>';
-            return;
-        }
+        const typeLegends = leaveTypes.length
+            ? leaveTypes.map((type) => `
+                <div class="leave-calendar-legend-item">
+                    <span class="leave-calendar-legend-swatch" style="background:${escapeHtml(type.color)}"></span>
+                    <span>${escapeHtml(type.name)}</span>
+                </div>
+            `).join('')
+            : '<div class="text-muted small mb-2">No leave types configured.</div>';
 
-        legendsEl.innerHTML = leaveTypes.map((type) => `
+        legendsEl.innerHTML = `
+            ${typeLegends}
+            <div class="leave-calendar-legend-divider"></div>
             <div class="leave-calendar-legend-item">
-                <span class="leave-calendar-legend-swatch" style="background:${escapeHtml(type.color)}"></span>
-                <span>${escapeHtml(type.name)}</span>
+                <span class="leave-calendar-legend-swatch leave-calendar-legend-swatch--status is-approved"></span>
+                <span>Approved</span>
             </div>
-        `).join('');
+            <div class="leave-calendar-legend-item">
+                <span class="leave-calendar-legend-swatch leave-calendar-legend-swatch--status is-pending"></span>
+                <span>Pending</span>
+            </div>
+            <div class="leave-calendar-legend-item">
+                <span class="leave-calendar-legend-swatch leave-calendar-legend-swatch--status is-rejected"></span>
+                <span>Rejected</span>
+            </div>
+        `;
     };
 
     const renderCalendar = (calendar) => {
         if (monthLabel) monthLabel.textContent = calendar.month_label;
         if (summaryEl) {
-            summaryEl.textContent = `${calendar.summary.employees_on_leave} employee(s) on approved leave · ${calendar.summary.leave_requests} leave request(s)`;
+            summaryEl.textContent = renderSummaryText(calendar.summary);
         }
         renderLegends(calendar.leave_types);
 
@@ -89,9 +123,9 @@ export const initLeaveCalendar = ({ prefix = 'leaveCalendar', onLoad = null } = 
 
             const bars = dayEntries.map((entry) => `
                 <span
-                    class="leave-calendar-bar ${barClassForPosition(day.date, entry)}"
+                    class="leave-calendar-bar ${barClassForPosition(day.date, entry)} ${statusClassForEntry(entry.status)}"
                     style="background:${escapeHtml(entry.color)}"
-                    title="${escapeHtml(entry.label)}${entry.leave_type ? ` · ${escapeHtml(entry.leave_type)}` : ''}"
+                    title="${escapeHtml(entry.label)}${entry.leave_type ? ` · ${escapeHtml(entry.leave_type)}` : ''}${entry.status_label ? ` · ${escapeHtml(entry.status_label)}` : ''}"
                 >${escapeHtml(entry.label)}</span>
             `).join('');
 

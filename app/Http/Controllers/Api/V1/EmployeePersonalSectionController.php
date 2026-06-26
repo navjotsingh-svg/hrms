@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Api\V1;
 
+use App\Http\Concerns\ValidatesReviewNotes;
 use App\Http\Controllers\Controller;
 use App\Http\Concerns\ApiResponse;
 use App\Http\Requests\RejectEmployeeDocumentRequest;
@@ -13,7 +14,7 @@ use Illuminate\Http\Request;
 
 class EmployeePersonalSectionController extends Controller
 {
-    use ApiResponse;
+    use ApiResponse, ValidatesReviewNotes;
 
     public function __construct(private EmployeePersonalSectionService $personalSectionService) {}
 
@@ -33,7 +34,11 @@ class EmployeePersonalSectionController extends Controller
     public function approve(Request $request, EmployeePersonalSection $employeePersonalSection): JsonResponse
     {
         $this->personalSectionService->assertBelongsToCompany($request->user(), $employeePersonalSection);
-        $section = $this->personalSectionService->approve($request->user(), $employeePersonalSection);
+        $section = $this->personalSectionService->approve(
+            $request->user(),
+            $employeePersonalSection,
+            $this->optionalReviewNotes($request),
+        );
 
         return $this->success(
             ['personal_section' => new EmployeePersonalSectionResource($section)],

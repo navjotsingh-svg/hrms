@@ -18,6 +18,7 @@ class EmployeeDocumentService
         private PublicUploadDirectoryService $uploadDirectories,
         private EmployeeProfileApprovalService $approvalService,
         private ImageCompressor $imageCompressor,
+        private WorkflowNotificationService $workflowNotificationService,
     ) {}
 
     public function assertCanUpload(User $user, Employee $employee, DocumentType $documentType): void
@@ -67,7 +68,7 @@ class EmployeeDocumentService
         $autoApproved = $this->approvalService->shouldAutoApprove($user, $employee);
         $this->assertCanUpload($user, $employee, $documentType);
 
-        return DB::transaction(function () use ($user, $employee, $documentType, $files, $autoApproved) {
+        $result = DB::transaction(function () use ($user, $employee, $documentType, $files, $autoApproved) {
             $documents = [];
             $isReupload = false;
 
@@ -76,9 +77,9 @@ class EmployeeDocumentService
                     $documents[] = $this->createDocument($user, $employee, $documentType, $file);
                 }
             } else {
-                $result = $this->storeSingleDocument($user, $employee, $documentType, $files[0]);
-                $documents[] = $result['document'];
-                $isReupload = $result['is_reupload'];
+                $singleResult = $this->storeSingleDocument($user, $employee, $documentType, $files[0]);
+                $documents[] = $singleResult['document'];
+                $isReupload = $singleResult['is_reupload'];
             }
 
             return [
@@ -89,6 +90,16 @@ class EmployeeDocumentService
                 'count' => count($documents),
             ];
         });
+
+        if (! $result['auto_approved']) {
+            foreach ($result['documents'] as $document) {
+                if ($document->status === 'pending') {
+                    $this->workflowNotificationService->notifyDocumentVerification($document, $user);
+                }
+            }
+        }
+
+        return $result;
     }
 
     public function pendingForReviewer(User $user)
@@ -107,7 +118,7 @@ class EmployeeDocumentService
             ->values();
     }
 
-    public function approve(User $user, EmployeeDocument $document): EmployeeDocument
+    public function approve(User $user, EmployeeDocument $document, ?string $notes = null): EmployeeDocument
     {
         $this->assertCanReview($user, $document);
 
@@ -121,10 +132,14 @@ class EmployeeDocumentService
             'status' => 'approved',
             'reviewed_by_user_id' => $user->id,
             'reviewed_at' => now(),
-            'notes' => null,
+            'notes' => $notes ? trim($notes) : null,
         ]);
 
-        return $document->fresh()->load(['documentType', 'employee', 'uploadedBy.role', 'reviewedBy']);
+        $fresh = $document->fresh()->load(['documentType', 'employee', 'uploadedBy.role', 'reviewedBy']);
+
+        $this->workflowNotificationService->notifyDocumentDecision($fresh, $user, 'approved');
+
+        return $fresh;
     }
 
     public function reject(User $user, EmployeeDocument $document, string $notes): EmployeeDocument
@@ -144,7 +159,11 @@ class EmployeeDocumentService
             'notes' => $notes,
         ]);
 
-        return $document->fresh()->load(['documentType', 'employee', 'uploadedBy.role', 'reviewedBy']);
+        $fresh = $document->fresh()->load(['documentType', 'employee', 'uploadedBy.role', 'reviewedBy']);
+
+        $this->workflowNotificationService->notifyDocumentDecision($fresh, $user, 'rejected');
+
+        return $fresh;
     }
 
     public function delete(User $user, EmployeeDocument $document): void

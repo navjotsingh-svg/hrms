@@ -48,6 +48,9 @@ document.addEventListener('DOMContentLoaded', () => {
     const subtitle = document.getElementById('attendanceTodaySubtitle');
     const dateInput = document.getElementById('attendanceTodayDate');
     const refreshBtn = document.getElementById('attendanceTodayRefresh');
+    const prevDayBtn = document.getElementById('attendanceTodayPrevDay');
+    const nextDayBtn = document.getElementById('attendanceTodayNextDay');
+    const goTodayBtn = document.getElementById('attendanceTodayGoToday');
     const resetBtn = document.getElementById('attendanceTodayReset');
     const departmentSelect = document.getElementById('attendanceTodayDepartment');
     const statusSelect = document.getElementById('attendanceTodayStatus');
@@ -72,6 +75,43 @@ document.addEventListener('DOMContentLoaded', () => {
         dateInput.value = todayInputValue();
         dateInput.max = todayInputValue();
     }
+
+    const syncTodayNavButtons = () => {
+        const isToday = dateInput?.value === todayInputValue();
+
+        if (nextDayBtn) {
+            nextDayBtn.disabled = isToday;
+        }
+
+        if (goTodayBtn) {
+            goTodayBtn.disabled = isToday;
+        }
+    };
+
+    const setSelectedDate = (value) => {
+        if (!dateInput || !value) {
+            return;
+        }
+
+        dateInput.value = value;
+        syncTodayNavButtons();
+        loadOverview();
+    };
+
+    const shiftSelectedDate = (days) => {
+        if (!dateInput?.value) {
+            return;
+        }
+
+        const date = new Date(`${dateInput.value}T00:00:00`);
+        date.setDate(date.getDate() + days);
+
+        if (date > new Date()) {
+            return;
+        }
+
+        setSelectedDate(todayInputValue(date));
+    };
 
     employeeSearch = bindEmployeeSearchSelect({
         inputId: 'attendanceTodayEmployeeInput',
@@ -122,6 +162,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 ? `Live view for ${dateLabel}.`
                 : `Attendance snapshot for ${dateLabel}.`;
         }
+
+        syncTodayNavButtons();
     };
 
     const filteredRows = () => {
@@ -248,9 +290,16 @@ document.addEventListener('DOMContentLoaded', () => {
         element?.addEventListener('change', renderTable);
     });
 
-    dateInput?.addEventListener('change', loadOverview);
+    dateInput?.addEventListener('change', () => {
+        syncTodayNavButtons();
+        loadOverview();
+    });
     refreshBtn?.addEventListener('click', loadOverview);
+    prevDayBtn?.addEventListener('click', () => shiftSelectedDate(-1));
+    nextDayBtn?.addEventListener('click', () => shiftSelectedDate(1));
+    goTodayBtn?.addEventListener('click', () => setSelectedDate(todayInputValue()));
     resetBtn?.addEventListener('click', resetFilters);
 
+    syncTodayNavButtons();
     loadOverview();
 });

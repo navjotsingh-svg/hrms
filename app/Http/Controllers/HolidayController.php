@@ -6,7 +6,9 @@ class HolidayController extends Controller
 {
     public function index()
     {
-        return view('holidays.index');
+        return view('holidays.index', [
+            'canManage' => auth()->user()->canManageAttendanceMasters(),
+        ]);
     }
 
     public function create()

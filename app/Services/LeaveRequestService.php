@@ -27,6 +27,7 @@ class LeaveRequestService
         private EmployeeAccessService $employeeAccessService,
         private ActivityLogService $activityLogService,
         private LeaveTypeService $leaveTypeService,
+        private WorkflowNotificationService $workflowNotificationService,
     ) {}
 
     public function listForUser(User $user, array $filters = []): LengthAwarePaginator
@@ -394,6 +395,8 @@ class LeaveRequestService
                 ],
             );
 
+            $this->workflowNotificationService->notifyLeaveSubmitted($fresh, $user);
+
             return $fresh;
         });
     }
@@ -424,7 +427,7 @@ class LeaveRequestService
         return $request->fresh()->load(['employee', 'leaveType', 'days', 'attachments', 'appliedBy', 'reviewedBy']);
     }
 
-    public function approve(User $user, LeaveRequest $request): LeaveRequest
+    public function approve(User $user, LeaveRequest $request, ?string $notes = null): LeaveRequest
     {
         $this->assertCanReview($user, $request);
 
@@ -448,12 +451,12 @@ class LeaveRequestService
             $this->leaveBalanceService->yearForDate($request->from_date->toDateString()),
         );
 
-        return DB::transaction(function () use ($user, $request, $balance) {
+        return DB::transaction(function () use ($user, $request, $balance, $notes) {
             $request->update([
                 'status' => LeaveRequest::STATUS_APPROVED,
                 'reviewed_by_user_id' => $user->id,
                 'reviewed_at' => now(),
-                'review_notes' => null,
+                'review_notes' => $notes ? trim($notes) : null,
             ]);
 
             $this->leaveBalanceService->confirmUsage($balance, (float) $request->total_days);
@@ -467,9 +470,11 @@ class LeaveRequestService
                 (int) $fresh->employee_id,
                 'approved',
                 'Leave request approved.',
-                null,
+                $notes ? trim($notes) : null,
                 request(),
             );
+
+            $this->workflowNotificationService->notifyLeaveDecision($fresh, $user, 'approved');
 
             return $fresh;
         });
@@ -511,6 +516,8 @@ class LeaveRequestService
                 trim($notes),
                 request(),
             );
+
+            $this->workflowNotificationService->notifyLeaveDecision($fresh, $user, 'rejected');
 
             return $fresh;
         });

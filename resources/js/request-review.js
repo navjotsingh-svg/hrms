@@ -1,7 +1,7 @@
 import api from './api';
 import { renderActionGroup, renderCancelIconButton, renderViewLink } from './action-icons';
 import { renderApproveIconButton, renderRejectIconButton } from './review-actions';
-import { confirmLeaveCancel, confirmRequestCancel } from './swal-utils';
+import { confirmLeaveCancel, confirmRequestCancel, promptRequestReviewRemarks } from './swal-utils';
 
 export const reviewEndpoints = {
     leave: (id) => ({
@@ -59,6 +59,37 @@ export const cancelEndpoints = {
 
 export const reviewToken = (item) => `${item.review_kind}:${item.review_target}`;
 
+export const canShowRequestReviewActions = (item) => (
+    item?.status === 'pending'
+    && item?.can_review
+    && item?.review_kind
+    && item?.review_target
+);
+
+export const canShowRequestCancelAction = (item) => (
+    item?.status === 'pending'
+    && item?.can_cancel
+    && cancelEndpoints[item.category]
+);
+
+export const buildReviewPayload = (kind, action, notes) => {
+    const trimmed = notes?.trim() || '';
+
+    if (kind === 'job_requisition') {
+        return action === 'reject'
+            ? { reason: trimmed }
+            : (trimmed ? { notes: trimmed } : {});
+    }
+
+    if (kind === 'expense' || kind === 'expense_group') {
+        return action === 'approve'
+            ? (trimmed ? { review_notes: trimmed } : {})
+            : { notes: trimmed };
+    }
+
+    return trimmed ? { notes: trimmed } : {};
+};
+
 export const renderRequestActions = (item, {
     includeView = true,
     approveAttr = 'data-approve-request',
@@ -71,12 +102,12 @@ export const renderRequestActions = (item, {
         actions.push(renderViewLink(item.view_url, 'View request'));
     }
 
-    if (item.can_review && item.review_kind && item.review_target) {
+    if (canShowRequestReviewActions(item)) {
         actions.push(renderApproveIconButton(approveAttr, reviewToken(item), 'Approve request'));
         actions.push(renderRejectIconButton(rejectAttr, reviewToken(item), 'Reject request (decline)'));
     }
 
-    if (item.can_cancel && cancelEndpoints[item.category]) {
+    if (canShowRequestCancelAction(item)) {
         actions.push(renderCancelIconButton(cancelAttr, `${item.category}:${item.entity_id}`, 'Cancel request (withdraw)'));
     }
 
@@ -90,19 +121,59 @@ export const renderHeaderReviewActions = (item, {
 } = {}) => {
     const actions = [];
 
-    if (item.can_review && item.review_kind && item.review_target) {
+    if (canShowRequestReviewActions(item)) {
         actions.push(renderApproveIconButton(approveAttr, reviewToken(item), 'Approve request'));
         actions.push(renderRejectIconButton(rejectAttr, reviewToken(item), 'Reject request (decline)'));
     }
 
-    if (item.can_cancel && cancelEndpoints[item.category]) {
+    if (canShowRequestCancelAction(item)) {
         actions.push(renderCancelIconButton(cancelAttr, `${item.category}:${item.entity_id}`, 'Cancel request (withdraw)'));
     }
 
     return actions.length ? renderActionGroup(actions.join('')) : '';
 };
 
-export const reviewSingleRequest = async (token, action, notes = null) => {
+export const renderDetailReviewActionsBar = (item, {
+    approveAttr = 'data-approve-request',
+    rejectAttr = 'data-reject-request',
+    cancelAttr = 'data-cancel-request',
+} = {}) => {
+    const buttons = [];
+
+    if (item.can_review && item.review_kind && item.review_target) {
+        buttons.push(`<button type="button" class="btn btn-success btn-sm" ${approveAttr}="${reviewToken(item)}">Approve</button>`);
+        buttons.push(`<button type="button" class="btn btn-outline-danger btn-sm" ${rejectAttr}="${reviewToken(item)}">Reject</button>`);
+    }
+
+    if (item.can_cancel && cancelEndpoints[item.category]) {
+        buttons.push(`<button type="button" class="btn btn-outline-secondary btn-sm" ${cancelAttr}="${item.category}:${item.entity_id}">Cancel</button>`);
+    }
+
+    if (!buttons.length) {
+        return '';
+    }
+
+    return `
+        <div class="request-show-actions d-flex flex-wrap gap-2 justify-content-end">
+            ${buttons.join('')}
+        </div>
+    `;
+};
+
+export const renderRequestShowCardLayout = (contentHtml, actionItem) => contentHtml;
+
+export const mountRequestShowActions = (toolbarEl, actionItem) => {
+    if (!toolbarEl) {
+        return;
+    }
+
+    const actions = renderDetailReviewActionsBar(actionItem);
+
+    toolbarEl.innerHTML = actions;
+    toolbarEl.classList.toggle('d-none', !actions);
+};
+
+export const reviewSingleRequest = async (token, action, notes = undefined) => {
     const [kind, id] = token.split(':');
     const endpoints = reviewEndpoints[kind];
 
@@ -110,21 +181,34 @@ export const reviewSingleRequest = async (token, action, notes = null) => {
         throw new Error('Unsupported request type.');
     }
 
-    if (action === 'approve') {
-        const { data } = await api.patch(endpoints(id).approve);
-        return data.message || 'Request approved.';
+    let remarks = notes;
+
+    if (remarks === undefined) {
+        remarks = await promptRequestReviewRemarks({ action, count: 1 });
+
+        if (remarks === null) {
+            return null;
+        }
     }
 
-    const reason = notes?.trim() || prompt('Rejection reason:')?.trim();
-    if (!reason) {
-        return null;
-    }
+    const payload = buildReviewPayload(kind, action, remarks);
+    const endpoint = action === 'approve' ? endpoints(id).approve : endpoints(id).reject;
+    const { data } = await api.patch(endpoint, payload);
 
-    const { data } = await api.patch(endpoints(id).reject, { notes: reason });
-    return data.message || 'Request rejected.';
+    return data.message || (action === 'approve' ? 'Request approved.' : 'Request rejected.');
 };
 
-export const bulkReviewRequests = async (items, action, notes = null) => {
+export const bulkReviewRequests = async (items, action, notes = undefined) => {
+    let remarks = notes;
+
+    if (remarks === undefined) {
+        remarks = await promptRequestReviewRemarks({ action, count: items.length });
+
+        if (remarks === null) {
+            return null;
+        }
+    }
+
     const payload = {
         action,
         items: items.map((item) => ({
@@ -133,16 +217,28 @@ export const bulkReviewRequests = async (items, action, notes = null) => {
         })),
     };
 
-    if (action === 'reject') {
-        const reason = notes?.trim() || prompt('Rejection reason for selected requests:')?.trim();
-        if (!reason) {
-            return null;
-        }
-        payload.notes = reason;
+    if (remarks?.trim()) {
+        payload.notes = remarks.trim();
+    } else if (action === 'reject') {
+        throw new Error('Rejection reason is required.');
     }
 
     const { data } = await api.post('/request-hub/bulk-review', payload);
+
     return data;
+};
+
+export const patchProfileReviewAction = async (url, kind, action) => {
+    const remarks = await promptRequestReviewRemarks({ action, count: 1 });
+
+    if (remarks === null) {
+        return null;
+    }
+
+    const payload = buildReviewPayload(kind, action, remarks);
+    const { data } = await api.patch(url, payload);
+
+    return data.message || (action === 'approve' ? 'Request approved.' : 'Request rejected.');
 };
 
 export const cancelRequest = async (token) => {
@@ -162,6 +258,7 @@ export const cancelRequest = async (token) => {
     }
 
     const { data } = await api.patch(endpoint);
+
     return data.message || (category === 'leave'
         ? 'Leave request has been cancelled.'
         : 'Request has been cancelled.');

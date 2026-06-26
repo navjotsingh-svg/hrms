@@ -99,7 +99,7 @@ class EmployeeComplianceFieldService
             ->values();
     }
 
-    public function approve(User $user, EmployeeComplianceField $field): EmployeeComplianceField
+    public function approve(User $user, EmployeeComplianceField $field, ?string $notes = null): EmployeeComplianceField
     {
         $this->assertCanReview($user, $field);
 
@@ -109,12 +109,12 @@ class EmployeeComplianceFieldService
             ]);
         }
 
-        DB::transaction(function () use ($user, $field) {
+        DB::transaction(function () use ($user, $field, $notes) {
             $field->update([
                 'status' => 'approved',
                 'reviewed_by_user_id' => $user->id,
                 'reviewed_at' => now(),
-                'notes' => null,
+                'notes' => $notes ? trim($notes) : null,
             ]);
 
             $column = $field->employeeColumn();

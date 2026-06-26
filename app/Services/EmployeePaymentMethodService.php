@@ -4,7 +4,9 @@ namespace App\Services;
 
 use App\Models\Employee;
 use App\Models\EmployeePaymentMethod;
+use App\Models\EmployeePaymentMethodProof;
 use App\Models\User;
+use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
@@ -13,7 +15,11 @@ use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
 
 class EmployeePaymentMethodService
 {
-    public function __construct(private EmployeeProfileApprovalService $approvalService) {}
+    public function __construct(
+        private EmployeeProfileApprovalService $approvalService,
+        private PublicUploadDirectoryService $uploadDirectories,
+        private ImageCompressor $imageCompressor,
+    ) {}
 
     public function assertCanSubmit(Employee $employee, string $paymentMode, ?User $user = null): void
     {
@@ -36,7 +42,7 @@ class EmployeePaymentMethodService
         ]);
     }
 
-    public function submit(User $user, Employee $employee, array $data): array
+    public function submit(User $user, Employee $employee, array $data, array $proofFiles = []): array
     {
         $autoApproved = $this->approvalService->shouldAutoApprove($user, $employee);
         $paymentMode = $data['payment_mode'];
@@ -49,9 +55,18 @@ class EmployeePaymentMethodService
             $data['account_holder_name'] = null;
             $data['account_number'] = null;
             $data['ifsc_code'] = null;
+            $proofFiles = [];
+        } else {
+            $proofFiles = array_values(array_filter($proofFiles, fn ($file) => $file instanceof UploadedFile));
+
+            if ($proofFiles === []) {
+                throw ValidationException::withMessages([
+                    'proofs' => ['Please attach at least one bank proof document.'],
+                ]);
+            }
         }
 
-        return DB::transaction(function () use ($user, $employee, $data, $paymentMode, $autoApproved) {
+        return DB::transaction(function () use ($user, $employee, $data, $paymentMode, $autoApproved, $proofFiles) {
             $existing = $this->findForMode($employee, $paymentMode);
             $isResubmit = $existing && in_array($existing->status, ['rejected', 'approved'], true);
             $isChange = $existing && $existing->status === 'approved';
@@ -73,14 +88,16 @@ class EmployeePaymentMethodService
 
             if ($existing) {
                 $existing->update($payload);
-                $method = $existing->fresh()->load(['submittedBy.role', 'reviewedBy', 'employee']);
+                $method = $existing->fresh()->load(['submittedBy.role', 'reviewedBy', 'employee', 'proofs']);
             } else {
                 $method = EmployeePaymentMethod::create($payload)
-                    ->load(['submittedBy.role', 'reviewedBy', 'employee']);
+                    ->load(['submittedBy.role', 'reviewedBy', 'employee', 'proofs']);
             }
 
+            $this->syncProofs($user, $employee, $method, $proofFiles);
+
             return [
-                'payment_method' => $method,
+                'payment_method' => $method->fresh()->load(['submittedBy.role', 'reviewedBy', 'employee', 'proofs']),
                 'is_resubmit' => $isResubmit,
                 'is_change' => $isChange,
                 'auto_approved' => $autoApproved,
@@ -95,7 +112,7 @@ class EmployeePaymentMethodService
         }
 
         return EmployeePaymentMethod::query()
-            ->with(['employee', 'submittedBy.role', 'reviewedBy'])
+            ->with(['employee', 'submittedBy.role', 'reviewedBy', 'proofs'])
             ->where('company_id', $user->company_id)
             ->where('status', 'pending')
             ->latest('submitted_at')
@@ -104,7 +121,7 @@ class EmployeePaymentMethodService
             ->values();
     }
 
-    public function approve(User $user, EmployeePaymentMethod $method): EmployeePaymentMethod
+    public function approve(User $user, EmployeePaymentMethod $method, ?string $notes = null): EmployeePaymentMethod
     {
         $this->assertCanReview($user, $method);
 
@@ -118,10 +135,10 @@ class EmployeePaymentMethodService
             'status' => 'approved',
             'reviewed_by_user_id' => $user->id,
             'reviewed_at' => now(),
-            'notes' => null,
+            'notes' => $notes ? trim($notes) : null,
         ]);
 
-        return $method->fresh()->load(['employee', 'submittedBy.role', 'reviewedBy']);
+        return $method->fresh()->load(['employee', 'submittedBy.role', 'reviewedBy', 'proofs']);
     }
 
     public function reject(User $user, EmployeePaymentMethod $method, string $notes): EmployeePaymentMethod
@@ -141,7 +158,40 @@ class EmployeePaymentMethodService
             'notes' => $notes,
         ]);
 
-        return $method->fresh()->load(['employee', 'submittedBy.role', 'reviewedBy']);
+        return $method->fresh()->load(['employee', 'submittedBy.role', 'reviewedBy', 'proofs']);
+    }
+
+    public function downloadProofForUser(User $user, EmployeePaymentMethodProof $proof): array
+    {
+        if ((int) $proof->company_id !== (int) $user->company_id) {
+            throw new NotFoundHttpException('Bank proof not found.');
+        }
+
+        $isOwner = $user->employee && (int) $user->employee->id === (int) $proof->employee_id;
+        $canReview = $user->canReviewEmployeeDocuments();
+
+        if (! $isOwner && ! $canReview) {
+            throw new AccessDeniedHttpException('You are not allowed to view this bank proof.');
+        }
+
+        $path = $proof->absoluteFilePath();
+
+        if (! $path) {
+            throw new NotFoundHttpException('Bank proof file not found.');
+        }
+
+        return [
+            'path' => $path,
+            'name' => $proof->original_name,
+            'mime' => $proof->mime_type ?: 'application/octet-stream',
+        ];
+    }
+
+    public function assertProofBelongsToCompany(User $user, EmployeePaymentMethodProof $proof): void
+    {
+        if ((int) $proof->company_id !== (int) $user->company_id) {
+            throw new NotFoundHttpException('Bank proof not found.');
+        }
     }
 
     public function assertBelongsToCompany(User $user, EmployeePaymentMethod $method): void
@@ -166,5 +216,84 @@ class EmployeePaymentMethodService
             ->where('employee_id', $employee->id)
             ->where('payment_mode', $paymentMode)
             ->first();
+    }
+
+    private function syncProofs(
+        User $user,
+        Employee $employee,
+        EmployeePaymentMethod $method,
+        array $files,
+    ): void {
+        if ($method->payment_mode !== 'bank_transfer') {
+            $this->deleteAllProofs($method);
+
+            return;
+        }
+
+        $this->deleteAllProofs($method);
+
+        foreach ($files as $file) {
+            if (! $file instanceof UploadedFile) {
+                continue;
+            }
+
+            $stored = $this->buildStoredFileMeta($file, $employee);
+
+            EmployeePaymentMethodProof::create([
+                'company_id' => $employee->company_id,
+                'employee_id' => $employee->id,
+                'employee_payment_method_id' => $method->id,
+                'uploaded_by_user_id' => $user->id,
+                'original_name' => $file->getClientOriginalName(),
+                'file_path' => $stored['path'],
+                'mime_type' => $stored['mime_type'],
+                'file_size' => $stored['file_size'],
+            ]);
+        }
+    }
+
+    private function deleteAllProofs(EmployeePaymentMethod $method): void
+    {
+        $method->loadMissing('proofs');
+
+        foreach ($method->proofs as $proof) {
+            $proof->deleteFile();
+            $proof->delete();
+        }
+    }
+
+    private function buildStoredFileMeta(UploadedFile $file, Employee $employee): array
+    {
+        $relativeDirectory = EmployeePaymentMethodProof::PUBLIC_UPLOAD_DIR
+            ."/{$employee->company_id}/{$employee->id}";
+        $this->uploadDirectories->ensure($relativeDirectory);
+        $absoluteDirectory = public_path($relativeDirectory);
+
+        $mime = (string) $file->getMimeType();
+        $isImage = str_starts_with($mime, 'image/');
+
+        if ($isImage) {
+            $path = $this->imageCompressor->compressAndSave(
+                $file,
+                $absoluteDirectory,
+                $relativeDirectory,
+                1200,
+                75,
+                true,
+            );
+            $fileSize = filesize(public_path($path)) ?: 0;
+        } else {
+            $extension = strtolower($file->getClientOriginalExtension() ?: 'pdf');
+            $filename = now()->format('YmdHis').'_'.uniqid().'.'.$extension;
+            $fileSize = $file->getSize() ?: 0;
+            $file->move($absoluteDirectory, $filename);
+            $path = $relativeDirectory.'/'.$filename;
+        }
+
+        return [
+            'path' => $path,
+            'mime_type' => $mime,
+            'file_size' => $fileSize,
+        ];
     }
 }

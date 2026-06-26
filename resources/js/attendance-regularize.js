@@ -4,6 +4,8 @@ import { renderActionGroup, renderCancelIconButton } from './action-icons';
 import { renderApproveIconButton, renderRejectIconButton } from './review-actions';
 import { setSubmitLoading } from './form-utils';
 import { bindEmployeeSearchSelect } from './employee-autocomplete';
+import { formatOriginalPunchLine, formatRequestedPunchLine, renderEmployeeNameBlock } from './request-display';
+import { reviewSingleRequest } from './request-review';
 
 const pad = (value) => String(value).padStart(2, '0');
 
@@ -135,19 +137,9 @@ document.addEventListener('DOMContentLoaded', async () => {
         alertBox.classList.remove('d-none');
     };
 
-const formatTimes = (item) => {
-    const parts = [];
-    if (item.requested_punch_in_label) parts.push(`In ${item.requested_punch_in_label}`);
-    if (item.requested_punch_out_label) parts.push(`Out ${item.requested_punch_out_label}`);
-    return parts.join(' · ') || '—';
-};
+const formatTimes = (item) => formatRequestedPunchLine(item);
 
-const formatOriginalTimes = (item) => {
-    const parts = [];
-    if (item.original_punch_in_label) parts.push(`In ${item.original_punch_in_label}`);
-    if (item.original_punch_out_label) parts.push(`Out ${item.original_punch_out_label}`);
-    return parts.join(' · ') || '—';
-};
+const formatOriginalTimes = (item) => formatOriginalPunchLine(item);
 
 const formatOriginalTimesFromEligible = (item) => {
     const parts = [];
@@ -530,7 +522,7 @@ const formatOriginalTimesFromEligible = (item) => {
                     return `
                         <div class="regularize-pending-date-chip">
                             <div>${label}</div>
-                            <div class="small text-muted">Current ${original} → New ${requested}</div>
+                            <div class="small text-muted">Login / Logout: ${original} → Requested: ${requested}</div>
                         </div>
                     `;
                 })
@@ -549,7 +541,7 @@ const formatOriginalTimesFromEligible = (item) => {
                         <div class="flex-grow-1">
                             <div class="fw-semibold">${title}</div>
                             ${employeeCode ? `<div class="small text-muted">${employeeCode}</div>` : ''}
-                            <div class="small text-muted mt-1">Current: ${originalTimes}</div>
+                            <div class="small text-muted mt-1">Login / Logout: ${originalTimes}</div>
                             <div class="small text-muted">Requested: ${times}</div>
                             ${group.created_at_label ? `<div class="small text-muted">Submitted ${group.created_at_label}</div>` : ''}
                             <div class="regularize-pending-dates mt-2">${dateList}</div>
@@ -571,7 +563,7 @@ const formatOriginalTimesFromEligible = (item) => {
         }
         return `<tr>
             <td>${serial}</td>
-            <td>${item.employee?.full_name || '—'}<div class="small text-muted">${item.employee?.employee_code || ''}</div></td>
+            <td>${renderEmployeeNameBlock(item.employee?.full_name, item.employee?.employee_code)}</td>
             <td>
                 ${item.attendance_date_label || '—'}
                 ${item.batch_id ? '<div class="small text-muted mt-1">Part of a multi-day request</div>' : ''}
@@ -834,15 +826,12 @@ const formatOriginalTimesFromEligible = (item) => {
 
     const handleReview = async (id, action) => {
         try {
-            if (action === 'approve') {
-                await api.patch(`/attendance-regularizations/${id}/approve`);
-                showAlert('Regularization request approved.');
-            } else {
-                const notes = prompt('Rejection reason:');
-                if (!notes?.trim()) return;
-                await api.patch(`/attendance-regularizations/${id}/reject`, { notes: notes.trim() });
-                showAlert('Regularization request rejected.');
+            const message = await reviewSingleRequest(`regularization:${id}`, action);
+            if (!message) {
+                return;
             }
+
+            showAlert(message);
             await reloadDashboard(currentPage);
         } catch (error) {
             showAlert(getErrorMessage(error), 'danger');
@@ -851,15 +840,12 @@ const formatOriginalTimesFromEligible = (item) => {
 
     const handleBatchReview = async (batchId, action) => {
         try {
-            if (action === 'approve') {
-                const { data } = await api.patch(`/attendance-regularizations/batch/${batchId}/approve`);
-                showAlert(data.message || 'Regularization requests approved.');
-            } else {
-                const notes = prompt('Rejection reason:');
-                if (!notes?.trim()) return;
-                const { data } = await api.patch(`/attendance-regularizations/batch/${batchId}/reject`, { notes: notes.trim() });
-                showAlert(data.message || 'Regularization requests rejected.');
+            const message = await reviewSingleRequest(`regularization_batch:${batchId}`, action);
+            if (!message) {
+                return;
             }
+
+            showAlert(message);
             await reloadDashboard(currentPage);
         } catch (error) {
             showAlert(getErrorMessage(error), 'danger');

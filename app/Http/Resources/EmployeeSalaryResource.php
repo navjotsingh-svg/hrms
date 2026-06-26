@@ -62,6 +62,8 @@ class EmployeeSalaryResource extends JsonResource
 
             'salary_effective_from' => $this->salary_effective_from?->format('Y-m-d'),
 
+            'salary_payout_from' => $this->salary_payout_from?->format('Y-m-d'),
+
         ];
 
     }

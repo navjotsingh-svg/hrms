@@ -27,6 +27,11 @@ class EmployeePaymentMethod extends Model
         'reviewed_at',
     ];
 
+    public function proofs()
+    {
+        return $this->hasMany(EmployeePaymentMethodProof::class);
+    }
+
     protected function casts(): array
     {
         return [

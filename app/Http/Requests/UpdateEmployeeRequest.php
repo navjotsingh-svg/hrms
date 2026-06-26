@@ -26,7 +26,10 @@ class UpdateEmployeeRequest extends FormRequest
                 $employee?->user_id,
                 (bool) $employee?->user_id || $grantPortalAccess
             ),
-            $this->employeeSalaryRules()
+            $this->employeeSalaryRules(),
+            [
+                'salary_revision_notes' => ['nullable', 'string', 'max:500'],
+            ],
         );
     }
 

@@ -21,7 +21,7 @@ class EnsureCompanyPermission
             abort(403, 'Your company account is inactive. Please contact support.');
         }
 
-        if ($user->hasFullAccess()) {
+        if (str_contains($permission, 'employees.assign_admin') && $user->canAssignCompanyAdmin()) {
             return $next($request);
         }
 

@@ -1,16 +1,22 @@
 @extends('layouts.app')
 
+@php($canManage = $canManage ?? false)
+
 @section('title', 'Holidays - ' . config('app.name', 'HRMS'))
 
 @section('header')
     <div class="d-flex flex-wrap align-items-center justify-content-between gap-2">
         <div>
             <h1 class="page-title mb-1">Holidays</h1>
-            <p class="page-subtitle mb-0">Manage company holidays shown on the attendance calendar.</p>
+            <p class="page-subtitle mb-0">
+                {{ $canManage ? 'Manage company holidays shown on the attendance calendar.' : 'Company holidays for the attendance calendar.' }}
+            </p>
         </div>
-        <a href="{{ route('web.masters.attendance.holidays.create') }}" class="btn btn-primary">
-            + Add Holiday
-        </a>
+        @if ($canManage)
+            <a href="{{ route('web.masters.attendance.holidays.create') }}" class="btn btn-primary">
+                + Add Holiday
+            </a>
+        @endif
     </div>
 @endsection
 
@@ -28,6 +34,7 @@
                     <label for="filterYear" class="form-label">Year</label>
                     <select class="form-select" id="filterYear"></select>
                 </div>
+                @if ($canManage)
                 <div class="col-md-3">
                     <label for="filterStatus" class="form-label">Status</label>
                     <select class="form-select" id="filterStatus">
@@ -36,6 +43,7 @@
                         <option value="inactive">Inactive</option>
                     </select>
                 </div>
+                @endif
                 <div class="col-md-2 d-flex justify-content-end">
                     <button type="button" class="btn btn-outline-secondary" id="filterReset">Reset</button>
                 </div>
@@ -51,13 +59,15 @@
                         <th>Date Range</th>
                         <th>Fixed / Variable</th>
                         <th>Type</th>
-                        <th>Status</th>
-                        <th class="companies-th-actions">Actions</th>
+                        @if ($canManage)
+                            <th>Status</th>
+                            <th class="companies-th-actions">Actions</th>
+                        @endif
                     </tr>
                 </thead>
-                <tbody id="holidaysTableBody">
+                <tbody id="holidaysTableBody" data-can-manage="{{ $canManage ? '1' : '0' }}">
                     <tr>
-                        <td colspan="7" class="text-center text-muted py-5">Loading holidays...</td>
+                        <td colspan="{{ $canManage ? 7 : 5 }}" class="text-center text-muted py-5">Loading holidays...</td>
                     </tr>
                 </tbody>
             </table>

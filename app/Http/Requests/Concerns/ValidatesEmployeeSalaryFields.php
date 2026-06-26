@@ -38,6 +38,8 @@ trait ValidatesEmployeeSalaryFields
 
             'salary_effective_from' => ['required', 'date'],
 
+            'salary_payout_from' => ['nullable', 'date', 'after_or_equal:salary_effective_from'],
+
         ];
 
     }
@@ -71,6 +73,8 @@ trait ValidatesEmployeeSalaryFields
             'professional_tax_applicable',
 
             'salary_effective_from',
+
+            'salary_payout_from',
 
         ];
 

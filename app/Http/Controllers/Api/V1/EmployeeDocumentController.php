@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Api\V1;
 
+use App\Http\Concerns\ValidatesReviewNotes;
 use App\Http\Controllers\Controller;
 use App\Http\Concerns\ApiResponse;
 use App\Http\Controllers\Concerns\StreamsInlineFiles;
@@ -15,7 +16,7 @@ use Symfony\Component\HttpFoundation\BinaryFileResponse;
 
 class EmployeeDocumentController extends Controller
 {
-    use ApiResponse, StreamsInlineFiles;
+    use ApiResponse, StreamsInlineFiles, ValidatesReviewNotes;
 
     public function __construct(private EmployeeDocumentService $employeeDocumentService) {}
 
@@ -35,7 +36,11 @@ class EmployeeDocumentController extends Controller
     public function approve(Request $request, EmployeeDocument $employeeDocument): JsonResponse
     {
         $this->employeeDocumentService->assertBelongsToCompany($request->user(), $employeeDocument);
-        $document = $this->employeeDocumentService->approve($request->user(), $employeeDocument);
+        $document = $this->employeeDocumentService->approve(
+            $request->user(),
+            $employeeDocument,
+            $this->optionalReviewNotes($request),
+        );
 
         return $this->success(
             ['document' => new EmployeeDocumentResource($document)],

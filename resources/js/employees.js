@@ -87,6 +87,8 @@ document.addEventListener('DOMContentLoaded', async () => {
         submitBtn.textContent = 'Update Employee';
     }
 
+    document.getElementById('salaryRevisionNotesSection')?.classList.toggle('d-none', !isUpdate);
+
     let currentStep = 1;
     let hasPortalAccess = false;
     let isSubmitting = false;
@@ -1049,6 +1051,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             esi_applicable: form.querySelector('#esi_applicable')?.checked ?? false,
             professional_tax_applicable: form.querySelector('#professional_tax_applicable')?.checked ?? true,
             salary_effective_from: getValue('salary_effective_from'),
+            salary_revision_notes: nullable(getValue('salary_revision_notes')),
         };
 
         if (!employeeId) {

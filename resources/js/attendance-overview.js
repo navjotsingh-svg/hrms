@@ -330,7 +330,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             if (employeeCalendarLink) {
                 const routes = window.HRMS_WEB_ROUTES || {};
                 const base = routes.attendanceIndex || '/attendance';
-                employeeCalendarLink.href = `${base}?employee_id=${employeeId}&month=${date.slice(0, 7)}`;
+                employeeCalendarLink.href = `${base}?employee_id=${employeeId}&month=${date.slice(0, 7)}&date=${date}`;
                 employeeCalendarLink.classList.remove('d-none');
             }
 

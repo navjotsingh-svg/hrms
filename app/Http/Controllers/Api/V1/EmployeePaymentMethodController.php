@@ -2,18 +2,22 @@
 
 namespace App\Http\Controllers\Api\V1;
 
+use App\Http\Concerns\ValidatesReviewNotes;
 use App\Http\Controllers\Controller;
 use App\Http\Concerns\ApiResponse;
+use App\Http\Controllers\Concerns\StreamsInlineFiles;
 use App\Http\Requests\RejectEmployeeDocumentRequest;
 use App\Http\Resources\EmployeePaymentMethodResource;
 use App\Models\EmployeePaymentMethod;
+use App\Models\EmployeePaymentMethodProof;
 use App\Services\EmployeePaymentMethodService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Symfony\Component\HttpFoundation\BinaryFileResponse;
 
 class EmployeePaymentMethodController extends Controller
 {
-    use ApiResponse;
+    use ApiResponse, StreamsInlineFiles, ValidatesReviewNotes;
 
     public function __construct(private EmployeePaymentMethodService $paymentMethodService) {}
 
@@ -33,7 +37,11 @@ class EmployeePaymentMethodController extends Controller
     public function approve(Request $request, EmployeePaymentMethod $employeePaymentMethod): JsonResponse
     {
         $this->paymentMethodService->assertBelongsToCompany($request->user(), $employeePaymentMethod);
-        $method = $this->paymentMethodService->approve($request->user(), $employeePaymentMethod);
+        $method = $this->paymentMethodService->approve(
+            $request->user(),
+            $employeePaymentMethod,
+            $this->optionalReviewNotes($request),
+        );
 
         return $this->success(
             ['payment_method' => new EmployeePaymentMethodResource($method)],
@@ -54,5 +62,13 @@ class EmployeePaymentMethodController extends Controller
             ['payment_method' => new EmployeePaymentMethodResource($method)],
             'Payment option rejected. The employee can re-submit after reviewing your feedback.'
         );
+    }
+
+    public function downloadProof(Request $request, EmployeePaymentMethodProof $employeePaymentMethodProof): BinaryFileResponse
+    {
+        $this->paymentMethodService->assertProofBelongsToCompany($request->user(), $employeePaymentMethodProof);
+        $file = $this->paymentMethodService->downloadProofForUser($request->user(), $employeePaymentMethodProof);
+
+        return $this->inlineFileResponse($file);
     }
 }

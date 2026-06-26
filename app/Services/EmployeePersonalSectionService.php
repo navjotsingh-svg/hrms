@@ -97,7 +97,7 @@ class EmployeePersonalSectionService
             ->values();
     }
 
-    public function approve(User $user, EmployeePersonalSection $section): EmployeePersonalSection
+    public function approve(User $user, EmployeePersonalSection $section, ?string $notes = null): EmployeePersonalSection
     {
         $this->assertCanReview($user, $section);
 
@@ -107,12 +107,12 @@ class EmployeePersonalSectionService
             ]);
         }
 
-        DB::transaction(function () use ($user, $section) {
+        DB::transaction(function () use ($user, $section, $notes) {
             $section->update([
                 'status' => 'approved',
                 'reviewed_by_user_id' => $user->id,
                 'reviewed_at' => now(),
-                'notes' => null,
+                'notes' => $notes ? trim($notes) : null,
             ]);
 
             $this->syncApprovedPayload($section);

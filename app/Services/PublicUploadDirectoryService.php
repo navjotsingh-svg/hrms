@@ -7,6 +7,7 @@ class PublicUploadDirectoryService
     public const BASE_DIRECTORIES = [
         'images/companies/logos',
         'images/employee-documents',
+        'images/bank-payment-proofs',
         'images/attendance/selfies',
         'images/leave-attachments',
         'images/expense-receipts',

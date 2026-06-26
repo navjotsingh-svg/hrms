@@ -33,6 +33,7 @@ class JobRequisition extends Model
         'approver_user_id',
         'approved_at',
         'rejection_reason',
+        'approval_notes',
         'job_id',
     ];
 

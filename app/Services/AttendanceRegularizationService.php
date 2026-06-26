@@ -28,6 +28,7 @@ class AttendanceRegularizationService
         private PortalStartService $portalStartService,
         private AttendancePolicyService $attendancePolicyService,
         private ActivityLogService $activityLogService,
+        private WorkflowNotificationService $workflowNotificationService,
     ) {}
 
     public function listForUser(User $user, array $filters = []): LengthAwarePaginator
@@ -205,7 +206,11 @@ class AttendanceRegularizationService
 
     public function create(User $user, array $data): AttendanceRegularizationRequest
     {
-        return DB::transaction(fn () => $this->createRequest($user, $data));
+        $request = DB::transaction(fn () => $this->createRequest($user, $data));
+
+        $this->workflowNotificationService->notifyRegularizationSubmitted($request, $user, 1);
+
+        return $request;
     }
 
     public function createBulk(User $user, array $data): array
@@ -213,7 +218,7 @@ class AttendanceRegularizationService
         $dates = array_values(array_unique($data['dates'] ?? []));
         $batchId = (string) Str::uuid();
 
-        return DB::transaction(function () use ($user, $data, $dates, $batchId) {
+        $requests = DB::transaction(function () use ($user, $data, $dates, $batchId) {
             return array_map(
                 fn (string $date) => $this->createRequest($user, [
                     ...$data,
@@ -223,6 +228,16 @@ class AttendanceRegularizationService
                 $dates,
             );
         });
+
+        if ($requests !== []) {
+            $this->workflowNotificationService->notifyRegularizationSubmitted(
+                $requests[0],
+                $user,
+                count($requests),
+            );
+        }
+
+        return $requests;
     }
 
     private function createRequest(User $user, array $data): AttendanceRegularizationRequest
@@ -282,7 +297,7 @@ class AttendanceRegularizationService
         return $fresh;
     }
 
-    public function approve(User $user, AttendanceRegularizationRequest $request): AttendanceRegularizationRequest
+    public function approve(User $user, AttendanceRegularizationRequest $request, ?string $notes = null): AttendanceRegularizationRequest
     {
         $this->assertCanReview($user, $request);
 
@@ -292,7 +307,7 @@ class AttendanceRegularizationService
             ]);
         }
 
-        return DB::transaction(function () use ($user, $request) {
+        return DB::transaction(function () use ($user, $request, $notes) {
             $date = $request->attendance_date->toDateString();
             $employee = $request->employee;
 
@@ -321,7 +336,7 @@ class AttendanceRegularizationService
                 'status' => AttendanceRegularizationRequest::STATUS_APPROVED,
                 'reviewed_by_user_id' => $user->id,
                 'reviewed_at' => now(),
-                'review_notes' => null,
+                'review_notes' => $notes ? trim($notes) : null,
             ]);
 
             $fresh = $request->fresh(['employee', 'appliedBy', 'reviewedBy']);
@@ -333,9 +348,11 @@ class AttendanceRegularizationService
                 (int) $fresh->employee_id,
                 'approved',
                 'Attendance regularization request approved.',
-                null,
+                $notes ? trim($notes) : null,
                 request(),
             );
+
+            $this->workflowNotificationService->notifyRegularizationDecision($fresh, $user, 'approved');
 
             return $fresh;
         });
@@ -371,16 +388,18 @@ class AttendanceRegularizationService
             request(),
         );
 
+        $this->workflowNotificationService->notifyRegularizationDecision($fresh, $user, 'rejected');
+
         return $fresh;
     }
 
-    public function approveBatch(User $user, string $batchId): array
+    public function approveBatch(User $user, string $batchId, ?string $notes = null): array
     {
         $requests = $this->pendingRequestsForBatch($user, $batchId);
 
-        return DB::transaction(function () use ($user, $requests) {
+        return DB::transaction(function () use ($user, $requests, $notes) {
             return $requests
-                ->map(fn (AttendanceRegularizationRequest $request) => $this->approve($user, $request))
+                ->map(fn (AttendanceRegularizationRequest $request) => $this->approve($user, $request, $notes))
                 ->all();
         });
     }
@@ -817,11 +836,138 @@ class AttendanceRegularizationService
         ]);
     }
 
+    public function groupForBatch(User $user, string $batchId): ?array
+    {
+        $requests = AttendanceRegularizationRequest::query()
+            ->with(['employee', 'appliedBy', 'reviewedBy'])
+            ->where('company_id', $user->company_id)
+            ->where('batch_id', $batchId)
+            ->orderBy('attendance_date')
+            ->get();
+
+        if ($requests->isEmpty()) {
+            return null;
+        }
+
+        foreach ($requests as $request) {
+            if (! $this->canViewRequest($user, $request)) {
+                throw new AccessDeniedHttpException('You are not allowed to view this regularization batch.');
+            }
+        }
+
+        return $this->buildGroupFromRequests($requests, $requests->contains(
+            fn (AttendanceRegularizationRequest $request) => $user->canReviewRegularizationRequest($request),
+        ));
+    }
+
+    public function formatOriginalPunchFields(AttendanceRegularizationRequest $request): array
+    {
+        $punchIn = $request->original_punch_in;
+        $punchOut = $request->original_punch_out;
+
+        if (! $punchIn || ! $punchOut) {
+            $original = $this->originalPunchesForDate(
+                (int) $request->employee_id,
+                $request->attendance_date->toDateString(),
+            );
+            $punchIn = $punchIn ?? $original['punch_in'];
+            $punchOut = $punchOut ?? $original['punch_out'];
+        }
+
+        $timezone = $this->timezoneForEmployee((int) $request->employee_id);
+
+        return [
+            'original_punch_in' => $this->formatPunchTime($punchIn, $timezone, 'H:i'),
+            'original_punch_out' => $this->formatPunchTime($punchOut, $timezone, 'H:i'),
+            'original_punch_in_label' => $this->formatPunchTime($punchIn, $timezone, 'h:i A'),
+            'original_punch_out_label' => $this->formatPunchTime($punchOut, $timezone, 'h:i A'),
+        ];
+    }
+
+    public function canViewRequest(User $user, AttendanceRegularizationRequest $request): bool
+    {
+        if ((int) $request->company_id !== (int) $user->company_id) {
+            return false;
+        }
+
+        if ($user->canViewAllAttendance()) {
+            return true;
+        }
+
+        if ($user->employee && (int) $user->employee->id === (int) $request->employee_id) {
+            return true;
+        }
+
+        if ($user->canApproveRegularization()) {
+            return true;
+        }
+
+        return $user->isDirectReportingManagerOfEmployee($request->employee);
+    }
+
+    /** @param  Collection<int, AttendanceRegularizationRequest>  $requests */
+    private function buildGroupFromRequests(Collection $requests, bool $canReview): array
+    {
+        $first = $requests->first();
+        $group = [
+            'batch_id' => $first->batch_id,
+            'employee' => $first->employee ? [
+                'id' => $first->employee->id,
+                'full_name' => $first->employee->full_name,
+                'employee_code' => $first->employee->employee_code,
+            ] : null,
+            'applied_by' => $first->appliedBy ? [
+                'id' => $first->appliedBy->id,
+                'name' => $first->appliedBy->name,
+            ] : null,
+            'reason' => $first->reason,
+            'status' => $first->status,
+            'status_label' => ucfirst($first->status),
+            'reviewed_at_label' => $first->reviewed_at?->format('d M Y, h:i A'),
+            'reviewed_by_name' => $first->reviewedBy?->name,
+            'created_at_label' => $first->created_at?->format('d M Y, h:i A'),
+            'dates' => [],
+            'request_ids' => [],
+            'can_review' => $canReview,
+        ];
+
+        foreach ($requests as $request) {
+            $group['dates'][] = [
+                'id' => $request->id,
+                'attendance_date' => $request->attendance_date?->toDateString(),
+                'attendance_date_label' => $request->attendance_date?->format('D, d M Y'),
+                'attendance_date_short_label' => $request->attendance_date?->format('D, d M'),
+                ...$this->formatOriginalPunchFields($request),
+                'requested_punch_in_label' => $request->requested_punch_in?->format('h:i A'),
+                'requested_punch_out_label' => $request->requested_punch_out?->format('h:i A'),
+            ];
+            $group['request_ids'][] = $request->id;
+        }
+
+        $group['day_count'] = count($group['dates']);
+        $group['is_batch'] = $group['day_count'] > 1 || ! empty($group['batch_id']);
+
+        if ($group['day_count'] === 1) {
+            $singleDay = $group['dates'][0];
+            $group['original_punch_in_label'] = $singleDay['original_punch_in_label'] ?? null;
+            $group['original_punch_out_label'] = $singleDay['original_punch_out_label'] ?? null;
+            $group['requested_punch_in_label'] = $singleDay['requested_punch_in_label'] ?? null;
+            $group['requested_punch_out_label'] = $singleDay['requested_punch_out_label'] ?? null;
+        }
+
+        return $group;
+    }
+
     private function originalPunchesForDate(int $employeeId, string $date): array
     {
+        $timezone = $this->timezoneForEmployee($employeeId);
+        $dayStart = Carbon::parse($date, $timezone)->startOfDay()->utc();
+        $dayEnd = Carbon::parse($date, $timezone)->endOfDay()->utc();
+
         $punches = AttendancePunch::query()
             ->where('employee_id', $employeeId)
-            ->whereDate('punched_at', $date)
+            ->whereBetween('punched_at', [$dayStart, $dayEnd])
+            ->where('source', '!=', AttendancePunch::SOURCE_REGULARIZATION)
             ->orderBy('punched_at')
             ->get();
 
@@ -834,23 +980,27 @@ class AttendanceRegularizationService
         ];
     }
 
-    private function formatOriginalPunchFields(AttendanceRegularizationRequest $request): array
+    private function timezoneForEmployee(int $employeeId): string
     {
-        $punchIn = $request->original_punch_in;
-        $punchOut = $request->original_punch_out;
+        static $cache = [];
 
-        if (! $punchIn && ! $punchOut && $request->status === AttendanceRegularizationRequest::STATUS_PENDING) {
-            $original = $this->originalPunchesForDate((int) $request->employee_id, $request->attendance_date->toDateString());
-            $punchIn = $original['punch_in'];
-            $punchOut = $original['punch_out'];
+        if (array_key_exists($employeeId, $cache)) {
+            return $cache[$employeeId];
         }
 
-        return [
-            'original_punch_in' => $punchIn?->format('H:i'),
-            'original_punch_out' => $punchOut?->format('H:i'),
-            'original_punch_in_label' => $punchIn?->format('h:i A'),
-            'original_punch_out_label' => $punchOut?->format('h:i A'),
-        ];
+        $timezone = Employee::query()
+            ->whereKey($employeeId)
+            ->with('company:id,timezone')
+            ->first()
+            ?->company
+            ?->timezone;
+
+        return $cache[$employeeId] = $timezone ?: config('app.timezone');
+    }
+
+    private function formatPunchTime(?Carbon $punchAt, string $timezone, string $format): ?string
+    {
+        return $punchAt?->copy()->timezone($timezone)->format($format);
     }
 
     private function assertCanReview(User $user, AttendanceRegularizationRequest $request): void

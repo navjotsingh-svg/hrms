@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\CompanyController;
 use App\Http\Controllers\Web\AuthSessionController;
+use App\Services\UserLandingService;
 use Illuminate\Support\Facades\Route;
 
 Route::get('/', fn () => view('auth.login'))->name('login');
@@ -13,11 +14,11 @@ Route::redirect('/login', '/');
 Route::redirect('/register', '/');
 
     Route::middleware(['web.auth', 'log.activity'])->name('web.')->group(function () {
-    Route::get('/dashboard', function () {
+    Route::get('/dashboard', function (UserLandingService $landing) {
         $user = auth()->user();
 
         if ($user?->company_id && ! $user->isSuperAdmin()) {
-            return redirect()->route('web.home.index');
+            return redirect()->route($landing->routeNameFor($user));
         }
 
         return view('dashboard');
@@ -100,6 +101,7 @@ Route::redirect('/register', '/');
 
     Route::middleware(['company.member', 'company.permission:attendance.view'])->group(function () {
         Route::get('/attendance', [\App\Http\Controllers\AttendanceController::class, 'index'])->name('attendance.index');
+        Route::get('/attendance/holidays', [\App\Http\Controllers\HolidayController::class, 'index'])->name('attendance.holidays');
         Route::get('/attendance/today', [\App\Http\Controllers\AttendanceController::class, 'today'])->name('attendance.today');
         Route::get('/attendance/overview', [\App\Http\Controllers\AttendanceController::class, 'overview'])->name('attendance.overview');
     });
@@ -136,7 +138,7 @@ Route::redirect('/register', '/');
     });
 
     Route::middleware(['company.member', 'company.permission:attendance.manage'])->prefix('masters/attendance')->name('masters.attendance.')->group(function () {
-        Route::get('/holidays', [\App\Http\Controllers\HolidayController::class, 'index'])->name('holidays.index');
+        Route::redirect('/holidays', '/attendance/holidays')->name('holidays.index');
         Route::get('/holidays/create', [\App\Http\Controllers\HolidayController::class, 'create'])->name('holidays.create');
         Route::get('/holidays/{holiday}/edit', [\App\Http\Controllers\HolidayController::class, 'edit'])
             ->whereNumber('holiday')
@@ -225,15 +227,15 @@ Route::redirect('/register', '/');
             Route::get('/{employee}', [\App\Http\Controllers\EmployeeController::class, 'show'])
                 ->whereNumber('employee')
                 ->name('show');
-            Route::get('/{employee}/profile/edit', [\App\Http\Controllers\EmployeeController::class, 'profileEdit'])
-                ->whereNumber('employee')
-                ->name('profile.edit');
         });
         Route::middleware('company.permission:employees.manage')->group(function () {
             Route::get('/create', [\App\Http\Controllers\EmployeeController::class, 'create'])->name('create');
             Route::get('/{employee}/edit', [\App\Http\Controllers\EmployeeController::class, 'edit'])
                 ->whereNumber('employee')
                 ->name('edit');
+            Route::get('/{employee}/profile/edit', [\App\Http\Controllers\EmployeeController::class, 'profileEdit'])
+                ->whereNumber('employee')
+                ->name('profile.edit');
         });
     });
 });

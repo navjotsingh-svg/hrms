@@ -95,7 +95,21 @@ class PayrollController extends Controller
 
         return $this->success(
             ['period' => new PayrollPeriodResource($period)],
-            'Payroll regenerated successfully with updated attendance, leave, and expense reimbursement data.'
+            'Payroll regenerated successfully with updated attendance and leave data.'
+        );
+    }
+
+    public function markPaid(Request $request, PayrollPeriod $payrollPeriod): JsonResponse
+    {
+        if (! $request->user()->canManagePayroll()) {
+            abort(403);
+        }
+
+        $period = $this->payrollService->markAsPaid($request->user(), $payrollPeriod);
+
+        return $this->success(
+            ['period' => new PayrollPeriodResource($period)],
+            'Payroll marked as paid successfully.'
         );
     }
 

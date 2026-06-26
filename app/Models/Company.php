@@ -120,4 +120,11 @@ class Company extends Model
             $this->country,
         ])->filter()->implode(', ');
     }
+
+    public function payslipCompanyName(): string
+    {
+        return filled($this->legal_name)
+            ? trim($this->legal_name)
+            : trim((string) $this->name);
+    }
 }

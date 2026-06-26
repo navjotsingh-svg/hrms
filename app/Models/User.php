@@ -101,7 +101,8 @@ class User extends Authenticatable
 
     public function canViewEmployeeProfile(): bool
     {
-        return $this->canReviewEmployeeDocuments() || $this->canManageEmployees();
+        return $this->hasPermission('employees.view')
+            || $this->hasPermission('employees.manage');
     }
 
     public function canReviewEmployeeProfile(Employee $employee): bool
@@ -141,6 +142,10 @@ class User extends Authenticatable
             return false;
         }
 
+        if ($document->status !== 'pending') {
+            return false;
+        }
+
         if ($this->mustUseAdminForOwnHrReview((int) $document->employee_id)) {
             return false;
         }
@@ -155,6 +160,10 @@ class User extends Authenticatable
     public function canReviewPaymentMethod(EmployeePaymentMethod $method): bool
     {
         if ((int) $method->company_id !== (int) $this->company_id) {
+            return false;
+        }
+
+        if ($method->status !== 'pending') {
             return false;
         }
 
@@ -175,6 +184,10 @@ class User extends Authenticatable
             return false;
         }
 
+        if ($field->status !== 'pending') {
+            return false;
+        }
+
         if ($this->mustUseAdminForOwnHrReview((int) $field->employee_id)) {
             return false;
         }
@@ -192,6 +205,10 @@ class User extends Authenticatable
             return false;
         }
 
+        if ($member->status !== 'pending') {
+            return false;
+        }
+
         if ($this->mustUseAdminForOwnHrReview((int) $member->employee_id)) {
             return false;
         }
@@ -206,6 +223,10 @@ class User extends Authenticatable
     public function canReviewPersonalSection(EmployeePersonalSection $section): bool
     {
         if ((int) $section->company_id !== (int) $this->company_id) {
+            return false;
+        }
+
+        if ($section->status !== 'pending') {
             return false;
         }
 
@@ -254,17 +275,35 @@ class User extends Authenticatable
         return $this->hasFullAccess() || $this->hasPermission('attendance.manage');
     }
 
-    public function canViewTeamAttendance(): bool
+    public function canViewCompanyTeamAttendance(): bool
     {
-        if ($this->hasFullAccess()) {
-            return true;
-        }
-
-        if (! $this->hasPermission('attendance.view') && ! $this->hasPermission('attendance.manage')) {
+        if ($this->hasFullAccess() || $this->hasPermission('attendance.manage')) {
             return false;
         }
 
-        return app(EmployeeAccessService::class)->subordinateIdsForUser($this) !== [];
+        return $this->hasPermission('attendance.view_team')
+            && (
+                $this->isHrManager()
+                || $this->hasPermission('employees.view')
+                || $this->hasPermission('employees.manage')
+            );
+    }
+
+    public function canViewTeamAttendance(): bool
+    {
+        if ($this->hasFullAccess() || $this->hasPermission('attendance.manage')) {
+            return true;
+        }
+
+        if ($this->canViewCompanyTeamAttendance()) {
+            return true;
+        }
+
+        if ($this->hasPermission('attendance.view_team') || $this->hasPermission('attendance.view')) {
+            return app(EmployeeAccessService::class)->subordinateIdsForUser($this) !== [];
+        }
+
+        return false;
     }
 
     public function canManageAttendanceMasters(): bool
@@ -327,9 +366,11 @@ class User extends Authenticatable
             return false;
         }
 
-        $isOwner = $this->employee && (int) $this->employee->id === (int) $request->employee_id;
+        if ($request->status !== AttendanceRegularizationRequest::STATUS_PENDING) {
+            return false;
+        }
 
-        return $isOwner || $this->canApproveRegularization();
+        return (int) $request->applied_by_user_id === (int) $this->id;
     }
 
     public function canManageCompanyMasters(): bool
@@ -835,21 +876,52 @@ class User extends Authenticatable
             return true;
         }
 
-        if ($this->hasFullAccess()) {
+        if ($this->hasAssignedPermission($slug)) {
             return true;
         }
 
-        return app(RoleService::class)->userHasPermission($this, $slug);
+        if (str_ends_with($slug, '.view')) {
+            $manageSlug = substr($slug, 0, -strlen('.view')).'.manage';
+
+            return $this->hasAssignedPermission($manageSlug);
+        }
+
+        return false;
     }
 
     public function canManageRoles(): bool
     {
-        return $this->hasFullAccess() || $this->hasPermission('roles.manage');
+        return $this->hasPermission('roles.manage');
     }
 
     public function canAssignCompanyAdmin(): bool
     {
-        return $this->hasFullAccess() || $this->hasPermission('employees.assign_admin');
+        return $this->hasPermission('employees.assign_admin');
+    }
+
+    private function hasAssignedPermission(string $slug): bool
+    {
+        return app(RoleService::class)->userHasPermission($this, $slug);
+    }
+
+    public function canSignIn(): bool
+    {
+        if ($this->isSuperAdmin()) {
+            return true;
+        }
+
+        $this->loadMissing(['employee', 'company']);
+
+        if (! $this->company_id || $this->company?->status === 'inactive') {
+            return false;
+        }
+
+        if (! $this->employee) {
+            return true;
+        }
+
+        return $this->employee->status === 'active'
+            && (int) $this->employee->user_id === (int) $this->id;
     }
 
     private function mustUseAdminForOwnHrReview(int $employeeId): bool

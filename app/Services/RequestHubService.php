@@ -7,6 +7,7 @@ use App\Models\EmployeeComplianceField;
 use App\Models\EmployeeDocument;
 use App\Models\EmployeeFamilyMember;
 use App\Models\EmployeePaymentMethod;
+use App\Models\EmployeePaymentMethodProof;
 use App\Models\EmployeePersonalSection;
 use App\Models\Expense;
 use App\Models\ExpenseGroup;
@@ -16,6 +17,7 @@ use App\Models\User;
 use Illuminate\Support\Collection;
 use Illuminate\Validation\ValidationException;
 use Symfony\Component\HttpKernel\Exception\AccessDeniedHttpException;
+use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
 
 class RequestHubService
 {
@@ -230,7 +232,7 @@ class RequestHubService
                 ->each(fn (EmployeeDocument $document) => $items->push($this->normalizeDocument($document, false)));
 
             EmployeePaymentMethod::query()
-                ->with(['employee', 'submittedBy', 'reviewedBy'])
+                ->with(['employee', 'submittedBy', 'reviewedBy', 'proofs'])
                 ->where('company_id', $user->company_id)
                 ->whereIn('status', $statuses)
                 ->latest('reviewed_at')
@@ -417,6 +419,45 @@ class RequestHubService
             ->all();
     }
 
+    public function showForUser(User $user, string $category, string $entityId): array
+    {
+        return match ($category) {
+            'document' => $this->showDocument($user, (int) $entityId),
+            'payment_method' => $this->showPaymentMethod($user, (int) $entityId),
+            'family_member' => $this->showFamilyMember($user, (int) $entityId),
+            'personal_section' => $this->showPersonalSection($user, (int) $entityId),
+            'compliance_field' => $this->showComplianceField($user, (int) $entityId),
+            'job_requisition' => $this->showJobRequisition($user, (int) $entityId),
+            default => throw new NotFoundHttpException('Request not found.'),
+        };
+    }
+
+    /** @param  array<int, array<string, mixed>>  $requests */
+    public function filterByDateRange(array $requests, ?string $dateFrom, ?string $dateTo): array
+    {
+        if (! $dateFrom && ! $dateTo) {
+            return $requests;
+        }
+
+        return array_values(array_filter($requests, function (array $request) use ($dateFrom, $dateTo) {
+            $submittedOn = $request['submitted_on'] ?? null;
+
+            if (! $submittedOn) {
+                return false;
+            }
+
+            if ($dateFrom && $submittedOn < $dateFrom) {
+                return false;
+            }
+
+            if ($dateTo && $submittedOn > $dateTo) {
+                return false;
+            }
+
+            return true;
+        }));
+    }
+
     private function appendProfileSubmissions(Collection $items, int $employeeId, ?string $status): void
     {
         $statuses = $status ? [$status] : ['pending', 'approved', 'rejected'];
@@ -431,7 +472,7 @@ class RequestHubService
             ->each(fn (EmployeeDocument $document) => $items->push($this->normalizeDocument($document, false)));
 
         EmployeePaymentMethod::query()
-            ->with(['employee', 'submittedBy'])
+            ->with(['employee', 'submittedBy', 'proofs'])
             ->where('employee_id', $employeeId)
             ->whereIn('status', $statuses)
             ->latest()
@@ -621,6 +662,9 @@ class RequestHubService
                 'attendance_date' => $request->attendance_date?->toDateString(),
                 'attendance_date_label' => $request->attendance_date?->format('D, d M Y'),
                 'attendance_date_short_label' => $request->attendance_date?->format('D, d M'),
+                ...app(\App\Services\AttendanceRegularizationService::class)->formatOriginalPunchFields($request),
+                'requested_punch_in_label' => $request->requested_punch_in?->format('h:i A'),
+                'requested_punch_out_label' => $request->requested_punch_out?->format('h:i A'),
             ];
             $groups[$groupKey]['request_ids'][] = $request->id;
         }
@@ -663,6 +707,7 @@ class RequestHubService
             'batch_id' => null,
             'requester_name' => $request->employee?->full_name ?? 'Employee',
             'requester_code' => $request->employee?->employee_code,
+            'employee_id' => $request->employee_id,
             'subject' => $request->leaveType?->name ?? 'Leave Request',
             'detail' => trim(($dateSummary ?: '').($request->total_days ? ' · '.$request->total_days.' day(s)' : '')),
             'reason' => $request->reason,
@@ -676,6 +721,7 @@ class RequestHubService
             'review_kind' => 'leave',
             'review_target' => (string) $request->id,
             ...$this->reviewMeta($request),
+            ...$this->submissionMeta($request),
         ];
     }
 
@@ -695,19 +741,20 @@ class RequestHubService
             'batch_id' => $group['batch_id'] ?? null,
             'requester_name' => $group['employee']['full_name'] ?? 'Employee',
             'requester_code' => $group['employee']['employee_code'] ?? null,
+            'employee_id' => $group['employee']['id'] ?? null,
             'subject' => $dayCount > 1 ? "{$dayCount} day(s)" : ($group['dates'][0]['attendance_date_label'] ?? 'Attendance'),
             'detail' => collect([
                 $dateLabels ?: null,
                 ($group['original_punch_in_label'] ?? null) || ($group['original_punch_out_label'] ?? null)
-                    ? 'Current '.collect([
-                        ! empty($group['original_punch_in_label']) ? 'In '.$group['original_punch_in_label'] : null,
-                        ! empty($group['original_punch_out_label']) ? 'Out '.$group['original_punch_out_label'] : null,
+                    ? 'Login / Logout '.collect([
+                        ! empty($group['original_punch_in_label']) ? $group['original_punch_in_label'] : null,
+                        ! empty($group['original_punch_out_label']) ? $group['original_punch_out_label'] : null,
                     ])->filter()->implode(' · ')
                     : null,
                 ($group['requested_punch_in_label'] ?? null) || ($group['requested_punch_out_label'] ?? null)
-                    ? 'New '.collect([
-                        ! empty($group['requested_punch_in_label']) ? 'In '.$group['requested_punch_in_label'] : null,
-                        ! empty($group['requested_punch_out_label']) ? 'Out '.$group['requested_punch_out_label'] : null,
+                    ? 'Requested '.collect([
+                        ! empty($group['requested_punch_in_label']) ? $group['requested_punch_in_label'] : null,
+                        ! empty($group['requested_punch_out_label']) ? $group['requested_punch_out_label'] : null,
                     ])->filter()->implode(' · ')
                     : null,
             ])->filter()->implode(' · '),
@@ -738,6 +785,26 @@ class RequestHubService
             ->pluck('attendance_date_short_label')
             ->filter()
             ->implode(', ');
+        $dayDetails = collect($group['dates'] ?? [])
+            ->map(function (array $day) {
+                $date = $day['attendance_date_short_label'] ?? $day['attendance_date_label'] ?? null;
+                $original = collect([
+                    ! empty($day['original_punch_in_label']) ? $day['original_punch_in_label'] : null,
+                    ! empty($day['original_punch_out_label']) ? $day['original_punch_out_label'] : null,
+                ])->filter()->implode(' · ');
+                $requested = collect([
+                    ! empty($day['requested_punch_in_label']) ? $day['requested_punch_in_label'] : null,
+                    ! empty($day['requested_punch_out_label']) ? $day['requested_punch_out_label'] : null,
+                ])->filter()->implode(' · ');
+
+                return collect([
+                    $date,
+                    $original ? "Login / Logout {$original}" : null,
+                    $requested ? "Requested {$requested}" : null,
+                ])->filter()->implode(' · ');
+            })
+            ->filter()
+            ->implode(' | ');
 
         return [
             'key' => 'regularization-reviewed:'.($group['batch_id'] ?? implode('-', $group['request_ids'] ?? [])),
@@ -747,8 +814,9 @@ class RequestHubService
             'batch_id' => $group['batch_id'] ?? null,
             'requester_name' => $group['employee']['full_name'] ?? 'Employee',
             'requester_code' => $group['employee']['employee_code'] ?? null,
+            'employee_id' => $group['employee']['id'] ?? null,
             'subject' => $dayCount > 1 ? "{$dayCount} day(s)" : ($group['dates'][0]['attendance_date_label'] ?? 'Attendance'),
-            'detail' => $dateLabels ?: null,
+            'detail' => $dayDetails ?: ($dateLabels ?: null),
             'reason' => $group['reason'] ?? null,
             'status' => $group['status'] ?? 'approved',
             'status_label' => ucfirst($group['status'] ?? 'approved'),
@@ -772,6 +840,7 @@ class RequestHubService
     private function normalizeRegularization(AttendanceRegularizationRequest $request, bool $forApproval, ?User $viewer = null): array
     {
         $viewer ??= request()->user();
+        $originalFields = app(\App\Services\AttendanceRegularizationService::class)->formatOriginalPunchFields($request);
 
         return [
             'key' => 'regularization:'.$request->id,
@@ -781,19 +850,20 @@ class RequestHubService
             'batch_id' => $request->batch_id,
             'requester_name' => $request->employee?->full_name ?? 'Employee',
             'requester_code' => $request->employee?->employee_code,
+            'employee_id' => $request->employee_id,
             'subject' => $request->attendance_date?->format('D, d M Y') ?? 'Attendance',
             'detail' => collect([
                 $request->attendance_date?->format('D, d M Y'),
-                ($request->original_punch_in?->format('h:i A') || $request->original_punch_out?->format('h:i A'))
-                    ? 'Current '.collect([
-                        $request->original_punch_in?->format('h:i A') ? 'In '.$request->original_punch_in->format('h:i A') : null,
-                        $request->original_punch_out?->format('h:i A') ? 'Out '.$request->original_punch_out->format('h:i A') : null,
+                ($originalFields['original_punch_in_label'] ?? null) || ($originalFields['original_punch_out_label'] ?? null)
+                    ? 'Login / Logout '.collect([
+                        ! empty($originalFields['original_punch_in_label']) ? $originalFields['original_punch_in_label'] : null,
+                        ! empty($originalFields['original_punch_out_label']) ? $originalFields['original_punch_out_label'] : null,
                     ])->filter()->implode(' · ')
                     : null,
                 ($request->requested_punch_in?->format('h:i A') || $request->requested_punch_out?->format('h:i A'))
-                    ? 'New '.collect([
-                        $request->requested_punch_in?->format('h:i A') ? 'In '.$request->requested_punch_in->format('h:i A') : null,
-                        $request->requested_punch_out?->format('h:i A') ? 'Out '.$request->requested_punch_out->format('h:i A') : null,
+                    ? 'Requested '.collect([
+                        $request->requested_punch_in?->format('h:i A') ? $request->requested_punch_in->format('h:i A') : null,
+                        $request->requested_punch_out?->format('h:i A') ? $request->requested_punch_out->format('h:i A') : null,
                     ])->filter()->implode(' · ')
                     : null,
             ])->filter()->implode(' · '),
@@ -808,20 +878,24 @@ class RequestHubService
             'review_kind' => 'regularization',
             'review_target' => (string) $request->id,
             ...$this->reviewMeta($request),
+            ...$this->submissionMeta($request),
         ];
     }
 
     private function normalizeDocument(EmployeeDocument $document, bool $canReview): array
     {
+        $documentTypeName = $document->documentType?->name ?? 'Document Update';
+
         return [
             'key' => 'document:'.$document->id,
             'category' => 'document',
-            'category_label' => 'Document',
+            'category_label' => $documentTypeName,
             'entity_id' => $document->id,
             'batch_id' => null,
             'requester_name' => $document->employee?->full_name ?? 'Employee',
             'requester_code' => $document->employee?->employee_code,
-            'subject' => $document->documentType?->name ?? 'Document Upload',
+            'employee_id' => $document->employee_id,
+            'subject' => $documentTypeName,
             'detail' => $document->original_name,
             'reason' => $document->notes,
             'status' => $document->status,
@@ -833,21 +907,27 @@ class RequestHubService
             'view_url' => $this->requestShowUrl('document', (string) $document->id),
             'review_kind' => 'document',
             'review_target' => (string) $document->id,
+            'document_type_name' => $documentTypeName,
+            'attachments' => $this->documentAttachments($document),
             ...$this->reviewMeta($document),
+            ...$this->submissionMeta($document),
         ];
     }
 
     private function normalizePaymentMethod(EmployeePaymentMethod $method, bool $canReview): array
     {
+        $paymentLabel = ucfirst(str_replace('_', ' ', $method->payment_mode ?? 'Payment Method'));
+
         return [
             'key' => 'payment_method:'.$method->id,
             'category' => 'payment_method',
-            'category_label' => 'Payment',
+            'category_label' => $paymentLabel,
             'entity_id' => $method->id,
             'batch_id' => null,
             'requester_name' => $method->employee?->full_name ?? 'Employee',
             'requester_code' => $method->employee?->employee_code,
-            'subject' => ucfirst(str_replace('_', ' ', $method->payment_mode ?? 'Payment Method')),
+            'employee_id' => $method->employee_id,
+            'subject' => $paymentLabel,
             'detail' => $method->bank_name ?: $method->account_holder_name,
             'reason' => $method->notes,
             'status' => $method->status,
@@ -859,7 +939,9 @@ class RequestHubService
             'view_url' => $this->requestShowUrl('payment_method', (string) $method->id),
             'review_kind' => 'payment_method',
             'review_target' => (string) $method->id,
+            'attachments' => $this->paymentMethodAttachments($method),
             ...$this->reviewMeta($method),
+            ...$this->submissionMeta($method),
         ];
     }
 
@@ -873,6 +955,7 @@ class RequestHubService
             'batch_id' => null,
             'requester_name' => $member->employee?->full_name ?? 'Employee',
             'requester_code' => $member->employee?->employee_code,
+            'employee_id' => $member->employee_id,
             'subject' => $member->name ?? 'Family Member',
             'detail' => $member->relation,
             'reason' => $member->notes,
@@ -886,6 +969,7 @@ class RequestHubService
             'review_kind' => 'family_member',
             'review_target' => (string) $member->id,
             ...$this->reviewMeta($member),
+            ...$this->submissionMeta($member),
         ];
     }
 
@@ -899,6 +983,7 @@ class RequestHubService
             'batch_id' => null,
             'requester_name' => $section->employee?->full_name ?? 'Employee',
             'requester_code' => $section->employee?->employee_code,
+            'employee_id' => $section->employee_id,
             'subject' => EmployeePersonalSection::SECTION_LABELS[$section->section_type] ?? ucfirst(str_replace('_', ' ', $section->section_type ?? 'Personal Section')),
             'detail' => 'Profile update',
             'reason' => $section->notes,
@@ -912,6 +997,7 @@ class RequestHubService
             'review_kind' => 'personal_section',
             'review_target' => (string) $section->id,
             ...$this->reviewMeta($section),
+            ...$this->submissionMeta($section),
         ];
     }
 
@@ -925,6 +1011,7 @@ class RequestHubService
             'batch_id' => null,
             'requester_name' => $field->employee?->full_name ?? 'Employee',
             'requester_code' => $field->employee?->employee_code,
+            'employee_id' => $field->employee_id,
             'subject' => strtoupper($field->field_type ?? 'Compliance'),
             'detail' => $field->value,
             'reason' => $field->notes,
@@ -938,6 +1025,7 @@ class RequestHubService
             'review_kind' => 'compliance_field',
             'review_target' => (string) $field->id,
             ...$this->reviewMeta($field),
+            ...$this->submissionMeta($field),
         ];
     }
 
@@ -953,6 +1041,7 @@ class RequestHubService
             'batch_id' => null,
             'requester_name' => $expense->employee?->full_name ?? 'Employee',
             'requester_code' => $expense->employee?->employee_code,
+            'employee_id' => $expense->employee_id,
             'subject' => $expense->expenseType?->name ?? 'Expense Claim',
             'detail' => ($expense->expense_date?->format('d M Y') ?? '').' · ₹'.number_format((float) $expense->amount, 2),
             'reason' => $expense->description,
@@ -967,6 +1056,7 @@ class RequestHubService
             'review_kind' => 'expense',
             'review_target' => (string) $expense->id,
             ...$this->reviewMeta($expense),
+            ...$this->submissionMeta($expense),
         ];
     }
 
@@ -983,6 +1073,7 @@ class RequestHubService
             'batch_id' => null,
             'requester_name' => $group->employee?->full_name ?? 'Employee',
             'requester_code' => $group->employee?->employee_code,
+            'employee_id' => $group->employee_id,
             'subject' => $group->name,
             'detail' => ($group->from_date?->format('d M Y') ?? '').' - '.($group->to_date?->format('d M Y') ?? '')
                 .' · ₹'.number_format($group->totalAmount(), 2),
@@ -998,6 +1089,7 @@ class RequestHubService
             'review_kind' => 'expense_group',
             'review_target' => (string) $group->id,
             ...$this->reviewMeta($group),
+            ...$this->submissionMeta($group),
         ];
     }
 
@@ -1014,6 +1106,7 @@ class RequestHubService
             'batch_id' => null,
             'requester_name' => $requisition->requestedBy?->name ?? 'Requester',
             'requester_code' => null,
+            'employee_id' => $requisition->requestedBy?->employee?->id,
             'subject' => $requisition->title,
             'detail' => ($requisition->department?->name ?? 'No department').' · Headcount '.$requisition->headcount,
             'reason' => $requisition->description,
@@ -1027,6 +1120,7 @@ class RequestHubService
             'review_kind' => 'job_requisition',
             'review_target' => (string) $requisition->id,
             ...$this->reviewMeta($requisition),
+            ...$this->submissionMeta($requisition),
         ];
     }
 
@@ -1061,17 +1155,17 @@ class RequestHubService
     {
         if ($action === 'approve') {
             match ($kind) {
-                'leave' => $this->leaveRequestService->approve($user, LeaveRequest::query()->findOrFail((int) $target)),
-                'regularization' => $this->regularizationService->approve($user, AttendanceRegularizationRequest::query()->findOrFail((int) $target)),
-                'regularization_batch' => $this->regularizationService->approveBatch($user, $target),
-                'document' => $this->employeeDocumentService->approve($user, EmployeeDocument::query()->findOrFail((int) $target)),
-                'payment_method' => $this->employeePaymentMethodService->approve($user, EmployeePaymentMethod::query()->findOrFail((int) $target)),
-                'family_member' => $this->employeeFamilyMemberService->approve($user, EmployeeFamilyMember::query()->findOrFail((int) $target)),
-                'personal_section' => $this->employeePersonalSectionService->approve($user, EmployeePersonalSection::query()->findOrFail((int) $target)),
-                'compliance_field' => $this->employeeComplianceFieldService->approve($user, EmployeeComplianceField::query()->findOrFail((int) $target)),
-                'expense' => $this->expenseService->approve($user, Expense::query()->findOrFail((int) $target)),
-                'expense_group' => $this->expenseGroupService->approve($user, ExpenseGroup::query()->findOrFail((int) $target)),
-                'job_requisition' => $this->hiringService->approveRequisition($user, JobRequisition::query()->findOrFail((int) $target)),
+                'leave' => $this->leaveRequestService->approve($user, LeaveRequest::query()->findOrFail((int) $target), $notes),
+                'regularization' => $this->regularizationService->approve($user, AttendanceRegularizationRequest::query()->findOrFail((int) $target), $notes),
+                'regularization_batch' => $this->regularizationService->approveBatch($user, $target, $notes),
+                'document' => $this->employeeDocumentService->approve($user, EmployeeDocument::query()->findOrFail((int) $target), $notes),
+                'payment_method' => $this->employeePaymentMethodService->approve($user, EmployeePaymentMethod::query()->findOrFail((int) $target), $notes),
+                'family_member' => $this->employeeFamilyMemberService->approve($user, EmployeeFamilyMember::query()->findOrFail((int) $target), $notes),
+                'personal_section' => $this->employeePersonalSectionService->approve($user, EmployeePersonalSection::query()->findOrFail((int) $target), $notes),
+                'compliance_field' => $this->employeeComplianceFieldService->approve($user, EmployeeComplianceField::query()->findOrFail((int) $target), $notes),
+                'expense' => $this->expenseService->approve($user, Expense::query()->findOrFail((int) $target), $notes),
+                'expense_group' => $this->expenseGroupService->approve($user, ExpenseGroup::query()->findOrFail((int) $target), $notes),
+                'job_requisition' => $this->hiringService->approveRequisition($user, JobRequisition::query()->findOrFail((int) $target), $notes),
                 default => throw ValidationException::withMessages(['item' => ['Unsupported request type.']]),
             };
 
@@ -1103,5 +1197,252 @@ class RequestHubService
         }
 
         return route('web.employees.profile.edit', ['employee' => $employeeId]);
+    }
+
+    private function submissionMeta(object $model): array
+    {
+        $submittedAt = $model->submitted_at ?? $model->created_at ?? null;
+
+        return [
+            'submitted_on' => $submittedAt?->toDateString(),
+        ];
+    }
+
+    private function showDocument(User $user, int $id): array
+    {
+        $document = EmployeeDocument::query()
+            ->with(['documentType', 'employee', 'uploadedBy', 'reviewedBy'])
+            ->where('company_id', $user->company_id)
+            ->find($id);
+
+        if (! $document) {
+            throw new NotFoundHttpException('Request not found.');
+        }
+
+        $this->assertCanViewProfileItem($user, $document, fn (User $viewer, EmployeeDocument $item) => $viewer->canReviewDocument($item));
+
+        return $this->enrichDocumentDetail(
+            $this->normalizeDocument($document, $user->canReviewDocument($document)),
+            $document,
+        );
+    }
+
+    private function showPaymentMethod(User $user, int $id): array
+    {
+        $method = EmployeePaymentMethod::query()
+            ->with(['employee', 'submittedBy', 'reviewedBy', 'proofs'])
+            ->where('company_id', $user->company_id)
+            ->find($id);
+
+        if (! $method) {
+            throw new NotFoundHttpException('Request not found.');
+        }
+
+        $this->assertCanViewProfileItem($user, $method, fn (User $viewer, EmployeePaymentMethod $item) => $viewer->canReviewPaymentMethod($item));
+
+        return $this->enrichPaymentMethodDetail(
+            $this->normalizePaymentMethod($method, $user->canReviewPaymentMethod($method)),
+            $method,
+        );
+    }
+
+    private function showFamilyMember(User $user, int $id): array
+    {
+        $member = EmployeeFamilyMember::query()
+            ->with(['employee', 'submittedBy', 'reviewedBy'])
+            ->where('company_id', $user->company_id)
+            ->find($id);
+
+        if (! $member) {
+            throw new NotFoundHttpException('Request not found.');
+        }
+
+        $this->assertCanViewProfileItem($user, $member, fn (User $viewer, EmployeeFamilyMember $item) => $viewer->canReviewFamilyMember($item));
+
+        $item = $this->normalizeFamilyMember($member, $user->canReviewFamilyMember($member));
+        $item['fields'] = array_values(array_filter([
+            ['label' => 'Name', 'value' => $member->name],
+            ['label' => 'Relation', 'value' => $member->relation],
+            ['label' => 'Phone', 'value' => $member->phone],
+            ['label' => 'Date of Birth', 'value' => $member->date_of_birth?->format('d M Y')],
+        ], fn (array $field) => filled($field['value'] ?? null)));
+
+        return $item;
+    }
+
+    private function showPersonalSection(User $user, int $id): array
+    {
+        $section = EmployeePersonalSection::query()
+            ->with(['employee', 'submittedBy', 'reviewedBy'])
+            ->where('company_id', $user->company_id)
+            ->find($id);
+
+        if (! $section) {
+            throw new NotFoundHttpException('Request not found.');
+        }
+
+        $this->assertCanViewProfileItem($user, $section, fn (User $viewer, EmployeePersonalSection $item) => $viewer->canReviewPersonalSection($item));
+
+        $item = $this->normalizePersonalSection($section, $user->canReviewPersonalSection($section));
+        $item['fields'] = $this->personalSectionFields($section);
+
+        return $item;
+    }
+
+    private function showComplianceField(User $user, int $id): array
+    {
+        $field = EmployeeComplianceField::query()
+            ->with(['employee', 'submittedBy', 'reviewedBy'])
+            ->where('company_id', $user->company_id)
+            ->find($id);
+
+        if (! $field) {
+            throw new NotFoundHttpException('Request not found.');
+        }
+
+        $this->assertCanViewProfileItem($user, $field, fn (User $viewer, EmployeeComplianceField $item) => $viewer->canReviewComplianceField($item));
+
+        $item = $this->normalizeComplianceField($field, $user->canReviewComplianceField($field));
+        $item['fields'] = [
+            ['label' => strtoupper($field->field_type ?? 'Value'), 'value' => $field->value],
+        ];
+
+        return $item;
+    }
+
+    private function showJobRequisition(User $user, int $id): array
+    {
+        $requisition = JobRequisition::query()
+            ->with(['department', 'requestedBy', 'approver'])
+            ->where('company_id', $user->company_id)
+            ->find($id);
+
+        if (! $requisition) {
+            throw new NotFoundHttpException('Request not found.');
+        }
+
+        $isRequester = (int) $requisition->requested_by_user_id === (int) $user->id;
+        $canView = $isRequester || $user->canViewHiring() || $user->canApproveRequisitions();
+
+        if (! $canView) {
+            throw new AccessDeniedHttpException('You are not allowed to view this request.');
+        }
+
+        $forApproval = $requisition->status === 'pending' && $user->canReviewRequisition($requisition);
+
+        return $this->normalizeJobRequisition($requisition, $forApproval, $user);
+    }
+
+    private function assertCanViewProfileItem(User $user, object $entity, callable $canReview): void
+    {
+        if ((int) $entity->company_id !== (int) $user->company_id) {
+            throw new NotFoundHttpException('Request not found.');
+        }
+
+        $isOwner = $user->employee && (int) $user->employee->id === (int) $entity->employee_id;
+
+        if ($isOwner || $canReview($user, $entity)) {
+            return;
+        }
+
+        throw new AccessDeniedHttpException('You are not allowed to view this request.');
+    }
+
+    /** @return array<int, array<string, mixed>> */
+    private function documentAttachments(EmployeeDocument $document): array
+    {
+        if (! $document->file_path) {
+            return [];
+        }
+
+        return [[
+            'id' => $document->id,
+            'label' => $document->original_name,
+            'file_url' => $document->fileUrl(),
+            'download_url' => '/api/v1/employee-documents/'.$document->id.'/download',
+            'mime_type' => $document->mime_type,
+        ]];
+    }
+
+    /** @return array<int, array<string, mixed>> */
+    private function paymentMethodAttachments(EmployeePaymentMethod $method): array
+    {
+        $method->loadMissing('proofs');
+
+        return $method->proofs
+            ->map(fn (EmployeePaymentMethodProof $proof) => [
+                'id' => $proof->id,
+                'label' => $proof->original_name,
+                'file_url' => $proof->fileUrl(),
+                'download_url' => '/api/v1/employee-payment-method-proofs/'.$proof->id.'/download',
+                'mime_type' => $proof->mime_type,
+            ])
+            ->values()
+            ->all();
+    }
+
+    private function enrichDocumentDetail(array $item, EmployeeDocument $document): array
+    {
+        $item['document_type_name'] = $document->documentType?->name;
+        $item['attachments'] = $this->documentAttachments($document);
+
+        return $item;
+    }
+
+    private function enrichPaymentMethodDetail(array $item, EmployeePaymentMethod $method): array
+    {
+        $item['attachments'] = $this->paymentMethodAttachments($method);
+        $item['fields'] = array_values(array_filter([
+            ['label' => 'Payment Mode', 'value' => ucfirst(str_replace('_', ' ', $method->payment_mode ?? ''))],
+            ['label' => 'Bank Name', 'value' => $method->bank_name],
+            ['label' => 'Branch', 'value' => $method->bank_branch],
+            ['label' => 'Account Holder', 'value' => $method->account_holder_name],
+            ['label' => 'Account Number', 'value' => $method->account_number],
+            ['label' => 'IFSC Code', 'value' => $method->ifsc_code],
+        ], fn (array $field) => filled($field['value'] ?? null)));
+
+        return $item;
+    }
+
+    /** @return array<int, array<string, string|null>> */
+    private function personalSectionFields(EmployeePersonalSection $section): array
+    {
+        $payload = $section->payload ?? [];
+
+        if ($section->section_type === 'address') {
+            $permanent = $payload['permanent'] ?? [];
+            $sameAsPermanent = (bool) ($payload['same_as_permanent'] ?? false);
+            $temporary = $sameAsPermanent ? $permanent : ($payload['temporary'] ?? []);
+
+            return array_values(array_filter([
+                ['label' => 'Permanent Address', 'value' => $this->formatAddress($permanent)],
+                ['label' => 'Temporary Address', 'value' => $sameAsPermanent ? 'Same as permanent' : $this->formatAddress($temporary)],
+            ], fn (array $field) => filled($field['value'] ?? null)));
+        }
+
+        if ($section->section_type === 'emergency_contact') {
+            return array_values(array_filter([
+                ['label' => 'Name', 'value' => $payload['name'] ?? null],
+                ['label' => 'Relation', 'value' => $payload['relation'] ?? null],
+                ['label' => 'Phone', 'value' => $payload['phone'] ?? null],
+            ], fn (array $field) => filled($field['value'] ?? null)));
+        }
+
+        return [];
+    }
+
+    /** @param  array<string, mixed>  $address */
+    private function formatAddress(array $address): ?string
+    {
+        $parts = array_filter([
+            $address['line1'] ?? null,
+            $address['line2'] ?? null,
+            $address['city'] ?? null,
+            $address['state'] ?? null,
+            $address['postal_code'] ?? null,
+            $address['country'] ?? null,
+        ], fn ($part) => filled($part));
+
+        return $parts === [] ? null : implode(', ', $parts);
     }
 }

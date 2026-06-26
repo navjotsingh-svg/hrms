@@ -2,6 +2,8 @@ import { Modal } from 'bootstrap';
 import api, { getErrorMessage } from './api';
 import { setSubmitLoading } from './form-utils';
 import { renderReviewIconActionGroup, renderViewDocumentIconButton, renderDeleteDocumentIconButton, renderReviewIconActions } from './review-actions';
+import { patchProfileReviewAction } from './request-review';
+import { hasSalaryRevisionTimeline, renderSalaryRevisionTimeline } from './salary-timeline';
 
 const EMPLOYMENT_LABELS = {
     full_time: 'Full Time',
@@ -174,7 +176,20 @@ const formatPaymentMethodDetails = (method) => {
         method.ifsc_code,
     ].filter(Boolean);
 
-    return parts.length ? parts.join(' · ') : '—';
+    const base = parts.length ? parts.join(' · ') : '—';
+    const proofs = method.proofs || [];
+
+    if (!proofs.length) {
+        return base;
+    }
+
+    const proofLinks = proofs.map((proof) => `
+        <button type="button" class="btn btn-link btn-sm p-0 me-2" data-view-bank-proof="${proof.id}" data-view-bank-proof-title="${String(proof.original_name || 'Bank proof').replace(/"/g, '&quot;')}">
+            📎 ${proof.original_name}
+        </button>
+    `).join('');
+
+    return `${base}<div class="small mt-1">${proofLinks}</div>`;
 };
 
 const formatReviewCell = (item) => {
@@ -347,7 +362,8 @@ document.addEventListener('DOMContentLoaded', async () => {
         ['Medical', salary.medical_allowance ? formatCurrency(salary.medical_allowance) : '—'],
         ['Other Allowance', salary.other_allowance ? formatCurrency(salary.other_allowance) : '—'],
         ['Monthly Gross', salary.monthly_gross ? formatCurrency(salary.monthly_gross) : '—'],
-        ['Effective From', formatDate(salary.salary_effective_from)],
+        ['Effective Date', formatDate(salary.salary_effective_from)],
+        ['Payout From', formatDate(salary.salary_payout_from || salary.salary_effective_from)],
         ['PF Applicable', yesNo(salary.pf_applicable)],
         ['ESI Applicable', yesNo(salary.esi_applicable)],
         ['Professional Tax', yesNo(salary.professional_tax_applicable)],
@@ -356,9 +372,13 @@ document.addEventListener('DOMContentLoaded', async () => {
     const renderSalaryTab = (employee) => {
         const salary = employee.salary || {};
         const hasSalary = Boolean(salary.annual_ctc);
+        const revisions = employee.salary_revisions || [];
 
         document.getElementById('profileSalaryManageSection')?.classList.add('d-none');
-        document.getElementById('profileSalaryTabDesc').textContent = 'View current compensation structure for this employee.';
+        document.getElementById('profileSalaryActions')?.classList.add('d-none');
+        document.getElementById('profileSalaryTabDesc').textContent = hasSalary
+            ? 'View current compensation and salary revision history for this employee.'
+            : 'Salary information will appear here once HR configures compensation.';
 
         setVisible(
             document.getElementById('profileSalaryContent'),
@@ -367,12 +387,24 @@ document.addEventListener('DOMContentLoaded', async () => {
         );
 
         if (!hasSalary) {
+            document.getElementById('profile-salary-timeline-tab')?.classList.add('d-none');
+            document.getElementById('profileSalaryTimelineSection')?.classList.add('d-none');
             return;
         }
 
         renderDl(document.getElementById('profileSalaryDisplay'), buildSalaryDisplayRows(salary));
         document.getElementById('profileSummaryAnnualCtc').textContent = formatCurrency(salary.annual_ctc || 0);
         document.getElementById('profileSummaryMonthlyGross').textContent = formatCurrency(salary.monthly_gross || 0);
+
+        renderSalaryRevisionTimeline(
+            document.getElementById('profileSalaryTimelineContainer'),
+            revisions,
+            salary,
+        );
+
+        const hasTimeline = hasSalaryRevisionTimeline(revisions, salary);
+        document.getElementById('profile-salary-timeline-tab')?.classList.toggle('d-none', !hasTimeline);
+        document.getElementById('profileSalaryTimelineSection')?.classList.toggle('d-none', !hasTimeline);
     };
 
     const renderAssetStatus = (isAssigned) => {
@@ -769,6 +801,36 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
     };
 
+    const showBankProofPreview = async (proofId, title) => {
+        clearDocumentPreview();
+        openDocumentLightbox(title);
+
+        try {
+            const response = await api.get(`/employees/${employeeId}/profile/payment-method-proofs/${proofId}/download`, { responseType: 'blob' });
+            const blob = response.data;
+            previewBlobUrl = URL.createObjectURL(blob);
+            previewFallbackName = title.replace(/\s+/g, '-').toLowerCase();
+
+            const contentType = blob.type || '';
+            const frame = document.getElementById('viewDocumentFrame');
+            const image = document.getElementById('viewDocumentImage');
+            const unsupported = document.getElementById('viewDocumentUnsupported');
+
+            if (contentType.startsWith('image/')) {
+                image.src = previewBlobUrl;
+                image.classList.remove('d-none');
+            } else if (contentType === 'application/pdf') {
+                frame.src = previewBlobUrl;
+                frame.classList.remove('d-none');
+            } else {
+                unsupported?.classList.remove('d-none');
+            }
+        } catch (error) {
+            closeDocumentLightbox();
+            alert(getErrorMessage(error));
+        }
+    };
+
     const openRejectProfileSubmissionModal = (type, id) => {
         rejectSubmission = { type, id };
         document.getElementById('rejectProfileSubmissionNotes').value = '';
@@ -779,14 +841,14 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     const handleApproveClick = async (event) => {
         const approveMap = [
-            ['data-approve-document', (id) => `/employee-documents/${id}/approve`],
-            ['data-approve-payment-method', (id) => `/employee-payment-methods/${id}/approve`],
-            ['data-approve-compliance-field', (id) => `/employee-compliance-fields/${id}/approve`],
-            ['data-approve-personal-section', (id) => `/employee-personal-sections/${id}/approve`],
-            ['data-approve-family-member', (id) => `/employee-family-members/${id}/approve`],
+            ['data-approve-document', 'document', (id) => `/employee-documents/${id}/approve`],
+            ['data-approve-payment-method', 'payment_method', (id) => `/employee-payment-methods/${id}/approve`],
+            ['data-approve-compliance-field', 'compliance_field', (id) => `/employee-compliance-fields/${id}/approve`],
+            ['data-approve-personal-section', 'personal_section', (id) => `/employee-personal-sections/${id}/approve`],
+            ['data-approve-family-member', 'family_member', (id) => `/employee-family-members/${id}/approve`],
         ];
 
-        for (const [attr, buildUrl] of approveMap) {
+        for (const [attr, kind, buildUrl] of approveMap) {
             const button = event.target.closest(`[${attr}]`);
 
             if (!button) {
@@ -794,8 +856,10 @@ document.addEventListener('DOMContentLoaded', async () => {
             }
 
             try {
-                await api.patch(buildUrl(button.getAttribute(attr)));
-                await loadProfile();
+                const message = await patchProfileReviewAction(buildUrl(button.getAttribute(attr)), kind, 'approve');
+                if (message) {
+                    await loadProfile();
+                }
             } catch (error) {
                 alert(getErrorMessage(error));
             }
@@ -804,30 +868,29 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
     };
 
-    const handleRejectClick = (event) => {
+    const handleRejectClick = async (event) => {
         const rejectMap = [
-            ['data-reject-document', 'document'],
-            ['data-reject-payment-method', 'payment_method'],
-            ['data-reject-compliance-field', 'compliance_field'],
-            ['data-reject-personal-section', 'personal_section'],
-            ['data-reject-family-member', 'family_member'],
+            ['data-reject-document', 'document', (id) => `/employee-documents/${id}/reject`],
+            ['data-reject-payment-method', 'payment_method', (id) => `/employee-payment-methods/${id}/reject`],
+            ['data-reject-compliance-field', 'compliance_field', (id) => `/employee-compliance-fields/${id}/reject`],
+            ['data-reject-personal-section', 'personal_section', (id) => `/employee-personal-sections/${id}/reject`],
+            ['data-reject-family-member', 'family_member', (id) => `/employee-family-members/${id}/reject`],
         ];
 
-        for (const [attr, type] of rejectMap) {
+        for (const [attr, kind, buildUrl] of rejectMap) {
             const button = event.target.closest(`[${attr}]`);
 
             if (!button) {
                 continue;
             }
 
-            if (type === 'document') {
-                rejectDocumentId = button.getAttribute(attr);
-                document.getElementById('rejectDocumentNotes').value = '';
-                rejectDocumentModal = rejectDocumentModal
-                    || Modal.getOrCreateInstance(document.getElementById('rejectDocumentModal'));
-                rejectDocumentModal.show();
-            } else {
-                openRejectProfileSubmissionModal(type, button.getAttribute(attr));
+            try {
+                const message = await patchProfileReviewAction(buildUrl(button.getAttribute(attr)), kind, 'reject');
+                if (message) {
+                    await loadProfile();
+                }
+            } catch (error) {
+                alert(getErrorMessage(error));
             }
 
             return;
@@ -851,6 +914,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     document.getElementById('empProfileTabContent')?.addEventListener('click', async (event) => {
         const viewBtn = event.target.closest('[data-view-document]');
+        const proofBtn = event.target.closest('[data-view-bank-proof]');
         const deleteBtn = event.target.closest('[data-delete-document]');
 
         if (deleteBtn) {
@@ -863,8 +927,13 @@ document.addEventListener('DOMContentLoaded', async () => {
             return;
         }
 
+        if (proofBtn) {
+            await showBankProofPreview(proofBtn.dataset.viewBankProof, proofBtn.dataset.viewBankProofTitle || 'Bank proof');
+            return;
+        }
+
         await handleApproveClick(event);
-        handleRejectClick(event);
+        await handleRejectClick(event);
     });
 
     document.getElementById('empProfilePendingSection')?.addEventListener('click', async (event) => {
@@ -876,7 +945,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
 
         await handleApproveClick(event);
-        handleRejectClick(event);
+        await handleRejectClick(event);
     });
 
     document.getElementById('rejectProfileSubmissionForm')?.addEventListener('submit', async (event) => {

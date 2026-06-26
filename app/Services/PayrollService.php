@@ -18,13 +18,13 @@ class PayrollService
     public function __construct(
         private AttendanceService $attendanceService,
         private PortalStartService $portalStartService,
-        private ExpenseService $expenseService,
     ) {}
 
     public function listPeriods(int $companyId): Collection
     {
         return PayrollPeriod::query()
             ->where('company_id', $companyId)
+            ->with(['processedBy', 'paidBy'])
             ->withCount('payslips')
             ->orderByDesc('year')
             ->orderByDesc('month')
@@ -89,7 +89,12 @@ class PayrollService
             ->get();
 
         foreach ($periods as $period) {
-            $this->expenseService->releasePayrollPeriod($period);
+            if ($period->isPaid()) {
+                throw new UnprocessableEntityHttpException(
+                    'Paid payroll cannot be regenerated. Reopen the period before recalculating.'
+                );
+            }
+
             $period->delete();
         }
 
@@ -118,7 +123,7 @@ class PayrollService
                 'year' => $year,
                 'month' => $month,
                 'type' => 'regular',
-                'status' => 'processed',
+                'status' => PayrollPeriod::STATUS_PROCESSED,
                 'processed_by_user_id' => $user->id,
                 'processed_at' => now(),
             ]);
@@ -130,8 +135,6 @@ class PayrollService
                     'payroll_period_id' => $period->id,
                     ...$payload,
                 ]);
-
-                $this->expenseService->markPaidForPayroll($period, $employee);
             }
 
             return $period->loadCount('payslips');
@@ -196,6 +199,27 @@ class PayrollService
         return $period;
     }
 
+    public function markAsPaid(User $user, PayrollPeriod $period): PayrollPeriod
+    {
+        $period = $this->resolvePeriodForUser($user, $period);
+
+        if ($period->isPaid()) {
+            throw new UnprocessableEntityHttpException('This payroll period is already marked as paid.');
+        }
+
+        if ($period->payslips()->count() === 0) {
+            throw new UnprocessableEntityHttpException('Cannot mark an empty payroll period as paid.');
+        }
+
+        $period->update([
+            'status' => PayrollPeriod::STATUS_PAID,
+            'paid_by_user_id' => $user->id,
+            'paid_at' => now(),
+        ]);
+
+        return $period->fresh()->load(['processedBy', 'paidBy'])->loadCount('payslips');
+    }
+
     private function buildPayslipPayload(Employee $employee, int $year, int $month): array
     {
         $salary = $employee->salary;
@@ -211,18 +235,9 @@ class PayrollService
         $factor = $monthDays > 0 ? $paidDays / $monthDays : 0;
 
         $earnings = $this->buildEarnings($salary, $factor);
-        $expenseReimbursements = $this->expenseService->pendingReimbursementTotal($employee, $year, $month);
         $deductions = $this->buildDeductions($salary, $earnings);
         $totalEarnings = round(array_sum(array_column($earnings, 'amount')), 2);
         $totalDeductions = round(array_sum(array_column($deductions, 'amount')), 2);
-        $displayEarnings = $earnings;
-
-        if ($expenseReimbursements > 0) {
-            $displayEarnings[] = [
-                'label' => 'Expense Reimbursement',
-                'amount' => round($expenseReimbursements, 2),
-            ];
-        }
 
         $bank = $this->resolveBankDetails($employee);
 
@@ -242,12 +257,12 @@ class PayrollService
             'joining_date' => $employee->joining_date,
             'payable_days' => $payableDays,
             'lop_days' => $lopDays,
-            'earnings' => $displayEarnings,
+            'earnings' => $earnings,
             'deductions' => $deductions,
             'total_earnings' => $totalEarnings,
             'total_deductions' => $totalDeductions,
             'net_pay' => round($totalEarnings - $totalDeductions, 2),
-            'expense_reimbursements' => $expenseReimbursements,
+            'expense_reimbursements' => 0,
             'bank_name' => $bank['bank_name'],
             'bank_account_number' => $bank['bank_account_number'],
             'pan_number' => $employee->pan_number,
