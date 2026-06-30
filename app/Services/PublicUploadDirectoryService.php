@@ -9,6 +9,7 @@ class PublicUploadDirectoryService
         'images/employee-documents',
         'images/bank-payment-proofs',
         'images/attendance/selfies',
+        'images/employee-profile-photos',
         'images/leave-attachments',
         'images/expense-receipts',
         'images/moment-attachments',

@@ -20,6 +20,9 @@ const typeIcon = (type) => {
             return '🕐';
         case 'moment_new':
             return '🎉';
+        case 'profile_photo_submitted':
+        case 'profile_photo_decision':
+            return '📷';
         default:
             return '🔔';
     }
@@ -165,10 +168,17 @@ export const initNotifications = () => {
             return;
         }
 
+        event.preventDefault();
+
         const notificationId = item.getAttribute('data-notification-id');
+        const actionUrl = item.dataset.actionUrl || item.getAttribute('href') || '';
 
         if (notificationId) {
             await markNotificationRead(notificationId);
+        }
+
+        if (actionUrl && actionUrl !== '#') {
+            window.location.href = actionUrl;
         }
     });
 

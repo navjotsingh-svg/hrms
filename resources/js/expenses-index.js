@@ -6,6 +6,7 @@ import {
     expenseStatusClass,
 } from './expense-modals';
 import {
+    composeActionGroup,
     renderActionGroup,
     renderAddIconButton,
     renderCancelIconButton,
@@ -309,19 +310,6 @@ document.addEventListener('DOMContentLoaded', async () => {
                 const receipt = expense.attachments?.length
                     ? `<a href="${escapeHtml(expense.attachments[0].file_url)}" target="_blank" rel="noopener">View</a>`
                     : '—';
-                const actions = [
-                    renderViewIconButton('data-view-expense', expense.id, 'View expense'),
-                ];
-
-                if (expense.can_edit) {
-                    actions.push(renderEditIconButton('data-edit-expense', expense.id, 'Edit expense'));
-                }
-                if (expense.can_submit) {
-                    actions.push(renderApproveIconButton('data-submit-expense', expense.id, 'Submit expense'));
-                }
-                if (expense.can_cancel) {
-                    actions.push(renderCancelIconButton('data-cancel-expense', expense.id, 'Cancel expense'));
-                }
 
                 return `<tr>
                     <td>${escapeHtml(expense.expense_date_label || '—')}</td>
@@ -333,7 +321,18 @@ document.addEventListener('DOMContentLoaded', async () => {
                     <td>${escapeHtml(expense.reviewed_by?.name || '—')}</td>
                     <td>${escapeHtml(expense.employee?.full_name || '—')}</td>
                     <td>${receipt}</td>
-                    <td class="text-nowrap">${renderActionGroup(actions.join(''))}</td>
+                    <td class="text-nowrap">${composeActionGroup({
+                        view: renderViewIconButton('data-view-expense', expense.id, 'View expense'),
+                        edit: expense.can_edit
+                            ? renderEditIconButton('data-edit-expense', expense.id, 'Edit expense')
+                            : '',
+                        approve: expense.can_submit
+                            ? renderApproveIconButton('data-submit-expense', expense.id, 'Submit expense')
+                            : '',
+                        cancel: expense.can_cancel
+                            ? renderCancelIconButton('data-cancel-expense', expense.id, 'Cancel expense')
+                            : '',
+                    })}</td>
                 </tr>`;
             }).join('');
 
@@ -359,22 +358,8 @@ document.addEventListener('DOMContentLoaded', async () => {
                 return;
             }
 
-            groupsTableBody.innerHTML = groups.map((group) => {
-                const actions = [
-                    renderViewIconButton('data-view-group', group.id, 'View expense group'),
-                ];
-
-                if (group.can_edit) {
-                    actions.push(renderEditIconButton('data-edit-group', group.id, 'Edit expense group'));
-                }
-                if (group.can_submit) {
-                    actions.push(renderApproveIconButton('data-submit-group', group.id, 'Submit expense group'));
-                }
-                if (group.can_cancel) {
-                    actions.push(renderCancelIconButton('data-cancel-group', group.id, 'Cancel expense group'));
-                }
-
-                return `<tr>
+            groupsTableBody.innerHTML = groups.map((group) => `
+                <tr>
                     <td>${escapeHtml(group.name)}</td>
                     <td>${escapeHtml(group.employee?.full_name || '—')} (${escapeHtml(group.employee?.employee_code || '—')})</td>
                     <td>${escapeHtml(group.created_at_label || '—')}</td>
@@ -383,9 +368,20 @@ document.addEventListener('DOMContentLoaded', async () => {
                     <td>${escapeHtml(group.travel_advance_label || '—')}</td>
                     <td>${escapeHtml(group.net_adjustment_label || '—')}</td>
                     <td><span class="company-status-pill ${expenseStatusClass(group.status)}">${escapeHtml(group.status_label || '—')}</span></td>
-                    <td class="text-nowrap">${renderActionGroup(actions.join(''))}</td>
-                </tr>`;
-            }).join('');
+                    <td class="text-nowrap">${composeActionGroup({
+                        view: renderViewIconButton('data-view-group', group.id, 'View expense group'),
+                        edit: group.can_edit
+                            ? renderEditIconButton('data-edit-group', group.id, 'Edit expense group')
+                            : '',
+                        approve: group.can_submit
+                            ? renderApproveIconButton('data-submit-group', group.id, 'Submit expense group')
+                            : '',
+                        cancel: group.can_cancel
+                            ? renderCancelIconButton('data-cancel-group', group.id, 'Cancel expense group')
+                            : '',
+                    })}</td>
+                </tr>
+            `).join('');
 
             renderPagination(pagination);
         } catch (error) {

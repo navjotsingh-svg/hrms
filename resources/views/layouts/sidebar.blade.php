@@ -11,7 +11,7 @@
         'leave.management', 'leave.calendar', 'leave.apply', 'leave.balances',
         'masters.leave_types', 'masters.leave_balances',
     ];
-    $payrollKeys = ['payroll.manage', 'payroll.payslips'];
+    $payrollKeys = ['payroll.manage', 'payroll.payslips', 'payroll.settings'];
     $performanceKeys = [
         'performance', 'performance.review_cycles', 'performance.feedback_forms',
         'performance.question_bank', 'performance.goals', 'performance.kpi', 'performance.pip',
@@ -104,15 +104,6 @@
                             ])
                         @endif
                     @endcomponent
-                @endif
-
-                @if ($user->canSeeMenu('requests'))
-                    @include('layouts.partials.sidebar-link', [
-                        'href' => route('web.requests.index'),
-                        'label' => 'Requests',
-                        'icon' => 'requests',
-                        'active' => request()->routeIs('web.requests.*'),
-                    ])
                 @endif
 
                 @if ($user->canSeeMenuSection($peopleKeys))
@@ -275,6 +266,15 @@
                     @endcomponent
                 @endif
 
+                @if ($user->canSeeMenu('requests'))
+                    @include('layouts.partials.sidebar-link', [
+                        'href' => route('web.requests.index'),
+                        'label' => 'Requests',
+                        'icon' => 'requests',
+                        'active' => request()->routeIs('web.requests.*'),
+                    ])
+                @endif
+
                 @if ($user->canSeeMenuSection($payrollKeys))
                     @component('layouts.partials.sidebar-group', [
                         'id' => 'sidebarPayrollMenu',
@@ -288,6 +288,12 @@
                                 'label' => 'Payroll',
                                 'icon' => 'payroll',
                                 'active' => request()->routeIs('web.payroll.index'),
+                            ])
+                            @include('layouts.partials.sidebar-link', [
+                                'href' => route('web.payroll.settings'),
+                                'label' => 'Payroll Settings',
+                                'icon' => 'payroll',
+                                'active' => request()->routeIs('web.payroll.settings'),
                             ])
                         @endif
                         @if ($user->canSeeMenu('payroll.payslips'))

@@ -6,7 +6,7 @@
     <div class="d-flex flex-wrap align-items-center justify-content-between gap-2">
         <div>
             <h1 class="page-title mb-1">Edit Employee</h1>
-            <p class="page-subtitle mb-0">Update job, organization, and salary details. For personal, bank, and document details, use <strong>Manage Profile</strong>.</p>
+            <p class="page-subtitle mb-0">Update job, organization, and salary details. Save any section as you go, jump between steps, or use <strong>Save &amp; Next</strong> to continue. For personal, bank, and document details, use <strong>Manage Profile</strong>.</p>
         </div>
         <div class="d-flex flex-wrap gap-2">
             @if (Auth::user()->canReviewEmployeeDocuments())

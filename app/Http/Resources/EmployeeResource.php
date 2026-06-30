@@ -23,6 +23,7 @@ class EmployeeResource extends JsonResource
             'personal_email' => $this->personal_email,
             'phone' => $this->phone,
             'designation' => $this->designation,
+            'profile_photo_url' => $this->profilePhotoUrl(),
             'joining_date' => $this->joining_date?->format('Y-m-d'),
             'gender' => $this->gender,
             'date_of_birth' => $this->date_of_birth?->format('Y-m-d'),

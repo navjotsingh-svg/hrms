@@ -10,6 +10,7 @@ use App\Http\Requests\StoreEmployeeComplianceFieldRequest;
 use App\Http\Requests\StoreEmployeeFamilyMemberRequest;
 use App\Http\Requests\StoreEmployeePersonalSectionRequest;
 use App\Http\Requests\StoreEmployeePaymentMethodRequest;
+use App\Http\Requests\StoreEmployeeProfilePhotoRequest;
 use App\Http\Requests\StoreEmployeeAssetsRequest;
 use App\Http\Requests\StoreEmployeeSalaryRequest;
 use App\Http\Resources\EmployeeAssetResource;
@@ -18,6 +19,7 @@ use App\Http\Resources\EmployeePersonalSectionResource;
 use App\Http\Resources\EmployeeComplianceFieldResource;
 use App\Http\Resources\EmployeeDocumentResource;
 use App\Http\Resources\EmployeePaymentMethodResource;
+use App\Http\Resources\EmployeeProfilePhotoResource;
 use App\Http\Resources\EmployeeProfileResource;
 use App\Models\Employee;
 use App\Models\EmployeeDocument;
@@ -131,6 +133,29 @@ class EmployeeProfileController extends Controller
                 'payment_method' => new EmployeePaymentMethodResource($result['payment_method']),
             ],
             $this->paymentMethodMessage($result),
+            201
+        );
+    }
+
+    public function storeProfilePhoto(StoreEmployeeProfilePhotoRequest $request, Employee $employee): JsonResponse
+    {
+        $employee = $this->employeeProfileService->resolveEmployeeForActor($request->user(), $employee);
+        $result = $this->employeeProfileService->submitProfilePhoto(
+            $request->user(),
+            $employee,
+            $request->file('photo'),
+        );
+
+        $employee = $this->employeeProfileService->loadProfile($employee->fresh());
+
+        return $this->success(
+            [
+                'employee' => new EmployeeProfileResource($employee),
+                'profile_photo' => new EmployeeProfilePhotoResource($result['profile_photo']),
+            ],
+            ! empty($result['auto_approved'])
+                ? 'Profile photo saved successfully.'
+                : 'Profile photo submitted. Pending for approval from management.',
             201
         );
     }

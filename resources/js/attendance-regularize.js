@@ -1,6 +1,6 @@
 import { Modal } from 'bootstrap';
 import api, { getErrorMessage } from './api';
-import { renderActionGroup, renderCancelIconButton } from './action-icons';
+import { renderCancelIconButton, renderViewLink, composeActionGroup } from './action-icons';
 import { renderApproveIconButton, renderRejectIconButton } from './review-actions';
 import { setSubmitLoading } from './form-utils';
 import { bindEmployeeSearchSelect } from './employee-autocomplete';
@@ -144,8 +144,21 @@ const formatOriginalTimes = (item) => formatOriginalPunchLine(item);
 const formatOriginalTimesFromEligible = (item) => {
     const parts = [];
     if (item.punch_in_label && item.punch_in_label !== '—') parts.push(`In ${item.punch_in_label}`);
-    if (item.punch_out_label && item.punch_out_label !== '—') parts.push(`Out ${item.punch_out_label}`);
+    if (item.has_punch_out && item.punch_out_label && item.punch_out_label !== '—') {
+        parts.push(`Out ${item.punch_out_label}`);
+    } else if (item.punch_in_label && item.punch_in_label !== '—') {
+        parts.push('Out not recorded');
+    }
     return parts.join(' · ') || '—';
+};
+
+const formatEligiblePunchMeta = (item) => {
+    const inLabel = item.punch_in_label || '—';
+    const outLabel = item.has_punch_out && item.punch_out_label
+        ? item.punch_out_label
+        : 'Not recorded';
+
+    return `In ${inLabel} · Out ${outLabel}`;
 };
 
     const selectableEligibleDates = () => Object.values(eligibleDatesByKey).map((item) => item.date);
@@ -220,8 +233,8 @@ const formatOriginalTimesFromEligible = (item) => {
             punchInField.value = firstSelected.suggested_punch_in || '';
         }
 
-        if (punchOutField && !punchOutField.value) {
-            punchOutField.value = firstSelected.suggested_punch_out || '';
+        if (punchOutField && !punchOutField.value && firstSelected.suggested_punch_out) {
+            punchOutField.value = firstSelected.suggested_punch_out;
         }
     };
 
@@ -386,6 +399,7 @@ const formatOriginalTimesFromEligible = (item) => {
 
         myPendingCard?.classList.remove('d-none');
         myPendingContainer.innerHTML = requests.map((item) => {
+            const viewLink = renderViewLink(`/requests/regularization/${item.id}`, 'View request');
             const cancelAction = item.can_cancel
                 ? renderCancelIconButton('data-cancel-regularize', item.id, `Cancel ${item.date_label}`)
                 : '';
@@ -401,7 +415,7 @@ const formatOriginalTimesFromEligible = (item) => {
                             ${item.submitted_at_label ? `<div class="small text-muted">Submitted ${item.submitted_at_label}</div>` : ''}
                             <div class="small mt-2">${item.reason || ''}</div>
                         </div>
-                        <div class="table-action-group">${cancelAction}</div>
+                        ${composeActionGroup({ view: viewLink, cancel: cancelAction })}
                     </div>
                 </div>
             `;
@@ -445,7 +459,7 @@ const formatOriginalTimesFromEligible = (item) => {
                         <input type="checkbox" class="form-check-input regularize-eligible-card-check" ${isSelected ? 'checked' : ''} tabindex="-1" aria-hidden="true" readonly>
                     </div>
                     <div class="regularize-eligible-card-meta">
-                        In ${item.punch_in_label || '—'} · Out ${item.punch_out_label || '—'}
+                        ${formatEligiblePunchMeta(item)}
                     </div>
                     <div class="regularize-eligible-card-meta">Worked ${item.worked_hours_label} / ${item.required_hours_label}</div>
                 </div>
@@ -527,13 +541,20 @@ const formatOriginalTimesFromEligible = (item) => {
                     `;
                 })
                 .join('');
-            const reviewActions = group.can_review ? (isBatch && group.batch_id ? `
-                ${renderApproveIconButton('data-approve-regularize-batch', group.batch_id, `Approve ${dayCount} day(s)`)}
-                ${renderRejectIconButton('data-reject-regularize-batch', group.batch_id, `Reject ${dayCount} day(s)`)}
-            ` : `
-                ${renderApproveIconButton('data-approve-regularize', group.request_ids?.[0], 'Approve regularization')}
-                ${renderRejectIconButton('data-reject-regularize', group.request_ids?.[0], 'Reject regularization')}
-            `) : '';
+            const viewHref = isBatch && group.batch_id
+                ? `/requests/regularization-batch/${group.batch_id}`
+                : (group.request_ids?.[0] ? `/requests/regularization/${group.request_ids[0]}` : '');
+            const viewLink = viewHref ? renderViewLink(viewHref, 'View request') : '';
+            const approveAction = group.can_review
+                ? (isBatch && group.batch_id
+                    ? renderApproveIconButton('data-approve-regularize-batch', group.batch_id, `Approve ${dayCount} day(s)`)
+                    : renderApproveIconButton('data-approve-regularize', group.request_ids?.[0], 'Approve regularization'))
+                : '';
+            const rejectAction = group.can_review
+                ? (isBatch && group.batch_id
+                    ? renderRejectIconButton('data-reject-regularize-batch', group.batch_id, `Reject ${dayCount} day(s)`)
+                    : renderRejectIconButton('data-reject-regularize', group.request_ids?.[0], 'Reject regularization'))
+                : '';
 
             return `
                 <div class="regularize-pending-group border rounded p-3 mb-3">
@@ -547,9 +568,7 @@ const formatOriginalTimesFromEligible = (item) => {
                             <div class="regularize-pending-dates mt-2">${dateList}</div>
                             <div class="small mt-2">${group.reason || ''}</div>
                         </div>
-                        <div class="table-action-group">
-                            ${reviewActions}
-                        </div>
+                        ${composeActionGroup({ view: viewLink, approve: approveAction, reject: rejectAction })}
                     </div>
                 </div>
             `;
@@ -557,10 +576,11 @@ const formatOriginalTimesFromEligible = (item) => {
     };
 
     const renderRow = (item, serial) => {
-        const actions = [];
-        if (item.can_cancel && item.status === 'pending') {
-            actions.push(renderCancelIconButton('data-cancel-regularize', item.id, 'Cancel request'));
-        }
+        const viewLink = renderViewLink(`/requests/regularization/${item.id}`, 'View request');
+        const cancelAction = item.can_cancel && item.status === 'pending'
+            ? renderCancelIconButton('data-cancel-regularize', item.id, 'Cancel request')
+            : '';
+
         return `<tr>
             <td>${serial}</td>
             <td>${renderEmployeeNameBlock(item.employee?.full_name, item.employee?.employee_code)}</td>
@@ -572,7 +592,7 @@ const formatOriginalTimesFromEligible = (item) => {
             <td>${formatTimes(item)}</td>
             <td class="text-truncate" style="max-width:220px">${item.reason}</td>
             <td><span class="company-status-pill ${statusClass(item.status)}">${item.status_label}</span></td>
-            <td>${actions.length ? renderActionGroup(actions.join('')) : '—'}</td>
+            <td>${composeActionGroup({ view: viewLink, cancel: cancelAction })}</td>
         </tr>`;
     };
 

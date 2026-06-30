@@ -29,6 +29,20 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Attendance
+    |--------------------------------------------------------------------------
+    */
+
+    'attendance' => [
+        'face_match_threshold' => (int) env('ATTENDANCE_FACE_MATCH_THRESHOLD', 80),
+        'require_face_match' => filter_var(
+            env('ATTENDANCE_REQUIRE_FACE_MATCH', env('APP_ENV', 'production') === 'local' ? false : true),
+            FILTER_VALIDATE_BOOL
+        ),
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
     | Role permission catalog (Company Admin matrix UI)
     |--------------------------------------------------------------------------
     |
@@ -301,6 +315,7 @@ return [
         'expenses' => ['permissions' => ['expenses.apply', 'expenses.approve', 'expenses.manage']],
         'projects' => ['permissions' => ['projects.view', 'projects.manage']],
         'payroll.manage' => ['permissions' => ['payroll.manage']],
+        'payroll.settings' => ['permissions' => ['payroll.manage']],
         'payroll.payslips' => ['permissions' => ['payroll.view']],
         'performance' => ['permissions' => ['performance.manage', 'performance.participate', 'performance.review', 'pip.manage']],
         'performance.review_cycles' => ['permissions' => ['performance.manage']],

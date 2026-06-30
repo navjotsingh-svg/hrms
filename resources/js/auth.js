@@ -69,6 +69,21 @@ const initLogin = async () => {
 
     submitButton?.addEventListener('click', handleLogin);
 
+    const passwordInput = form.querySelector('#password');
+    const togglePasswordBtn = document.getElementById('togglePasswordBtn');
+
+    togglePasswordBtn?.addEventListener('click', () => {
+        if (!passwordInput) {
+            return;
+        }
+
+        const showing = passwordInput.type === 'text';
+        passwordInput.type = showing ? 'password' : 'text';
+        togglePasswordBtn.textContent = showing ? 'Show' : 'Hide';
+        togglePasswordBtn.setAttribute('aria-label', showing ? 'Show password' : 'Hide password');
+        togglePasswordBtn.setAttribute('aria-pressed', showing ? 'false' : 'true');
+    });
+
     form.addEventListener('submit', (event) => {
         event.preventDefault();
         handleLogin();

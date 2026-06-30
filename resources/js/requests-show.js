@@ -1,4 +1,5 @@
 import api, { getErrorMessage } from './api';
+import { bindBackButton, buildCategoryReturnUrl } from './form-utils';
 import { renderExpenseDetailHtml, renderExpenseGroupDetailHtml } from './expense-modals';
 import {
     bindRequestReviewHandlers,
@@ -10,6 +11,11 @@ import {
     renderRegularizationBatchDates,
     renderRegularizationPunchFields,
 } from './request-display';
+import {
+    bindRequestAttachmentHandlers,
+    bindRequestAttachmentLightbox,
+    loadProfilePhotoPreviews,
+} from './request-attachments';
 
 document.addEventListener('DOMContentLoaded', async () => {
     const card = document.getElementById('requestShowCard');
@@ -25,12 +31,19 @@ document.addEventListener('DOMContentLoaded', async () => {
         return;
     }
 
+    bindBackButton('requestShowBackBtn', buildCategoryReturnUrl(category));
+
     const showAlert = (message, type = 'success') => {
         if (!alertBox) return;
         alertBox.className = `alert alert-${type} alert-dismissible fade show`;
         alertBox.innerHTML = `${message}<button type="button" class="btn-close" data-bs-dismiss="alert"></button>`;
         alertBox.classList.remove('d-none');
     };
+
+    bindRequestAttachmentLightbox();
+    bindRequestAttachmentHandlers(detailsEl, {
+        onError: (error) => showAlert(getErrorMessage(error), 'danger'),
+    });
 
     const renderPageHeader = (item) => {
         if (titleEl) {
@@ -47,6 +60,12 @@ document.addEventListener('DOMContentLoaded', async () => {
 
         if (detailsEl) {
             detailsEl.innerHTML = html;
+        }
+
+        if (category === 'profile_photo') {
+            loadProfilePhotoPreviews(detailsEl, {
+                onError: (error) => showAlert(getErrorMessage(error), 'danger'),
+            });
         }
     };
 
@@ -69,6 +88,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         const actionItem = {
             category: 'regularization',
             entity_id: item.id,
+            status: item.status,
             can_review: item.can_review,
             can_cancel: item.can_cancel,
             review_kind: 'regularization',
@@ -110,6 +130,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         const actionItem = {
             category: 'regularization',
             entity_id: group.request_ids?.[0],
+            status: group.status,
             can_review: group.can_review,
             can_cancel: false,
             review_kind: 'regularization_batch',
@@ -149,6 +170,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         const actionItem = {
             category: 'expense',
             entity_id: expense.id,
+            status: expense.status,
             can_review: expense.can_review,
             can_cancel: expense.can_cancel,
             review_kind: 'expense',
@@ -170,6 +192,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         const actionItem = {
             category: 'expense_group',
             entity_id: group.id,
+            status: group.status,
             can_review: group.can_review,
             can_cancel: group.can_cancel,
             review_kind: 'expense_group',
@@ -190,6 +213,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         const actionItem = {
             category: item.category,
             entity_id: item.entity_id,
+            status: item.status,
             can_review: item.can_review,
             can_cancel: item.can_cancel,
             review_kind: item.review_kind,

@@ -1,7 +1,5 @@
 import api, { getErrorMessage } from './api';
 
-import { renderActionGroup } from './action-icons';
-
 import {
 
     cancelRequest,
@@ -17,6 +15,14 @@ import { bindExpenseRequestViewModal, renderExpenseViewButton } from './expense-
 import { bindEmployeeSearchSelect } from './employee-autocomplete';
 
 import { renderEmployeeNameBlock } from './request-display';
+
+import {
+    DATE_RANGE_PRESET_CUSTOM,
+    dateRangeForPreset,
+    detectDateRangePreset,
+    resolveDateRange,
+    saveRequestsListState,
+} from './form-utils';
 
 
 
@@ -43,6 +49,8 @@ const categoryClass = (category) => ({
     document: 'requests-type-pill--document',
 
     payment_method: 'requests-type-pill--payment',
+
+    profile_photo: 'requests-type-pill--profile-photo',
 
     family_member: 'requests-type-pill--family',
 
@@ -76,6 +84,32 @@ const countByStatus = (items) => ({
 
 
 
+const dedupeRequests = (items) => {
+
+    const map = new Map();
+
+
+
+    items.forEach((item) => {
+
+        const key = item.key || `${item.category}:${item.entity_id}:${item.batch_id || ''}`;
+
+        if (!map.has(key)) {
+
+            map.set(key, item);
+
+        }
+
+    });
+
+
+
+    return Array.from(map.values());
+
+};
+
+
+
 document.addEventListener('DOMContentLoaded', async () => {
 
     const tableBody = document.getElementById('requestsTableBody');
@@ -83,6 +117,12 @@ document.addEventListener('DOMContentLoaded', async () => {
     const alertBox = document.getElementById('requestsAlert');
 
     const statusFilter = document.getElementById('requestsStatusFilter');
+
+    const typeFilter = document.getElementById('requestsTypeFilter');
+
+    const datePresetFilter = document.getElementById('requestsDatePreset');
+
+    const customDateRangeWrap = document.getElementById('requestsCustomDateRange');
 
     const dateFromFilter = document.getElementById('requestsDateFrom');
 
@@ -130,6 +170,264 @@ document.addEventListener('DOMContentLoaded', async () => {
 
 
 
+    const activeDateRange = () => resolveDateRange({
+
+        preset: datePresetFilter?.value || '',
+
+        from: dateFromFilter?.value || '',
+
+        to: dateToFilter?.value || '',
+
+    });
+
+
+
+    const updateCustomDateVisibility = () => {
+
+        if (!customDateRangeWrap) {
+
+            return;
+
+        }
+
+        customDateRangeWrap.classList.toggle(
+
+            'd-none',
+
+            datePresetFilter?.value !== DATE_RANGE_PRESET_CUSTOM,
+
+        );
+
+    };
+
+
+
+    const applyDatePresetState = (state = {}) => {
+
+        if (!datePresetFilter) {
+
+            return;
+
+        }
+
+        const preset = state.date_preset
+
+            || detectDateRangePreset(state.date_from || '', state.date_to || '');
+
+        datePresetFilter.value = preset;
+
+        if (preset === DATE_RANGE_PRESET_CUSTOM) {
+
+            if (dateFromFilter) dateFromFilter.value = state.date_from || '';
+
+            if (dateToFilter) dateToFilter.value = state.date_to || '';
+
+        } else if (preset) {
+
+            const range = dateRangeForPreset(preset);
+
+            if (dateFromFilter) dateFromFilter.value = range.from;
+
+            if (dateToFilter) dateToFilter.value = range.to;
+
+        } else {
+
+            if (dateFromFilter) dateFromFilter.value = '';
+
+            if (dateToFilter) dateToFilter.value = '';
+
+        }
+
+        updateCustomDateVisibility();
+
+    };
+
+
+
+    const parseListStateFromUrl = () => {
+
+        const params = new URLSearchParams(window.location.search);
+
+
+
+        return {
+
+            tab: params.get('tab') || '',
+
+            status: params.get('status') || '',
+
+            type: params.get('type') || '',
+
+            date_preset: params.get('date_preset') || '',
+
+            date_from: params.get('date_from') || '',
+
+            date_to: params.get('date_to') || '',
+
+            employee_id: params.get('employee_id') || '',
+
+            employee_label: params.get('employee_label') || '',
+
+        };
+
+    };
+
+
+
+    const buildListState = () => {
+
+        const range = activeDateRange();
+
+
+
+        return {
+
+            tab: activeTab,
+
+            status: statusFilter?.value || '',
+
+            type: typeFilter?.value || '',
+
+            date_preset: range.preset,
+
+            date_from: range.preset === DATE_RANGE_PRESET_CUSTOM ? range.from : '',
+
+            date_to: range.preset === DATE_RANGE_PRESET_CUSTOM ? range.to : '',
+
+            employee_id: selectedEmployeeId() ? String(selectedEmployeeId()) : '',
+
+            employee_label: document.getElementById('requestsEmployeeInput')?.value || '',
+
+        };
+
+    };
+
+
+
+    const syncListStateToUrl = () => {
+
+        const state = buildListState();
+
+        saveRequestsListState(state);
+
+
+
+        const params = new URLSearchParams();
+
+        Object.entries(state).forEach(([key, value]) => {
+
+            if (value) {
+
+                params.set(key, value);
+
+            }
+
+        });
+
+
+
+        const query = params.toString();
+
+        const url = `${window.location.pathname}${query ? `?${query}` : ''}`;
+
+        window.history.replaceState({}, '', url);
+
+    };
+
+
+
+    const resolveTab = (tab) => {
+
+        if (tab === 'approval' && hasApprovalTab) {
+
+            return 'approval';
+
+        }
+
+
+
+        if (tab === 'team' && hasTeamTab) {
+
+            return 'team';
+
+        }
+
+
+
+        if (tab === 'mine') {
+
+            return 'mine';
+
+        }
+
+
+
+        return hasApprovalTab ? 'approval' : 'mine';
+
+    };
+
+
+
+    const applyListState = (state) => {
+
+        activeTab = resolveTab(state.tab);
+
+
+
+        tabButtons.forEach((button) => {
+
+            const isActive = button.dataset.requestsTab === activeTab;
+
+            button.classList.toggle('active', isActive);
+
+            button.setAttribute('aria-selected', isActive ? 'true' : 'false');
+
+        });
+
+
+
+        if (statusFilter) {
+
+            statusFilter.disabled = activeTab === 'approval';
+
+
+
+            if (activeTab === 'approval') {
+
+                statusFilter.value = '';
+
+            } else if (state.status) {
+
+                statusFilter.value = state.status;
+
+            } else if (activeTab === 'team') {
+
+                statusFilter.value = 'approved';
+
+            }
+
+        }
+
+
+
+        applyDatePresetState(state);
+
+
+
+        if (typeFilter && state.type) {
+
+            typeFilter.value = state.type;
+
+        }
+
+
+
+        updateEmployeeFilterVisibility();
+
+    };
+
+
+
     const expenseViewModal = bindExpenseRequestViewModal({
 
         onError: (message) => showAlert(message, 'danger'),
@@ -157,6 +455,38 @@ document.addEventListener('DOMContentLoaded', async () => {
         || document.getElementById('requestsEmployeeId')?.value
 
         || null;
+
+
+
+    const summarySource = () => {
+
+        const pools = [mineRequests];
+
+        if (hasApprovalTab) {
+
+            pools.push(approvalRequests);
+
+        }
+
+        if (hasTeamTab) {
+
+            pools.push(teamRequests);
+
+        }
+
+
+
+        return dedupeRequests(pools.flat());
+
+    };
+
+
+
+    const summaryFilteredRequests = () => applyDateFilter(
+
+        applyCategoryFilter(applyEmployeeFilter(summarySource())),
+
+    );
 
 
 
@@ -204,6 +534,26 @@ document.addEventListener('DOMContentLoaded', async () => {
 
 
 
+    const applyCategoryFilter = (items) => {
+
+        const type = typeFilter?.value || '';
+
+
+
+        if (!type) {
+
+            return items;
+
+        }
+
+
+
+        return items.filter((item) => item.category === type);
+
+    };
+
+
+
     const applyStatusFilter = (items) => {
 
         if (activeTab === 'approval' || !statusFilter?.value) {
@@ -222,9 +572,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     const applyDateFilter = (items) => {
 
-        const dateFrom = dateFromFilter?.value || '';
-
-        const dateTo = dateToFilter?.value || '';
+        const { from: dateFrom, to: dateTo } = activeDateRange();
 
 
 
@@ -274,27 +622,29 @@ document.addEventListener('DOMContentLoaded', async () => {
 
 
 
-    const filteredRequests = () => applyDateFilter(applyStatusFilter(applyEmployeeFilter(currentSource())));
+    const filteredRequests = () => applyDateFilter(applyStatusFilter(applyCategoryFilter(applyEmployeeFilter(currentSource()))));
 
 
 
     const dateFilterParams = () => {
 
+        const { from, to } = activeDateRange();
+
         const params = {};
 
 
 
-        if (dateFromFilter?.value) {
+        if (from) {
 
-            params.date_from = dateFromFilter.value;
+            params.date_from = from;
 
         }
 
 
 
-        if (dateToFilter?.value) {
+        if (to) {
 
-            params.date_to = dateToFilter.value;
+            params.date_to = to;
 
         }
 
@@ -350,7 +700,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     const renderSummaryCards = () => {
 
-        const counts = countByStatus(applyEmployeeFilter(currentSource()));
+        const counts = countByStatus(summaryFilteredRequests());
 
 
 
@@ -364,7 +714,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
         if (countCancelled) countCancelled.textContent = String(counts.cancelled);
 
-        if (countMeta) countMeta.textContent = tabLabel();
+        if (countMeta) countMeta.textContent = 'All requests';
 
 
 
@@ -372,11 +722,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
             const status = button.dataset.requestsStatus || '';
 
-            const isActive = activeTab === 'approval'
-
-                ? status === 'pending'
-
-                : (statusFilter?.value || '') === status;
+            const isActive = (statusFilter?.value || '') === status;
 
             button.classList.toggle('is-active', isActive);
 
@@ -414,7 +760,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
             } else if (tab === 'team' && !statusFilter.value) {
 
-                statusFilter.value = 'approved';
+                statusFilter.value = '';
 
             }
 
@@ -427,6 +773,8 @@ document.addEventListener('DOMContentLoaded', async () => {
         renderSummaryCards();
 
         renderTable();
+
+        syncListStateToUrl();
 
     };
 
@@ -453,35 +801,17 @@ document.addEventListener('DOMContentLoaded', async () => {
 
 
     const renderActions = (item) => {
+        const actionOptions = { includeReview: activeTab === 'approval' };
 
         if (item.category === 'expense' || item.category === 'expense_group') {
-
             const viewButton = item.category === 'expense'
-
                 ? renderExpenseViewButton('expense', item.entity_id)
-
                 : renderExpenseViewButton('expense_group', item.entity_id, 'View expense group');
 
-            const reviewHtml = renderRequestActions({ ...item, view_url: null });
-
-
-
-            if (reviewHtml === '<span class="text-muted">—</span>') {
-
-                return renderActionGroup(viewButton);
-
-            }
-
-
-
-            return reviewHtml.replace('</div>', `${viewButton}</div>`).replace('<div class="table-action-group">', '<div class="table-action-group">');
-
+            return renderRequestActions({ ...item, view_url: null }, { viewOverride: viewButton, ...actionOptions });
         }
 
-
-
-        return renderRequestActions(item);
-
+        return renderRequestActions(item, actionOptions);
     };
 
 
@@ -541,9 +871,9 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     const emptyMessage = () => {
 
-        if (selectedEmployeeId()) {
+        if (selectedEmployeeId() || typeFilter?.value) {
 
-            return 'No requests found for the selected employee.';
+            return 'No requests found for the selected filters.';
 
         }
 
@@ -631,7 +961,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
         try {
 
-            const { data } = await api.get('/request-hub/pending');
+            const { data } = await api.get('/request-hub/pending', { params: { per_page: 50 } });
 
             approvalRequests = data.data?.requests || [];
 
@@ -657,12 +987,6 @@ document.addEventListener('DOMContentLoaded', async () => {
 
             const params = { ...dateFilterParams() };
 
-            if (statusFilter?.value && activeTab === 'team') {
-
-                params.status = statusFilter.value;
-
-            }
-
 
 
             const { data } = await api.get('/request-hub/team', { params });
@@ -686,12 +1010,6 @@ document.addEventListener('DOMContentLoaded', async () => {
         try {
 
             const params = { ...dateFilterParams() };
-
-            if (statusFilter?.value && activeTab === 'mine') {
-
-                params.status = statusFilter.value;
-
-            }
 
 
 
@@ -743,7 +1061,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
         if (statusFilter) {
 
-            statusFilter.value = activeTab === 'team' ? 'approved' : '';
+            statusFilter.value = '';
 
         }
 
@@ -752,6 +1070,12 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (dateFromFilter) dateFromFilter.value = '';
 
         if (dateToFilter) dateToFilter.value = '';
+
+        if (datePresetFilter) datePresetFilter.value = '';
+
+        updateCustomDateVisibility();
+
+        if (typeFilter) typeFilter.value = '';
 
 
 
@@ -772,6 +1096,8 @@ document.addEventListener('DOMContentLoaded', async () => {
 
 
         renderTable();
+
+        syncListStateToUrl();
 
     };
 
@@ -829,9 +1155,21 @@ document.addEventListener('DOMContentLoaded', async () => {
 
             hiddenId: 'requestsEmployeeId',
 
-            onSelect: () => renderTable(),
+            onSelect: () => {
 
-            onClear: () => renderTable(),
+                renderTable();
+
+                syncListStateToUrl();
+
+            },
+
+            onClear: () => {
+
+                renderTable();
+
+                syncListStateToUrl();
+
+            },
 
         });
 
@@ -861,27 +1199,21 @@ document.addEventListener('DOMContentLoaded', async () => {
 
 
 
-    statusFilter?.addEventListener('change', async () => {
-
-        if (activeTab === 'mine') {
-
-            await loadMineRequests();
-
-        } else if (activeTab === 'team') {
-
-            await loadTeamRequests();
-
-        } else {
-
-            renderTable();
-
-            return;
-
-        }
-
-
+    statusFilter?.addEventListener('change', () => {
 
         renderTable();
+
+        syncListStateToUrl();
+
+    });
+
+
+
+    typeFilter?.addEventListener('change', () => {
+
+        renderTable();
+
+        syncListStateToUrl();
 
     });
 
@@ -889,6 +1221,28 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     const handleDateFilterChange = async () => {
 
+        if (datePresetFilter) {
+
+            const from = dateFromFilter?.value || '';
+
+            const to = dateToFilter?.value || '';
+
+            datePresetFilter.value = from || to
+
+                ? detectDateRangePreset(from, to)
+
+                : '';
+
+            updateCustomDateVisibility();
+
+        }
+
+
+
+        updateCustomDateVisibility();
+
+
+
         if (activeTab === 'mine') {
 
             await loadMineRequests();
@@ -902,6 +1256,8 @@ document.addEventListener('DOMContentLoaded', async () => {
 
 
         renderTable();
+
+        syncListStateToUrl();
 
     };
 
@@ -910,6 +1266,50 @@ document.addEventListener('DOMContentLoaded', async () => {
     dateFromFilter?.addEventListener('change', handleDateFilterChange);
 
     dateToFilter?.addEventListener('change', handleDateFilterChange);
+
+
+
+    datePresetFilter?.addEventListener('change', async () => {
+
+        const preset = datePresetFilter.value;
+
+
+
+        if (preset === DATE_RANGE_PRESET_CUSTOM) {
+
+            updateCustomDateVisibility();
+
+            syncListStateToUrl();
+
+            return;
+
+        }
+
+
+
+        if (preset) {
+
+            const range = dateRangeForPreset(preset);
+
+            if (dateFromFilter) dateFromFilter.value = range.from;
+
+            if (dateToFilter) dateToFilter.value = range.to;
+
+        } else {
+
+            if (dateFromFilter) dateFromFilter.value = '';
+
+            if (dateToFilter) dateToFilter.value = '';
+
+        }
+
+
+
+        updateCustomDateVisibility();
+
+        await handleDateFilterChange();
+
+    });
 
 
 
@@ -935,11 +1335,17 @@ document.addEventListener('DOMContentLoaded', async () => {
 
                     await loadTeamRequests();
 
+                } else if (statusFilter) {
+
+                    statusFilter.value = 'pending';
+
                 }
 
 
 
                 renderTable();
+
+                syncListStateToUrl();
 
                 return;
 
@@ -982,6 +1388,20 @@ document.addEventListener('DOMContentLoaded', async () => {
 
 
     filterReset?.addEventListener('click', resetFilters);
+
+
+
+    tableBody?.addEventListener('click', (event) => {
+
+        const viewLink = event.target.closest('a.table-action-btn--view[href]');
+
+        if (viewLink?.href) {
+
+            syncListStateToUrl();
+
+        }
+
+    }, true);
 
 
 
@@ -1031,7 +1451,29 @@ document.addEventListener('DOMContentLoaded', async () => {
 
 
 
+    const initialListState = parseListStateFromUrl();
+
+    applyListState(initialListState);
+
+
+
+    if (employeeSearch && initialListState.employee_id) {
+
+        employeeSearch.setSelection({
+
+            id: Number(initialListState.employee_id),
+
+            label: initialListState.employee_label || '',
+
+        });
+
+    }
+
+
+
     updateEmployeeFilterVisibility();
+
+    syncListStateToUrl();
 
     await reload();
 

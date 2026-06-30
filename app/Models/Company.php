@@ -34,6 +34,18 @@ class Company extends Model
         'postal_code',
         'timezone',
         'attendance_portal_start_date',
+        'attendance_allowed_ips',
+        'attendance_face_match_threshold',
+        'attendance_require_face_match',
+        'pf_applicable',
+        'esi_applicable',
+        'professional_tax_applicable',
+        'basic_salary_percent',
+        'hra_percent',
+        'special_allowance_percent',
+        'conveyance_allowance',
+        'medical_allowance',
+        'other_allowance',
         'status',
         'description',
     ];
@@ -42,6 +54,17 @@ class Company extends Model
     {
         return [
             'attendance_portal_start_date' => 'date',
+            'attendance_face_match_threshold' => 'integer',
+            'attendance_require_face_match' => 'boolean',
+            'pf_applicable' => 'boolean',
+            'esi_applicable' => 'boolean',
+            'professional_tax_applicable' => 'boolean',
+            'basic_salary_percent' => 'decimal:2',
+            'hra_percent' => 'decimal:2',
+            'special_allowance_percent' => 'decimal:2',
+            'conveyance_allowance' => 'decimal:2',
+            'medical_allowance' => 'decimal:2',
+            'other_allowance' => 'decimal:2',
         ];
     }
 

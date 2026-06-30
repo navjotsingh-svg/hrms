@@ -1,4 +1,5 @@
 import api, { getErrorMessage } from './api';
+import { renderAttendancePunchCard } from './attendance-punch-display';
 import { debounce } from './form-utils';
 import { Modal } from 'bootstrap';
 
@@ -29,6 +30,7 @@ const cellClass = (status, awaitingPunchOut = false) => {
         short_leave: 'attendance-matrix-cell attendance-matrix-cell--short-leave',
         absent: 'attendance-matrix-cell attendance-matrix-cell--absent',
         on_leave: 'attendance-matrix-cell attendance-matrix-cell--on-leave',
+        wfh: 'attendance-matrix-cell attendance-matrix-cell--wfh',
         holiday: 'attendance-matrix-cell attendance-matrix-cell--holiday',
         weekly_off: 'attendance-matrix-cell attendance-matrix-cell--weekly-off',
         regularization_pending: 'attendance-matrix-cell attendance-matrix-cell--regularization-pending',
@@ -273,7 +275,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             </div>`
             : '';
 
-        const leaveBlock = payload.status === 'on_leave'
+        const leaveBlock = (payload.status === 'on_leave' || payload.status === 'wfh')
             ? `<div class="alert alert-info mb-3">
                 <div class="fw-semibold">${escapeHtml(payload.leave_type_name || 'On Leave')}</div>
                 ${payload.leave_session_label ? `<div class="small">${escapeHtml(payload.leave_session_label)}</div>` : ''}
@@ -284,12 +286,11 @@ document.addEventListener('DOMContentLoaded', async () => {
             ? `<div class="alert alert-secondary mb-3">${escapeHtml(payload.holiday_name)}</div>`
             : '';
 
-        const punches = (payload.punches || []).map((punch) => `
-            <div class="attendance-punch-card mb-2">
-                <span class="badge ${punch.punch_type === 'in' ? 'text-bg-success' : 'text-bg-warning'}">${escapeHtml(punch.punch_label)}</span>
-                <span class="ms-2 fw-semibold">${escapeHtml(punch.punched_at_label || punch.punched_at)}</span>
-            </div>
-        `).join('') || '<div class="text-muted small">No punch records.</div>';
+        const punches = (payload.punches || []).map((punch) => renderAttendancePunchCard(punch, {
+            formatDateTime: () => escapeHtml(punch.punched_at_label || punch.punched_at || '—'),
+            includeSelfie: false,
+            threshold: Number(payload.face_match_threshold) || 80,
+        })).join('') || '<div class="text-muted small">No punch records.</div>';
 
         dayModalBody.innerHTML = `
             ${regularizationBlock}

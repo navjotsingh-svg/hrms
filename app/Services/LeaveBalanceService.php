@@ -168,8 +168,7 @@ class LeaveBalanceService
         $query = Employee::query()
             ->where('company_id', $companyId)
             ->with(['department', 'leaveTypes'])
-            ->orderBy('first_name')
-            ->orderBy('last_name');
+            ->orderedByName();
 
         $status = $filters['status'] ?? 'active';
 

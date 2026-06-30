@@ -7,7 +7,7 @@
         <div>
             <h1 class="page-title mb-1">Leave Request</h1>
         </div>
-        <a href="{{ route('web.leave.index') }}" class="btn btn-outline-secondary">Back</a>
+        <button type="button" class="btn btn-outline-secondary" id="leaveShowBackBtn">Back</button>
     </div>
 @endsection
 

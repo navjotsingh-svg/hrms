@@ -1,5 +1,6 @@
 import api, { getErrorMessage } from './api';
 import { compressImageFiles } from './image-compress';
+import { bindBackButton, buildCategoryReturnUrl } from './form-utils';
 import {
     bindRequestReviewHandlers,
     mountRequestShowActions,
@@ -13,6 +14,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     const leaveId = card?.dataset.leaveId;
 
     if (!card || !leaveId) return;
+
+    bindBackButton('leaveShowBackBtn', buildCategoryReturnUrl('leave'));
 
     const showAlert = (message, type = 'success') => {
         alertBox.className = `alert alert-${type} alert-dismissible fade show`;
@@ -59,6 +62,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         const actionItem = {
             category: 'leave',
             entity_id: item.id,
+            status: item.status,
             can_review: item.can_review,
             can_cancel: item.can_cancel,
             review_kind: 'leave',

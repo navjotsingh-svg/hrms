@@ -1,4 +1,5 @@
 import { Offcanvas } from 'bootstrap';
+import './payroll-settings';
 import api, { getErrorMessage } from './api';
 import { filterEmployeeOptions, formatEmployeeLabel, initEmployeeAutocomplete } from './employee-autocomplete';
 

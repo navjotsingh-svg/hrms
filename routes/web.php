@@ -159,6 +159,7 @@ Route::redirect('/register', '/');
 
     Route::middleware(['company.member', 'company.permission:payroll.manage'])->group(function () {
         Route::get('/payroll', [\App\Http\Controllers\PayrollController::class, 'index'])->name('payroll.index');
+        Route::get('/payroll/settings', [\App\Http\Controllers\PayrollSettingsController::class, 'index'])->name('payroll.settings');
     });
 
     Route::middleware(['company.member', 'company.permission:payroll.view'])->group(function () {

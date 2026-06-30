@@ -147,13 +147,43 @@
                         ])
                     </div>
                     @endif
-                    <label class="requests-filter-select-wrap" title="Filter from date" aria-label="Filter from date">
+                    <label class="requests-filter-select-wrap" title="Filter by date" aria-label="Filter by date">
                         <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16" aria-hidden="true"><path d="M3.5 0a.5.5 0 0 1 .5.5V1h8V.5a.5.5 0 0 1 1 0V1h1a2 2 0 0 1 2 2v11a2 2 0 0 1-2 2H2a2 2 0 0 1-2-2V3a2 2 0 0 1 2-2h1V.5a.5.5 0 0 1 .5-.5M1 4v10a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V4z"/></svg>
-                        <input type="date" class="form-control form-control-sm" id="requestsDateFrom" title="From date">
+                        <select class="form-select form-select-sm" id="requestsDatePreset">
+                            <option value="">All dates</option>
+                            <option value="today">Today</option>
+                            <option value="yesterday">Yesterday</option>
+                            <option value="this_week">This week</option>
+                            <option value="this_month">This month</option>
+                            <option value="custom">Custom range</option>
+                        </select>
                     </label>
-                    <label class="requests-filter-select-wrap" title="Filter to date" aria-label="Filter to date">
-                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16" aria-hidden="true"><path d="M3.5 0a.5.5 0 0 1 .5.5V1h8V.5a.5.5 0 0 1 1 0V1h1a2 2 0 0 1 2 2v11a2 2 0 0 1-2 2H2a2 2 0 0 1-2-2V3a2 2 0 0 1 2-2h1V.5a.5.5 0 0 1 .5-.5M1 4v10a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V4z"/></svg>
-                        <input type="date" class="form-control form-control-sm" id="requestsDateTo" title="To date">
+                    <div class="requests-custom-date-range d-none" id="requestsCustomDateRange">
+                        <label class="requests-filter-select-wrap" title="Filter from date" aria-label="Filter from date">
+                            <span class="requests-date-range-label">From</span>
+                            <input type="date" class="form-control form-control-sm" id="requestsDateFrom" title="From date">
+                        </label>
+                        <label class="requests-filter-select-wrap" title="Filter to date" aria-label="Filter to date">
+                            <span class="requests-date-range-label">To</span>
+                            <input type="date" class="form-control form-control-sm" id="requestsDateTo" title="To date">
+                        </label>
+                    </div>
+                    <label class="requests-filter-select-wrap" title="Filter by type" aria-label="Filter by type">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16" aria-hidden="true"><path d="M2 1a1 1 0 0 0-1 1v4.586a1 1 0 0 0 .293.707l7 7a1 1 0 0 0 1.414 0l4.586-4.586a1 1 0 0 0 0-1.414l-7-7A1 1 0 0 0 9.586 1zm3.5 3.5a1.5 1.5 0 1 1-3 0 1.5 1.5 0 0 1 3 0"/></svg>
+                        <select class="form-select form-select-sm" id="requestsTypeFilter">
+                            <option value="">All types</option>
+                            <option value="leave">Leave</option>
+                            <option value="regularization">Regularization</option>
+                            <option value="document">Document</option>
+                            <option value="payment_method">Bank details</option>
+                            <option value="profile_photo">Profile photo</option>
+                            <option value="family_member">Family member</option>
+                            <option value="personal_section">Personal details</option>
+                            <option value="compliance_field">Compliance</option>
+                            <option value="expense">Expense</option>
+                            <option value="expense_group">Expense group</option>
+                            <option value="job_requisition">Job requisition</option>
+                        </select>
                     </label>
                     <label class="requests-filter-select-wrap" title="Filter by status" aria-label="Filter by status">
                         <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16" aria-hidden="true"><path d="M1.5 1.5A.5.5 0 0 1 2 1h12a.5.5 0 0 1 .5.5v2a.5.5 0 0 1-.128.334L10 8.692V13.5a.5.5 0 0 1-.342.474l-3 1A.5.5 0 0 1 6 14.5V8.692L1.628 3.834A.5.5 0 0 1 1.5 3.5z"/></svg>

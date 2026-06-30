@@ -33,6 +33,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             max_hours_per_month: null,
             allowed_hourly_durations: null,
             is_paid: form.querySelector('#is_paid').value === '1',
+            allows_attendance_punch: form.querySelector('#allows_attendance_punch')?.value === '1',
             requires_proof: form.querySelector('#requires_proof').value === '1',
             color: form.querySelector('#color').value,
             sort_order: Number(form.querySelector('#sort_order').value || 0),
@@ -65,6 +66,9 @@ document.addEventListener('DOMContentLoaded', async () => {
             form.querySelector('#max_days_per_request').value = type.is_hourly_leave ? '' : (type.max_days_per_request ?? '');
             form.querySelector('#max_days_per_month').value = type.max_days_per_month ?? '';
             form.querySelector('#is_paid').value = type.is_paid ? '1' : '0';
+            if (form.querySelector('#allows_attendance_punch')) {
+                form.querySelector('#allows_attendance_punch').value = type.allows_attendance_punch ? '1' : '0';
+            }
             form.querySelector('#requires_proof').value = type.requires_proof ? '1' : '0';
             form.querySelector('#color').value = type.color || '#3b82f6';
             form.querySelector('#sort_order').value = type.sort_order || 0;

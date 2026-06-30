@@ -110,7 +110,7 @@ class PayrollService
             ->where('status', 'active')
             ->whereHas('salary')
             ->with(['salary', 'department', 'departments', 'company'])
-            ->orderBy('first_name')
+            ->orderedByName()
             ->get();
 
         if ($employees->isEmpty()) {

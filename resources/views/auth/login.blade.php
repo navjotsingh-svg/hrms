@@ -27,15 +27,26 @@
 
         <div class="mb-3">
             <label for="password" class="form-label fw-medium text-secondary">{{ __('Password') }}</label>
-            <input
-                id="password"
-                type="password"
-                name="password"
-                class="form-control"
-                placeholder="Enter your password"
-                required
-                autocomplete="current-password"
-            >
+            <div class="input-group auth-password-group">
+                <input
+                    id="password"
+                    type="password"
+                    name="password"
+                    class="form-control"
+                    placeholder="Enter your password"
+                    required
+                    autocomplete="current-password"
+                >
+                <button
+                    type="button"
+                    class="btn btn-outline-secondary auth-password-toggle"
+                    id="togglePasswordBtn"
+                    aria-label="Show password"
+                    aria-pressed="false"
+                >
+                    Show
+                </button>
+            </div>
         </div>
 
         <div class="d-flex align-items-center justify-content-between mb-4">

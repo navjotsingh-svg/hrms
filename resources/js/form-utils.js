@@ -23,6 +23,85 @@ export const toDateInputValue = (date) => {
     return value.toISOString().split('T')[0];
 };
 
+export const localDateInputValue = (date) => {
+    const value = date instanceof Date ? new Date(date) : new Date(date);
+
+    if (Number.isNaN(value.getTime())) {
+        return '';
+    }
+
+    const year = value.getFullYear();
+    const month = String(value.getMonth() + 1).padStart(2, '0');
+    const day = String(value.getDate()).padStart(2, '0');
+
+    return `${year}-${month}-${day}`;
+};
+
+export const DATE_RANGE_PRESET_CUSTOM = 'custom';
+
+export const dateRangeForPreset = (preset) => {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    switch (preset) {
+        case 'today':
+            return { from: localDateInputValue(today), to: localDateInputValue(today) };
+        case 'yesterday': {
+            const yesterday = new Date(today);
+            yesterday.setDate(yesterday.getDate() - 1);
+
+            return { from: localDateInputValue(yesterday), to: localDateInputValue(yesterday) };
+        }
+        case 'this_week': {
+            const start = new Date(today);
+            const weekday = start.getDay();
+            const daysFromMonday = weekday === 0 ? 6 : weekday - 1;
+            start.setDate(start.getDate() - daysFromMonday);
+
+            return { from: localDateInputValue(start), to: localDateInputValue(today) };
+        }
+        case 'this_month': {
+            const start = new Date(today.getFullYear(), today.getMonth(), 1);
+
+            return { from: localDateInputValue(start), to: localDateInputValue(today) };
+        }
+        default:
+            return { from: '', to: '' };
+    }
+};
+
+export const detectDateRangePreset = (from, to) => {
+    if (!from && !to) {
+        return '';
+    }
+
+    const presets = ['today', 'yesterday', 'this_week', 'this_month'];
+
+    for (const preset of presets) {
+        const range = dateRangeForPreset(preset);
+
+        if (range.from === from && range.to === to) {
+            return preset;
+        }
+    }
+
+    return DATE_RANGE_PRESET_CUSTOM;
+};
+
+export const resolveDateRange = ({ preset = '', from = '', to = '' } = {}) => {
+    if (!preset) {
+        return { preset: '', from: '', to: '' };
+    }
+
+    if (preset === DATE_RANGE_PRESET_CUSTOM) {
+        return { preset, from, to };
+    }
+
+    const range = dateRangeForPreset(preset);
+
+    return { preset, from: range.from, to: range.to };
+};
+
 export const addYears = (date, years) => {
     const value = new Date(date);
     value.setFullYear(value.getFullYear() + years);
@@ -185,6 +264,168 @@ export const debounce = (callback, delay = 400) => {
         clearTimeout(timeoutId);
         timeoutId = setTimeout(() => callback(...args), delay);
     };
+};
+
+export const REQUESTS_LIST_STATE_KEY = 'hrms_requests_list_state';
+
+export const saveRequestsListState = (state) => {
+    if (!state) {
+        return;
+    }
+
+    sessionStorage.setItem(REQUESTS_LIST_STATE_KEY, JSON.stringify(state));
+};
+
+export const readRequestsListState = () => {
+    try {
+        const raw = sessionStorage.getItem(REQUESTS_LIST_STATE_KEY);
+
+        if (!raw) {
+            return null;
+        }
+
+        const parsed = JSON.parse(raw);
+
+        return parsed && typeof parsed === 'object' ? parsed : null;
+    } catch {
+        return null;
+    }
+};
+
+export const buildRequestsReturnUrl = (basePath = '/requests', state = readRequestsListState()) => {
+    if (!state) {
+        return basePath;
+    }
+
+    const params = new URLSearchParams();
+
+    ['tab', 'status', 'type', 'date_preset', 'date_from', 'date_to', 'employee_id', 'employee_label'].forEach((key) => {
+        if (state[key]) {
+            params.set(key, state[key]);
+        }
+    });
+
+    const query = params.toString();
+
+    return query ? `${basePath}?${query}` : basePath;
+};
+
+export const RETURN_URL_KEY = 'hrms_return_url';
+
+export const REQUEST_CATEGORY_RETURN_FALLBACKS = {
+    regularization: '/attendance/regularize',
+    'regularization-batch': '/attendance/regularize',
+    leave: '/leave',
+    expense: '/expenses',
+    expense_group: '/expenses',
+};
+
+export const saveReturnUrl = (url = window.location.href) => {
+    try {
+        sessionStorage.setItem(RETURN_URL_KEY, url);
+    } catch {
+        // Ignore storage errors (private browsing, etc.).
+    }
+};
+
+export const readReturnUrl = () => {
+    try {
+        const raw = sessionStorage.getItem(RETURN_URL_KEY);
+
+        if (!raw) {
+            return null;
+        }
+
+        const parsed = new URL(raw, window.location.origin);
+
+        if (parsed.origin !== window.location.origin) {
+            return null;
+        }
+
+        if (parsed.pathname === window.location.pathname && parsed.search === window.location.search) {
+            return null;
+        }
+
+        return parsed.href;
+    } catch {
+        return null;
+    }
+};
+
+export const readReturnUrlFromQuery = () => {
+    try {
+        const value = new URLSearchParams(window.location.search).get('return');
+
+        if (!value) {
+            return null;
+        }
+
+        const parsed = new URL(value, window.location.origin);
+
+        if (parsed.origin !== window.location.origin) {
+            return null;
+        }
+
+        return parsed.href;
+    } catch {
+        return null;
+    }
+};
+
+export const buildCategoryReturnUrl = (category, basePath = '/requests') => {
+    const path = REQUEST_CATEGORY_RETURN_FALLBACKS[category] || basePath;
+
+    if (path === '/requests') {
+        return buildRequestsReturnUrl(path);
+    }
+
+    return path;
+};
+
+export const resolveReturnUrl = (fallbackHref) => (
+    readReturnUrlFromQuery()
+    || readReturnUrl()
+    || fallbackHref
+);
+
+export const navigateBack = (fallbackHref) => {
+    window.location.href = resolveReturnUrl(fallbackHref);
+};
+
+export const bindBackButton = (buttonId, fallbackHref) => {
+    const button = document.getElementById(buttonId);
+
+    if (!button) {
+        return;
+    }
+
+    button.addEventListener('click', () => navigateBack(fallbackHref));
+};
+
+export const initReturnUrlCapture = () => {
+    document.addEventListener('click', (event) => {
+        const link = event.target.closest('a.table-action-btn--view[data-save-return]');
+
+        if (!link?.href) {
+            return;
+        }
+
+        try {
+            const target = new URL(link.href, window.location.origin);
+
+            if (target.origin !== window.location.origin) {
+                return;
+            }
+
+            if (target.pathname === window.location.pathname && target.search === window.location.search) {
+                return;
+            }
+
+            saveReturnUrl();
+        } catch {
+            // Ignore invalid URLs.
+        }
+    }, true);
 };
 
 export const applyBackendErrors = (form, errors, setError = setFieldError) => {

@@ -145,7 +145,7 @@ class ReportsService
         $query = Employee::query()
             ->with(['department', 'manager', 'shift'])
             ->where('company_id', $user->company_id)
-            ->orderBy('employee_code');
+            ->orderedByName();
 
         if (! empty($filters['status'])) {
             $query->where('status', $filters['status']);
@@ -189,7 +189,7 @@ class ReportsService
             ->with('department')
             ->where('company_id', $user->company_id)
             ->where('status', 'active')
-            ->orderBy('first_name');
+            ->orderedByName();
 
         if (! empty($filters['department_id'])) {
             $employeeQuery->where('department_id', $filters['department_id']);

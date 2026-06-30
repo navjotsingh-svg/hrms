@@ -18,6 +18,10 @@ class StoreAttendancePunchRequest extends FormRequest
             'latitude' => ['required', 'numeric', 'between:-90,90'],
             'longitude' => ['required', 'numeric', 'between:-180,180'],
             'location_name' => ['nullable', 'string', 'max:500'],
+            'face_match_score' => ['nullable', 'numeric', 'min:0', 'max:100'],
+            'selfie_face_descriptor' => ['nullable', 'array', 'min:64', 'max:2048'],
+            'selfie_face_descriptor.*' => ['numeric'],
+            'mac_address' => ['nullable', 'string', 'max:17'],
         ];
     }
 }

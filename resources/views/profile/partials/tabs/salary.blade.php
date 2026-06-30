@@ -108,66 +108,25 @@
                             <div class="form-text">Date from which the new salary is paid in payroll.</div>
                             <div class="invalid-feedback d-block" data-error="salary_payout_from"></div>
                         </div>
-                        <div class="col-md-6">
-                            <label for="profile_salary_basic_percent" class="form-label">Basic % <span class="text-danger">*</span></label>
-                            <div class="input-group">
-                                <input type="number" class="form-control profile-salary-input" id="profile_salary_basic_percent" min="1" max="100" step="0.01">
-                                <span class="input-group-text">%</span>
-                            </div>
-                            <div class="form-text">% of monthly CTC — <span id="profileBasicAmountPreview">₹ 0</span></div>
-                            <input type="hidden" id="profile_salary_basic_salary">
-                            <div class="invalid-feedback d-block" data-error="basic_salary"></div>
-                        </div>
-                        <div class="col-md-6">
-                            <label for="profile_salary_hra_percent" class="form-label">HRA %</label>
-                            <div class="input-group">
-                                <input type="number" class="form-control profile-salary-input" id="profile_salary_hra_percent" min="0" max="100" step="0.01" value="40">
-                                <span class="input-group-text">%</span>
-                            </div>
-                            <div class="form-text">% of monthly CTC — <span id="profileHraAmountPreview">₹ 0</span></div>
-                            <div class="invalid-feedback d-block" data-error="hra_percent"></div>
-                        </div>
-                        <div class="col-md-6">
-                            <label for="profile_salary_special_allowance_percent" class="form-label">Special Allowance (%)</label>
-                            <div class="input-group">
-                                <input type="number" class="form-control profile-salary-input" id="profile_salary_special_allowance_percent" min="0" max="100" step="0.01" value="0">
-                                <span class="input-group-text">%</span>
-                            </div>
-                            <div class="form-text">% of monthly CTC — <span id="profileSpecialAllowanceAmountPreview">₹ 0</span></div>
-                        </div>
                     </div>
 
-                    <div class="mt-4 mb-2">
-                        <h6 class="mb-1">Optional Salary Components</h6>
-                        <p class="text-muted small mb-3">Fixed monthly allowances added to the salary structure.</p>
+                    <div class="profile-info-card mt-4 mb-3">
+                        <h6 class="profile-info-card-title mb-2">Company Salary Structure</h6>
+                        <p class="text-muted small mb-3">Monthly components are calculated from company payroll settings based on the CTC above.</p>
+                        <dl class="profile-dl profile-dl-compact mb-0" id="profileSalaryStructureSummary"></dl>
                     </div>
+
                     <div class="row g-3">
-                        <div class="col-md-4">
-                            <label for="profile_salary_conveyance_allowance" class="form-label">Conveyance (₹)</label>
-                            <input type="number" class="form-control profile-salary-input" id="profile_salary_conveyance_allowance" min="0" step="0.01" value="0">
-                        </div>
-                        <div class="col-md-4">
-                            <label for="profile_salary_medical_allowance" class="form-label">Medical (₹)</label>
-                            <input type="number" class="form-control profile-salary-input" id="profile_salary_medical_allowance" min="0" step="0.01" value="0">
-                        </div>
-                        <div class="col-md-4">
-                            <label for="profile_salary_other_allowance" class="form-label">Other Allowance (₹)</label>
-                            <input type="number" class="form-control profile-salary-input" id="profile_salary_other_allowance" min="0" step="0.01" value="0">
-                        </div>
                         <div class="col-12">
-                            <div class="d-flex flex-wrap gap-4">
-                                <div class="form-check">
-                                    <input class="form-check-input" type="checkbox" id="profile_salary_pf_applicable" checked>
-                                    <label class="form-check-label" for="profile_salary_pf_applicable">PF Applicable</label>
-                                </div>
-                                <div class="form-check">
-                                    <input class="form-check-input" type="checkbox" id="profile_salary_esi_applicable">
-                                    <label class="form-check-label" for="profile_salary_esi_applicable">ESI Applicable</label>
-                                </div>
-                                <div class="form-check">
-                                    <input class="form-check-input" type="checkbox" id="profile_salary_professional_tax_applicable" checked>
-                                    <label class="form-check-label" for="profile_salary_professional_tax_applicable">Professional Tax</label>
-                                </div>
+                            <div class="alert alert-light border mb-0 py-2 px-3">
+                                <span class="small text-muted">Basic %, HRA, allowances, PF, ESI, and Professional Tax follow your company payroll settings. Configure them under <strong>Payroll → Payroll Settings</strong>.</span>
+                            </div>
+                        </div>
+                        <div class="col-12 d-none" id="profileSalaryStatutorySummary">
+                            <div class="d-flex flex-wrap gap-4 small text-muted">
+                                <span>PF: <strong id="profileSalaryPfLabel">—</strong></span>
+                                <span>ESI: <strong id="profileSalaryEsiLabel">—</strong></span>
+                                <span>Prof. Tax: <strong id="profileSalaryPtLabel">—</strong></span>
                             </div>
                         </div>
                         <div class="col-12">

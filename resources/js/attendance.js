@@ -1,5 +1,6 @@
 import { Modal } from 'bootstrap';
 import api, { getErrorMessage } from './api';
+import { renderAttendancePunchCard } from './attendance-punch-display';
 import {
     bindEmployeeSearchSelect,
     formatEmployeeLabel,
@@ -66,6 +67,10 @@ const statusClass = (status, awaitingPunchOut = false) => {
         return 'attendance-day--on-leave';
     }
 
+    if (status === 'wfh') {
+        return 'attendance-day--wfh';
+    }
+
     if (status === 'regularization_pending') {
         return 'attendance-day--regularization-pending';
     }
@@ -115,6 +120,10 @@ const statusBadgeLabel = (dayData) => {
         }
 
         return dayData.status_label || dayData.leave_type_name || 'On leave';
+    }
+
+    if (dayData.status === 'wfh') {
+        return dayData.status_label || dayData.leave_type_name || 'Work from home';
     }
 
     if (dayData.status === 'regularization_pending') {
@@ -579,7 +588,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                 continue;
             }
 
-            const approverNote = dayData.status === 'on_leave' && dayData.leave_approved_by_name
+            const approverNote = (dayData.status === 'on_leave' || dayData.status === 'wfh') && dayData.leave_approved_by_name
                 ? ` · Approved by ${dayData.leave_approved_by_name}`
                 : '';
             const joiningNote = dayData.is_joining_date ? ' · Joining date' : '';
@@ -588,7 +597,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                 : `${dayData.status_label || dayData.status}${approverNote}${joiningNote} · ${dayData.worked_hours_label} / ${dayData.required_hours_label}`;
             const dayContent = renderDayPunchTimes(dayData);
             const isInteractive = dayData.status !== 'before_portal'
-                && (dayData.status === 'on_leave' || dayData.status === 'holiday' || !dayData.is_future);
+                && (dayData.status === 'on_leave' || dayData.status === 'wfh' || dayData.status === 'holiday' || !dayData.is_future);
 
             if (isInteractive) {
                 cells.push(`
@@ -733,7 +742,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             ? `<div class="small mt-1">Approved by <strong>${payload.leave_approved_by_name}</strong>${payload.leave_approved_at_label ? ` on ${payload.leave_approved_at_label}` : ''}</div>`
             : '';
 
-        const leaveSection = payload.status === 'on_leave'
+        const leaveSection = (payload.status === 'on_leave' || payload.status === 'wfh')
             ? `
                 <div class="alert alert-info mb-3">
                     <div class="fw-semibold mb-1">Approved Leave</div>
@@ -776,6 +785,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                 || (payload.status === 'weekly_off' ? 'Weekly off day.' : null)
                 || (payload.status === 'regularization_pending' ? 'Regularization request is pending approval.' : null)
                 || (payload.status === 'on_leave' ? 'Approved leave for this day.' : null)
+                || (payload.status === 'wfh' ? 'Work from home approved — punch in/out to log your hours.' : null)
                 || 'No attendance recorded for this day.';
             dayModalBody.innerHTML = `
                 ${regularizationSection}
@@ -797,35 +807,10 @@ document.addEventListener('DOMContentLoaded', async () => {
             </div>
         `).join('');
 
-        const punches = payload.punches.map((punch) => {
-            const selfieBlock = punch.selfie_url
-                ? `<a href="${punch.selfie_url}" target="_blank" rel="noopener" class="small">Open selfie</a>`
-                : '<span class="small text-muted">Regularized</span>';
-            const imageBlock = punch.selfie_url
-                ? `<div class="col-md-4"><img src="${punch.selfie_url}" alt="${punch.punch_label} selfie" class="attendance-selfie-thumb"></div>`
-                : '';
-
-            return `
-            <div class="attendance-punch-card">
-                <div class="d-flex flex-wrap justify-content-between gap-2 mb-2">
-                    <div>
-                        <span class="badge ${punch.punch_type === 'in' ? 'text-bg-success' : 'text-bg-warning'}">${punch.punch_label}</span>
-                        ${punch.is_regularized ? '<span class="badge text-bg-info ms-1">Regularized</span>' : ''}
-                        <span class="ms-2 fw-semibold">${formatDateTime(punch.punched_at)}</span>
-                    </div>
-                    ${selfieBlock}
-                </div>
-                <div class="row g-3 align-items-start">
-                    ${imageBlock}
-                    <div class="${imageBlock ? 'col-md-8' : 'col-12'}">
-                        <div class="small text-muted mb-1">Location</div>
-                        <div class="mb-2">${punch.location_label}</div>
-                        ${punch.latitude || punch.longitude ? `<a href="https://www.google.com/maps?q=${punch.latitude},${punch.longitude}" target="_blank" rel="noopener" class="btn btn-sm btn-outline-secondary">View on map</a>` : ''}
-                    </div>
-                </div>
-            </div>
-        `;
-        }).join('');
+        const punches = payload.punches.map((punch) => renderAttendancePunchCard(punch, {
+            formatDateTime,
+            threshold: Number(payload.face_match_threshold) || 80,
+        })).join('');
 
         const statusSection = payload.awaiting_punch_out
             ? `

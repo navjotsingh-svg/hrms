@@ -27,6 +27,8 @@ class AttendanceService
         private GeocodingService $geocodingService,
         private LeaveRequestService $leaveRequestService,
         private EmployeeAccessService $employeeAccessService,
+        private FaceVerificationService $faceVerificationService,
+        private AttendanceNetworkService $attendanceNetworkService,
     ) {}
 
     public function canMarkAttendance(User $user): bool
@@ -57,16 +59,16 @@ class AttendanceService
         $query = Employee::query()
             ->where('company_id', $user->company_id)
             ->where('status', 'active')
-            ->orderBy('first_name');
+            ->orderedByName();
 
         if (! $this->canViewAllAttendance($user) && ! $this->canViewCompanyTeamAttendance($user)) {
-            $subordinateIds = $this->employeeAccessService->subordinateIdsForUser($user);
+            $scopeIds = $this->employeeAccessService->teamScopeEmployeeIds($user);
 
-            if ($subordinateIds === []) {
+            if ($scopeIds === []) {
                 return [];
             }
 
-            $query->whereIn('id', $subordinateIds);
+            $query->whereIn('id', $scopeIds);
         }
 
         return $query
@@ -163,11 +165,26 @@ class AttendanceService
             'awaiting_punch_out' => (bool) ($dayMeta['awaiting_punch_out'] ?? false),
             'expected_clock_out_at' => $dayMeta['expected_clock_out_at'] ?? null,
             'expected_clock_out_label' => $dayMeta['expected_clock_out_label'] ?? null,
+            'profile_photo_url' => $employee->profilePhotoUrl(),
+            'face_match_threshold' => $this->faceVerificationService->thresholdPercent((int) $employee->company_id),
+            'require_face_match' => $this->faceVerificationService->requiresFaceMatch((int) $employee->company_id),
+            'requires_profile_photo' => $this->faceVerificationService->requiresFaceMatch((int) $employee->company_id),
+            'has_profile_photo' => filled($employee->profile_photo_path),
+            'has_face_reference' => filled($employee->profile_face_descriptor),
         ];
     }
 
-    public function punch(User $user, UploadedFile $selfie, float $latitude, float $longitude, ?string $locationName = null): array
-    {
+    public function punch(
+        User $user,
+        UploadedFile $selfie,
+        float $latitude,
+        float $longitude,
+        ?string $locationName = null,
+        ?float $faceMatchScore = null,
+        ?array $selfieFaceDescriptor = null,
+        ?string $ipAddress = null,
+        ?string $macAddress = null,
+    ): array {
         if (! $this->canMarkAttendance($user)) {
             throw new AccessDeniedHttpException('You are not allowed to mark attendance.');
         }
@@ -202,6 +219,14 @@ class AttendanceService
             ]);
         }
 
+        $this->attendanceNetworkService->assertIpAllowed((int) $employee->company_id, $ipAddress);
+
+        $verifiedMatchScore = $this->faceVerificationService->assertPunchAllowed(
+            $employee,
+            $faceMatchScore,
+            $selfieFaceDescriptor,
+        );
+
         $relativeDirectory = AttendancePunch::PUBLIC_UPLOAD_DIR."/{$employee->company_id}/{$employee->id}";
         $selfiePath = $this->imageCompressor->compressAndSave(
             $selfie,
@@ -226,6 +251,9 @@ class AttendanceService
             'longitude' => $longitude,
             'location_name' => $locationName,
             'selfie_path' => $selfiePath,
+            'ip_address' => $ipAddress,
+            'mac_address' => $macAddress,
+            'face_match_score' => $verifiedMatchScore,
         ]);
 
         $updatedPunches = $this->punchesForDate($employee, $today);
@@ -649,6 +677,8 @@ class AttendanceService
             'leave_request_id' => $dayMeta['leave_request_id'] ?? null,
             'leave_approved_by_name' => $dayMeta['leave_approved_by_name'] ?? null,
             'leave_approved_at_label' => $dayMeta['leave_approved_at_label'] ?? null,
+            'face_match_threshold' => $this->faceVerificationService->thresholdPercent((int) $employee->company_id),
+            'require_face_match' => $this->faceVerificationService->requiresFaceMatch((int) $employee->company_id),
         ];
     }
 
@@ -674,8 +704,7 @@ class AttendanceService
             ->where('company_id', $companyId)
             ->where('status', 'active')
             ->with(['department', 'shift'])
-            ->orderBy('first_name')
-            ->orderBy('last_name')
+            ->orderedByName()
             ->get();
 
         $employeeIds = $employees->pluck('id');
@@ -830,17 +859,16 @@ class AttendanceService
         $query = Employee::query()
             ->where('company_id', $companyId)
             ->with(['department', 'shift'])
-            ->orderBy('first_name')
-            ->orderBy('last_name');
+            ->orderedByName();
 
         if (! $canViewAll && ! $canViewCompanyTeam) {
-            $subordinateIds = $this->employeeAccessService->subordinateIdsForUser($user);
+            $scopeIds = $this->employeeAccessService->teamScopeEmployeeIds($user);
 
-            if ($subordinateIds === []) {
+            if ($scopeIds === []) {
                 throw new AccessDeniedHttpException('You are not allowed to view team attendance.');
             }
 
-            $query->whereIn('id', $subordinateIds);
+            $query->whereIn('id', $scopeIds);
         }
 
         $status = $filters['status'] ?? 'active';
@@ -1294,16 +1322,23 @@ class AttendanceService
         $legacyLeaveRequest = $this->leaveRequestService->approvedLeaveRequestOnDate($employee, $dateString);
 
         if ($legacyLeaveRequest) {
+            $leaveType = $legacyLeaveRequest->leaveType;
+            $allowsPunch = $leaveType?->allowsAttendancePunch() ?? false;
+
             return array_merge([
-                'status' => 'on_leave',
-                'status_label' => $legacyLeaveRequest->leaveType?->name ?? 'On Leave',
+                'status' => $allowsPunch ? 'wfh' : 'on_leave',
+                'status_label' => $allowsPunch
+                    ? ($leaveType?->name ?? 'Work From Home')
+                    : ($legacyLeaveRequest->leaveType?->name ?? 'On Leave'),
                 'holiday_name' => null,
                 'worked_minutes' => $workedMinutes,
                 'required_minutes' => $requiredMinutes,
                 'punch_in_label' => $punchSummary['punch_in_label'],
                 'punch_out_label' => $punchSummary['punch_out_label'],
-                'can_mark' => false,
-                'day_message' => 'Approved leave for this day.',
+                'can_mark' => $allowsPunch,
+                'day_message' => $allowsPunch
+                    ? 'Work from home approved — punch in/out to log your hours.'
+                    : 'Approved leave for this day.',
                 'leave_type_name' => $legacyLeaveRequest->leaveType?->name,
                 'leave_session_label' => 'Full Day',
                 'leave_request_id' => $legacyLeaveRequest->id,
@@ -1394,17 +1429,23 @@ class AttendanceService
         array $punchSummary,
     ): array {
         $leaveDay->loadMissing('leaveRequest.leaveType', 'leaveRequest.reviewedBy');
+        $leaveType = $leaveDay->leaveRequest?->leaveType;
+        $allowsPunch = $leaveType?->allowsAttendancePunch() ?? false;
 
         return array_merge([
-            'status' => 'on_leave',
-            'status_label' => $this->leaveRequestService->leaveDayCalendarLabel($leaveDay),
+            'status' => $allowsPunch ? 'wfh' : 'on_leave',
+            'status_label' => $allowsPunch
+                ? ($leaveType?->name ?? 'Work From Home')
+                : $this->leaveRequestService->leaveDayCalendarLabel($leaveDay),
             'holiday_name' => null,
             'worked_minutes' => $workedMinutes,
             'required_minutes' => $requiredMinutes,
             'punch_in_label' => $punchSummary['punch_in_label'],
             'punch_out_label' => $punchSummary['punch_out_label'],
-            'can_mark' => false,
-            'day_message' => 'Approved leave for this day.',
+            'can_mark' => $allowsPunch,
+            'day_message' => $allowsPunch
+                ? 'Work from home approved — punch in/out to log your hours.'
+                : 'Approved leave for this day.',
             'leave_type_name' => $leaveDay->leaveRequest?->leaveType?->name,
             'leave_session_label' => $leaveDay->sessionLabel(),
             'leave_request_id' => $leaveDay->leave_request_id,
@@ -1460,6 +1501,7 @@ class AttendanceService
             'future' => 'Upcoming',
             'before_portal' => '',
             'on_leave' => 'On Leave',
+            'wfh' => 'Work From Home',
             'regularization_pending' => 'Regularization Pending',
             'incomplete' => 'In progress',
             default => ucfirst(str_replace('_', ' ', $status)),
@@ -1551,6 +1593,10 @@ class AttendanceService
             'location_name' => $punch->location_name,
             'location_label' => $punch->locationLabel(),
             'selfie_url' => $punch->selfie_path ? $punch->selfieUrl() : null,
+            'ip_address' => $punch->ip_address,
+            'mac_address' => $punch->mac_address,
+            'face_match_score' => $punch->face_match_score !== null ? (float) $punch->face_match_score : null,
+            'has_face_verification' => $punch->face_match_score !== null,
             'source' => $punch->source ?? AttendancePunch::SOURCE_LIVE,
             'is_regularized' => $punch->isRegularized(),
         ];

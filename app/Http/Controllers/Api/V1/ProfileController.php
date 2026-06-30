@@ -11,12 +11,14 @@ use App\Http\Requests\StoreEmployeeComplianceFieldRequest;
 use App\Http\Requests\StoreEmployeeFamilyMemberRequest;
 use App\Http\Requests\StoreEmployeePersonalSectionRequest;
 use App\Http\Requests\StoreEmployeePaymentMethodRequest;
+use App\Http\Requests\StoreEmployeeProfilePhotoRequest;
 use App\Http\Resources\EmployeeFamilyMemberResource;
 use App\Http\Resources\EmployeePersonalSectionResource;
 use App\Http\Resources\DocumentTypeResource;
 use App\Http\Resources\EmployeeComplianceFieldResource;
 use App\Http\Resources\EmployeeDocumentResource;
 use App\Http\Resources\EmployeePaymentMethodResource;
+use App\Http\Resources\EmployeeProfilePhotoResource;
 use App\Http\Resources\EmployeeProfileResource;
 use App\Http\Resources\UserResource;
 use App\Models\EmployeeDocument;
@@ -146,6 +148,31 @@ class ProfileController extends Controller
                     : ($result['is_resubmit']
                         ? 'Payment option re-submitted successfully. It is pending approval again.'
                         : 'Payment option submitted successfully. It is pending approval.')),
+            201
+        );
+    }
+
+    public function storeProfilePhoto(StoreEmployeeProfilePhotoRequest $request): JsonResponse
+    {
+        $employee = $this->employeeProfileService->resolveEmployee($request->user());
+        $result = $this->employeeProfileService->submitProfilePhoto(
+            $request->user(),
+            $employee,
+            $request->file('photo'),
+        );
+
+        $employee = $this->employeeProfileService->loadProfile($employee->fresh());
+
+        return $this->success(
+            [
+                'employee' => new EmployeeProfileResource($employee),
+                'profile_photo' => new EmployeeProfilePhotoResource($result['profile_photo']),
+            ],
+            ! empty($result['auto_approved'])
+                ? 'Profile photo saved successfully.'
+                : ($result['is_resubmit']
+                    ? 'Profile photo re-submitted. Pending for approval from management.'
+                    : 'Profile photo submitted. Pending for approval from management.'),
             201
         );
     }

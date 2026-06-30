@@ -29,6 +29,8 @@ class Employee extends Model
         'personal_email',
         'phone',
         'designation',
+        'profile_photo_path',
+        'profile_face_descriptor',
         'joining_date',
         'portal_access_date',
         'gender',
@@ -70,6 +72,7 @@ class Employee extends Model
             'date_of_birth' => 'date',
             'probation_applicable' => 'boolean',
             'probation_end_date' => 'date',
+            'profile_face_descriptor' => 'array',
         ];
     }
 
@@ -106,6 +109,20 @@ class Employee extends Model
     public function directReports(): HasMany
     {
         return $this->hasMany(Employee::class, 'manager_id');
+    }
+
+    public function profilePhotoSubmission(): HasOne
+    {
+        return $this->hasOne(EmployeeProfilePhoto::class);
+    }
+
+    public function profilePhotoUrl(): ?string
+    {
+        if (! $this->profile_photo_path) {
+            return null;
+        }
+
+        return '/'.ltrim($this->profile_photo_path, '/');
     }
 
     public function projects(): BelongsToMany
@@ -234,6 +251,17 @@ class Employee extends Model
     public function getFullNameAttribute(): string
     {
         return trim("{$this->first_name} {$this->last_name}");
+    }
+
+    /**
+     * Sort employees alphabetically by display name.
+     */
+    public function scopeOrderedByName($query)
+    {
+        return $query
+            ->orderBy('first_name')
+            ->orderBy('last_name')
+            ->orderBy('employee_code');
     }
 
     public function getFullAddressAttribute(): string

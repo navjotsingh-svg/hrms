@@ -20,6 +20,7 @@ class EmployeeProfileService
         private EmployeeComplianceFieldService $complianceFieldService,
         private EmployeePersonalSectionService $personalSectionService,
         private EmployeeFamilyMemberService $familyMemberService,
+        private EmployeeProfilePhotoService $profilePhotoService,
         private EmployeeService $employeeService,
         private EmployeeAssetService $employeeAssetService,
     ) {}
@@ -55,8 +56,11 @@ class EmployeeProfileService
             'departments',
             'role',
             'manager',
+            'directReports' => fn ($query) => $query->orderedByName(),
             'shift',
             'company',
+            'profilePhotoSubmission.submittedBy.role',
+            'profilePhotoSubmission.reviewedBy',
             'salary',
             'salaryRevisions.revisedBy',
             'paymentMethods.submittedBy.role',
@@ -146,6 +150,11 @@ class EmployeeProfileService
         return $this->paymentMethodService->submit($user, $employee, $data, $proofFiles);
     }
 
+    public function submitProfilePhoto(User $user, Employee $employee, \Illuminate\Http\UploadedFile $photo): array
+    {
+        return $this->profilePhotoService->submit($user, $employee, $photo);
+    }
+
     public function downloadPaymentMethodProof(User $user, Employee $employee, EmployeePaymentMethodProof $proof): array
     {
         if ((int) $proof->employee_id !== (int) $employee->id) {
@@ -209,10 +218,22 @@ class EmployeeProfileService
             $items[] = [
                 'type' => 'payment_method',
                 'id' => $method->id,
-                'label' => 'Payment Method',
+                'label' => 'Bank Details',
                 'summary' => ucfirst(str_replace('_', ' ', $method->payment_mode)),
                 'submitted_at' => $method->submitted_at?->toIso8601String(),
                 'can_review' => $user->canReviewPaymentMethod($method),
+            ];
+        }
+
+        if ($employee->profilePhotoSubmission?->status === 'pending') {
+            $photo = $employee->profilePhotoSubmission;
+            $items[] = [
+                'type' => 'profile_photo',
+                'id' => $photo->id,
+                'label' => 'Profile Photo',
+                'summary' => 'Face recognition photo',
+                'submitted_at' => $photo->submitted_at?->toIso8601String(),
+                'can_review' => $user->canReviewProfilePhoto($photo),
             ];
         }
 

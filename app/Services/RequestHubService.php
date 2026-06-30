@@ -3,11 +3,13 @@
 namespace App\Services;
 
 use App\Models\AttendanceRegularizationRequest;
+use App\Models\Employee;
 use App\Models\EmployeeComplianceField;
 use App\Models\EmployeeDocument;
 use App\Models\EmployeeFamilyMember;
 use App\Models\EmployeePaymentMethod;
 use App\Models\EmployeePaymentMethodProof;
+use App\Models\EmployeeProfilePhoto;
 use App\Models\EmployeePersonalSection;
 use App\Models\Expense;
 use App\Models\ExpenseGroup;
@@ -26,12 +28,14 @@ class RequestHubService
         private AttendanceRegularizationService $regularizationService,
         private EmployeeDocumentService $employeeDocumentService,
         private EmployeePaymentMethodService $employeePaymentMethodService,
+        private EmployeeProfilePhotoService $employeeProfilePhotoService,
         private EmployeeFamilyMemberService $employeeFamilyMemberService,
         private EmployeePersonalSectionService $employeePersonalSectionService,
         private EmployeeComplianceFieldService $employeeComplianceFieldService,
         private ExpenseService $expenseService,
         private ExpenseGroupService $expenseGroupService,
         private HiringService $hiringService,
+        private EmployeeAccessService $employeeAccessService,
     ) {}
 
     public function summaryForUser(User $user): array
@@ -144,6 +148,10 @@ class RequestHubService
                 $items->push($this->normalizePaymentMethod($method, $user->canReviewPaymentMethod($method)));
             });
 
+            $this->employeeProfilePhotoService->pendingForReviewer($user)->each(function (EmployeeProfilePhoto $photo) use ($items, $user) {
+                $items->push($this->normalizeProfilePhoto($photo, $user->canReviewProfilePhoto($photo)));
+            });
+
             $this->employeeFamilyMemberService->pendingForReviewer($user)->each(function (EmployeeFamilyMember $member) use ($items, $user) {
                 $items->push($this->normalizeFamilyMember($member, $user->canReviewFamilyMember($member)));
             });
@@ -185,7 +193,7 @@ class RequestHubService
             return [];
         }
 
-        $statuses = $status ? [$status] : ['approved', 'rejected', 'cancelled'];
+        $statuses = $status ? [$status] : ['pending', 'approved', 'rejected', 'cancelled'];
         $items = collect();
 
         if ($user->canApproveLeave()) {
@@ -310,7 +318,7 @@ class RequestHubService
     public function mineForUser(User $user, ?string $status = null): array
     {
         $items = collect();
-        $employeeId = $user->employee?->id;
+        $employeeId = app(EmployeeAccessService::class)->linkedEmployee($user)?->id;
 
         if ($user->canViewLeaveRequests()) {
             $leaveQuery = LeaveRequest::query()
@@ -424,6 +432,7 @@ class RequestHubService
         return match ($category) {
             'document' => $this->showDocument($user, (int) $entityId),
             'payment_method' => $this->showPaymentMethod($user, (int) $entityId),
+            'profile_photo' => $this->showProfilePhoto($user, (int) $entityId),
             'family_member' => $this->showFamilyMember($user, (int) $entityId),
             'personal_section' => $this->showPersonalSection($user, (int) $entityId),
             'compliance_field' => $this->showComplianceField($user, (int) $entityId),
@@ -510,28 +519,20 @@ class RequestHubService
 
     private function canViewTeamLeave(User $user, LeaveRequest $request): bool
     {
-        if (! $user->canViewLeaveRequest($request)) {
+        $request->loadMissing('employee');
+
+        if (! $this->canViewTeamEmployeeRequest($user, $request->employee)) {
             return false;
         }
 
-        if ($user->employee && (int) $user->employee->id === (int) $request->employee_id) {
-            return false;
-        }
-
-        return true;
+        return $user->canViewLeaveRequest($request);
     }
 
     private function canViewTeamRegularization(User $user, AttendanceRegularizationRequest $request): bool
     {
-        if ((int) $request->company_id !== (int) $user->company_id) {
-            return false;
-        }
+        $request->loadMissing('employee');
 
-        if ($user->employee && (int) $user->employee->id === (int) $request->employee_id) {
-            return false;
-        }
-
-        if ($user->isHrManager() && ! $user->isCompanyAdmin() && $user->employee && (int) $user->employee->id === (int) $request->employee_id) {
+        if (! $this->canViewTeamEmployeeRequest($user, $request->employee)) {
             return false;
         }
 
@@ -540,7 +541,8 @@ class RequestHubService
         }
 
         return $user->canApproveRegularization()
-            && $user->isDirectReportingManagerOfEmployee($request->employee);
+            || $user->canApproveLeave()
+            || $user->hasPermission('attendance.regularize');
     }
 
     private function canViewTeamDocument(User $user, EmployeeDocument $document): bool
@@ -549,15 +551,17 @@ class RequestHubService
             return false;
         }
 
-        if ($user->isHrManager() && ! $user->isCompanyAdmin() && $user->employee && (int) $user->employee->id === (int) $document->employee_id) {
-            return false;
-        }
-
         if ($document->uploadedBy?->isHrManager()) {
             return $user->isCompanyAdmin();
         }
 
-        return $user->canReviewEmployeeDocuments();
+        if (! $user->canReviewEmployeeDocuments()) {
+            return false;
+        }
+
+        $document->loadMissing('employee');
+
+        return $this->canViewTeamEmployeeRequest($user, $document->employee);
     }
 
     private function canViewTeamPaymentMethod(User $user, EmployeePaymentMethod $method): bool
@@ -566,15 +570,17 @@ class RequestHubService
             return false;
         }
 
-        if ($user->isHrManager() && ! $user->isCompanyAdmin() && $user->employee && (int) $user->employee->id === (int) $method->employee_id) {
-            return false;
-        }
-
         if ($method->submittedBy?->isHrManager()) {
             return $user->isCompanyAdmin();
         }
 
-        return $user->canReviewEmployeeDocuments();
+        if (! $user->canReviewEmployeeDocuments()) {
+            return false;
+        }
+
+        $method->loadMissing('employee');
+
+        return $this->canViewTeamEmployeeRequest($user, $method->employee);
     }
 
     private function canViewTeamFamilyMember(User $user, EmployeeFamilyMember $member): bool
@@ -583,15 +589,17 @@ class RequestHubService
             return false;
         }
 
-        if ($user->isHrManager() && ! $user->isCompanyAdmin() && $user->employee && (int) $user->employee->id === (int) $member->employee_id) {
-            return false;
-        }
-
         if ($member->submittedBy?->isHrManager()) {
             return $user->isCompanyAdmin();
         }
 
-        return $user->canReviewEmployeeDocuments();
+        if (! $user->canReviewEmployeeDocuments()) {
+            return false;
+        }
+
+        $member->loadMissing('employee');
+
+        return $this->canViewTeamEmployeeRequest($user, $member->employee);
     }
 
     private function canViewTeamPersonalSection(User $user, EmployeePersonalSection $section): bool
@@ -600,15 +608,17 @@ class RequestHubService
             return false;
         }
 
-        if ($user->isHrManager() && ! $user->isCompanyAdmin() && $user->employee && (int) $user->employee->id === (int) $section->employee_id) {
-            return false;
-        }
-
         if ($section->submittedBy?->isHrManager()) {
             return $user->isCompanyAdmin();
         }
 
-        return $user->canReviewEmployeeDocuments();
+        if (! $user->canReviewEmployeeDocuments()) {
+            return false;
+        }
+
+        $section->loadMissing('employee');
+
+        return $this->canViewTeamEmployeeRequest($user, $section->employee);
     }
 
     private function canViewTeamComplianceField(User $user, EmployeeComplianceField $field): bool
@@ -617,15 +627,17 @@ class RequestHubService
             return false;
         }
 
-        if ($user->isHrManager() && ! $user->isCompanyAdmin() && $user->employee && (int) $user->employee->id === (int) $field->employee_id) {
-            return false;
-        }
-
         if ($field->submittedBy?->isHrManager()) {
             return $user->isCompanyAdmin();
         }
 
-        return $user->canReviewEmployeeDocuments();
+        if (! $user->canReviewEmployeeDocuments()) {
+            return false;
+        }
+
+        $field->loadMissing('employee');
+
+        return $this->canViewTeamEmployeeRequest($user, $field->employee);
     }
 
     /**
@@ -916,7 +928,7 @@ class RequestHubService
 
     private function normalizePaymentMethod(EmployeePaymentMethod $method, bool $canReview): array
     {
-        $paymentLabel = ucfirst(str_replace('_', ' ', $method->payment_mode ?? 'Payment Method'));
+        $paymentLabel = 'Bank details';
 
         return [
             'key' => 'payment_method:'.$method->id,
@@ -943,6 +955,59 @@ class RequestHubService
             ...$this->reviewMeta($method),
             ...$this->submissionMeta($method),
         ];
+    }
+
+    private function normalizeProfilePhoto(EmployeeProfilePhoto $photo, bool $canReview): array
+    {
+        return [
+            'key' => 'profile_photo:'.$photo->id,
+            'category' => 'profile_photo',
+            'category_label' => 'Profile Photo',
+            'entity_id' => $photo->id,
+            'batch_id' => null,
+            'requester_name' => $photo->employee?->full_name ?? 'Employee',
+            'requester_code' => $photo->employee?->employee_code,
+            'employee_id' => $photo->employee_id,
+            'subject' => 'Profile Photo',
+            'detail' => null,
+            'reason' => $photo->notes,
+            'status' => $photo->status,
+            'status_label' => ucfirst($photo->status),
+            'submitted_at_label' => ($photo->submitted_at ?? $photo->created_at)?->format('d M Y, h:i A'),
+            'sort_at' => ($photo->reviewed_at ?? $photo->submitted_at ?? $photo->created_at)?->timestamp ?? 0,
+            'can_review' => $canReview,
+            'can_cancel' => false,
+            'view_url' => $this->requestShowUrl('profile_photo', (string) $photo->id),
+            'review_kind' => 'profile_photo',
+            'review_target' => (string) $photo->id,
+            'attachments' => [[
+                'id' => $photo->id,
+                'label' => 'View profile photo',
+                'file_url' => '/api/v1/employee-profile-photos/'.$photo->id.'/download',
+                'download_url' => '/api/v1/employee-profile-photos/'.$photo->id.'/download',
+                'mime_type' => $photo->mime_type,
+            ]],
+            ...$this->reviewMeta($photo),
+            ...$this->submissionMeta($photo),
+        ];
+    }
+
+    private function showProfilePhoto(User $user, int $id): array
+    {
+        $photo = EmployeeProfilePhoto::query()
+            ->with(['employee', 'submittedBy', 'reviewedBy'])
+            ->where('company_id', $user->company_id)
+            ->find($id);
+
+        if (! $photo) {
+            throw new NotFoundHttpException('Request not found.');
+        }
+
+        $this->assertCanViewProfileItem($user, $photo, fn (User $viewer, EmployeeProfilePhoto $item) => $viewer->canViewProfilePhotoRequest($item));
+
+        $item = $this->normalizeProfilePhoto($photo, $user->canReviewProfilePhoto($photo));
+
+        return $item;
     }
 
     private function normalizeFamilyMember(EmployeeFamilyMember $member, bool $canReview): array
@@ -1126,20 +1191,59 @@ class RequestHubService
 
     private function canViewTeamExpense(User $user, Expense $expense): bool
     {
-        if (! $user->canViewExpense($expense)) {
+        $expense->loadMissing('employee');
+
+        if (! $this->canViewTeamEmployeeRequest($user, $expense->employee)) {
             return false;
         }
 
-        return ! ($user->employee && (int) $user->employee->id === (int) $expense->employee_id);
+        return $user->canViewExpense($expense);
     }
 
     private function canViewTeamExpenseGroup(User $user, ExpenseGroup $group): bool
     {
-        if (! $user->canViewExpenseGroup($group)) {
+        $group->loadMissing('employee');
+
+        if (! $this->canViewTeamEmployeeRequest($user, $group->employee)) {
             return false;
         }
 
-        return ! ($user->employee && (int) $user->employee->id === (int) $group->employee_id);
+        return $user->canViewExpenseGroup($group);
+    }
+
+    private function canViewTeamEmployeeRequest(User $user, ?Employee $employee): bool
+    {
+        if (! $employee) {
+            return false;
+        }
+
+        if ((int) $employee->company_id !== (int) $user->company_id) {
+            return false;
+        }
+
+        $linkedEmployee = $this->employeeAccessService->linkedEmployee($user);
+
+        if ($linkedEmployee && (int) $linkedEmployee->id === (int) $employee->id) {
+            return false;
+        }
+
+        if ($user->isCompanyAdmin() || $user->isHrManager()) {
+            return true;
+        }
+
+        if ($this->employeeAccessService->canViewAll($user)) {
+            return true;
+        }
+
+        if ($user->hasPermission('leave.manage') || $user->hasPermission('attendance.manage')) {
+            return true;
+        }
+
+        return in_array(
+            (int) $employee->id,
+            $this->employeeAccessService->subordinateIdsForUser($user),
+            true,
+        );
     }
 
     private function requestShowUrl(string $category, string $id): string
@@ -1160,6 +1264,7 @@ class RequestHubService
                 'regularization_batch' => $this->regularizationService->approveBatch($user, $target, $notes),
                 'document' => $this->employeeDocumentService->approve($user, EmployeeDocument::query()->findOrFail((int) $target), $notes),
                 'payment_method' => $this->employeePaymentMethodService->approve($user, EmployeePaymentMethod::query()->findOrFail((int) $target), $notes),
+                'profile_photo' => $this->employeeProfilePhotoService->approve($user, EmployeeProfilePhoto::query()->findOrFail((int) $target), $notes),
                 'family_member' => $this->employeeFamilyMemberService->approve($user, EmployeeFamilyMember::query()->findOrFail((int) $target), $notes),
                 'personal_section' => $this->employeePersonalSectionService->approve($user, EmployeePersonalSection::query()->findOrFail((int) $target), $notes),
                 'compliance_field' => $this->employeeComplianceFieldService->approve($user, EmployeeComplianceField::query()->findOrFail((int) $target), $notes),
@@ -1178,6 +1283,7 @@ class RequestHubService
             'regularization_batch' => $this->regularizationService->rejectBatch($user, $target, (string) $notes),
             'document' => $this->employeeDocumentService->reject($user, EmployeeDocument::query()->findOrFail((int) $target), (string) $notes),
             'payment_method' => $this->employeePaymentMethodService->reject($user, EmployeePaymentMethod::query()->findOrFail((int) $target), (string) $notes),
+            'profile_photo' => $this->employeeProfilePhotoService->reject($user, EmployeeProfilePhoto::query()->findOrFail((int) $target), (string) $notes),
             'family_member' => $this->employeeFamilyMemberService->reject($user, EmployeeFamilyMember::query()->findOrFail((int) $target), (string) $notes),
             'personal_section' => $this->employeePersonalSectionService->reject($user, EmployeePersonalSection::query()->findOrFail((int) $target), (string) $notes),
             'compliance_field' => $this->employeeComplianceFieldService->reject($user, EmployeeComplianceField::query()->findOrFail((int) $target), (string) $notes),
@@ -1219,7 +1325,7 @@ class RequestHubService
             throw new NotFoundHttpException('Request not found.');
         }
 
-        $this->assertCanViewProfileItem($user, $document, fn (User $viewer, EmployeeDocument $item) => $viewer->canReviewDocument($item));
+        $this->assertCanViewProfileItem($user, $document, fn (User $viewer, EmployeeDocument $item) => $viewer->canViewDocumentRequest($item));
 
         return $this->enrichDocumentDetail(
             $this->normalizeDocument($document, $user->canReviewDocument($document)),
@@ -1238,7 +1344,7 @@ class RequestHubService
             throw new NotFoundHttpException('Request not found.');
         }
 
-        $this->assertCanViewProfileItem($user, $method, fn (User $viewer, EmployeePaymentMethod $item) => $viewer->canReviewPaymentMethod($item));
+        $this->assertCanViewProfileItem($user, $method, fn (User $viewer, EmployeePaymentMethod $item) => $viewer->canViewPaymentMethodRequest($item));
 
         return $this->enrichPaymentMethodDetail(
             $this->normalizePaymentMethod($method, $user->canReviewPaymentMethod($method)),
@@ -1257,7 +1363,7 @@ class RequestHubService
             throw new NotFoundHttpException('Request not found.');
         }
 
-        $this->assertCanViewProfileItem($user, $member, fn (User $viewer, EmployeeFamilyMember $item) => $viewer->canReviewFamilyMember($item));
+        $this->assertCanViewProfileItem($user, $member, fn (User $viewer, EmployeeFamilyMember $item) => $viewer->canViewFamilyMemberRequest($item));
 
         $item = $this->normalizeFamilyMember($member, $user->canReviewFamilyMember($member));
         $item['fields'] = array_values(array_filter([
@@ -1281,7 +1387,7 @@ class RequestHubService
             throw new NotFoundHttpException('Request not found.');
         }
 
-        $this->assertCanViewProfileItem($user, $section, fn (User $viewer, EmployeePersonalSection $item) => $viewer->canReviewPersonalSection($item));
+        $this->assertCanViewProfileItem($user, $section, fn (User $viewer, EmployeePersonalSection $item) => $viewer->canViewPersonalSectionRequest($item));
 
         $item = $this->normalizePersonalSection($section, $user->canReviewPersonalSection($section));
         $item['fields'] = $this->personalSectionFields($section);
@@ -1300,7 +1406,7 @@ class RequestHubService
             throw new NotFoundHttpException('Request not found.');
         }
 
-        $this->assertCanViewProfileItem($user, $field, fn (User $viewer, EmployeeComplianceField $item) => $viewer->canReviewComplianceField($item));
+        $this->assertCanViewProfileItem($user, $field, fn (User $viewer, EmployeeComplianceField $item) => $viewer->canViewComplianceFieldRequest($item));
 
         $item = $this->normalizeComplianceField($field, $user->canReviewComplianceField($field));
         $item['fields'] = [

@@ -75,16 +75,33 @@ class AttendanceRegularizationService
 
     private function applyListFilters($query, User $user, array $filters): void
     {
-        if (! $user->canViewAllAttendance()) {
-            $employeeId = $user->employee?->id;
+        $employeeAccess = app(EmployeeAccessService::class);
 
-            if (! $employeeId) {
+        if ($user->canViewAllAttendance()) {
+            if (! empty($filters['employee_id'])) {
+                $query->where('employee_id', (int) $filters['employee_id']);
+            }
+        } elseif ($user->canApproveLeave() || $user->hasPermission('attendance.regularize')) {
+            $employee = $employeeAccess->linkedEmployee($user);
+
+            if (! $employee) {
                 throw new AccessDeniedHttpException('No employee profile is linked to your account.');
             }
 
-            $query->where('employee_id', $employeeId);
-        } elseif (! empty($filters['employee_id'])) {
-            $query->where('employee_id', (int) $filters['employee_id']);
+            $visibleEmployeeIds = array_values(array_unique([
+                ...$employeeAccess->subordinateIdsForUser($user),
+                $employee->id,
+            ]));
+
+            $query->whereIn('employee_id', $visibleEmployeeIds);
+        } else {
+            $employee = $employeeAccess->linkedEmployee($user);
+
+            if (! $employee) {
+                throw new AccessDeniedHttpException('No employee profile is linked to your account.');
+            }
+
+            $query->where('employee_id', $employee->id);
         }
 
         if (! empty($filters['status'])) {
@@ -120,10 +137,6 @@ class AttendanceRegularizationService
 
     public function pendingForReviewer(User $user): Collection
     {
-        if (! $user->canApproveRegularization()) {
-            return collect();
-        }
-
         return AttendanceRegularizationRequest::query()
             ->with(['employee', 'appliedBy'])
             ->where('company_id', $user->company_id)
@@ -624,6 +637,7 @@ class AttendanceRegularizationService
         $lastOut = $punches->where('punch_type', AttendancePunch::TYPE_OUT)->last();
         $workedMinutes = (int) ($dayMeta['worked_minutes'] ?? 0);
         $requiredMinutes = (int) ($dayMeta['required_minutes'] ?? 0);
+        $hasPunchOut = $lastOut !== null;
 
         return [
             'date' => $dateString,
@@ -632,15 +646,16 @@ class AttendanceRegularizationService
             'status' => $dayMeta['status'],
             'status_label' => $this->statusLabel($dayMeta['status']),
             'punch_in_label' => $dayMeta['punch_in_label'],
-            'punch_out_label' => $dayMeta['punch_out_label'],
+            'punch_out_label' => $hasPunchOut ? $dayMeta['punch_out_label'] : null,
+            'has_punch_out' => $hasPunchOut,
             'worked_hours_label' => $this->formatMinutes($workedMinutes),
             'required_hours_label' => $this->formatMinutes($requiredMinutes),
             'suggested_punch_in' => $firstIn
                 ? $firstIn->punched_at->format('H:i')
                 : $this->shiftTime($employee, 'start'),
-            'suggested_punch_out' => $lastOut
+            'suggested_punch_out' => $hasPunchOut
                 ? $lastOut->punched_at->format('H:i')
-                : $this->shiftTime($employee, 'end'),
+                : null,
         ];
     }
 

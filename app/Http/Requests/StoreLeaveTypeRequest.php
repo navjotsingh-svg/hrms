@@ -38,6 +38,7 @@ class StoreLeaveTypeRequest extends FormRequest
             'allowed_hourly_durations' => ['nullable', 'array', 'max:10'],
             'allowed_hourly_durations.*' => ['integer', 'min:15', 'max:480'],
             'is_paid' => ['required', 'boolean'],
+            'allows_attendance_punch' => ['required', 'boolean'],
             'requires_proof' => ['required', 'boolean'],
             'color' => ['nullable', 'string', 'max:20'],
             'sort_order' => ['nullable', 'integer', 'min:0', 'max:999'],

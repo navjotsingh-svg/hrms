@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Mail\WorkflowActionMail;
 use App\Models\AttendanceRegularizationRequest;
 use App\Models\EmployeeDocument;
+use App\Models\EmployeeProfilePhoto;
 use App\Models\LeaveRequest;
 use App\Models\User;
 use App\Models\UserNotification;
@@ -122,13 +123,13 @@ class WorkflowNotificationService
             $request->reason ?: '—',
         ));
 
-        $this->notifyStakeholders(
-            employee: $employee,
+        $this->notifyHrAndAdminStakeholders(
+            companyId: (int) $employee->company_id,
             exclude: $submittedBy,
             type: UserNotification::TYPE_REGULARIZATION_SUBMITTED,
             title: 'Attendance regularization request',
             body: $body,
-            actionUrl: route('web.attendance.regularize.index'),
+            actionUrl: route('web.requests.show', ['category' => 'regularization', 'id' => $request->id]),
             relatedType: 'attendance_regularization',
             relatedId: $request->id,
             emailSubject: 'Attendance regularization submitted – '.$employee->full_name,
@@ -278,12 +279,92 @@ class WorkflowNotificationService
             type: UserNotification::TYPE_REGULARIZATION_DECISION,
             title: 'Regularization '.$statusLabel,
             body: $body,
-            actionUrl: route('web.attendance.regularize.index'),
+            actionUrl: route('web.requests.show', ['category' => 'regularization', 'id' => $request->id]),
             relatedType: 'attendance_regularization',
             relatedId: $request->id,
             emailSubject: 'Attendance regularization '.$statusLabel.' – '.$dateLabel,
             emailIntro: 'Your attendance regularization request has been '.$statusLabel.'.',
             emailDetails: $details,
+        );
+    }
+
+    public function notifyProfilePhotoSubmitted(EmployeeProfilePhoto $photo, User $submittedBy): void
+    {
+        if ($photo->status !== 'pending') {
+            return;
+        }
+
+        $photo->loadMissing(['employee']);
+
+        $employee = $photo->employee;
+
+        if (! $employee) {
+            return;
+        }
+
+        $body = sprintf(
+            '%s submitted a profile photo for approval.',
+            $employee->full_name,
+        );
+
+        $this->notifyStakeholders(
+            employee: $employee,
+            exclude: $submittedBy,
+            type: UserNotification::TYPE_PROFILE_PHOTO_SUBMITTED,
+            title: 'Profile photo approval',
+            body: $body,
+            actionUrl: route('web.requests.show', ['category' => 'profile_photo', 'id' => $photo->id]),
+            relatedType: 'employee_profile_photo',
+            relatedId: $photo->id,
+            emailSubject: 'Profile photo submitted – '.$employee->full_name,
+            emailIntro: 'An employee profile photo is pending your approval.',
+            emailDetails: [
+                'Employee' => $employee->full_name,
+                'Status' => 'Pending approval',
+            ],
+        );
+    }
+
+    public function notifyProfilePhotoDecision(EmployeeProfilePhoto $photo, User $reviewedBy, string $decision): void
+    {
+        $photo->loadMissing(['employee.user', 'submittedBy']);
+
+        $employee = $photo->employee;
+
+        if (! $employee) {
+            return;
+        }
+
+        $approved = $decision === 'approved';
+        $statusLabel = $approved ? 'approved' : 'rejected';
+        $body = sprintf(
+            'Your profile photo has been %s by %s.',
+            $statusLabel,
+            $reviewedBy->name,
+        );
+
+        $details = [
+            'Status' => ucfirst($statusLabel),
+            'Reviewed by' => $reviewedBy->name,
+        ];
+
+        if (! $approved && filled($photo->notes)) {
+            $details['Reason'] = $photo->notes;
+        }
+
+        $this->notifyApplicant(
+            applicant: $photo->submittedBy ?? $employee->user,
+            companyId: (int) $employee->company_id,
+            type: UserNotification::TYPE_PROFILE_PHOTO_DECISION,
+            title: 'Profile photo '.$statusLabel,
+            body: $body,
+            actionUrl: route('web.profile'),
+            relatedType: 'employee_profile_photo',
+            relatedId: $photo->id,
+            emailSubject: 'Profile photo '.$statusLabel,
+            emailIntro: 'Your profile photo request has been '.$statusLabel.'.',
+            emailDetails: $details,
+            actionLabel: 'View profile',
         );
     }
 
@@ -348,6 +429,54 @@ class WorkflowNotificationService
         $request->loadMissing(['appliedBy', 'employee.user']);
 
         return $request->appliedBy ?? $request->employee?->user;
+    }
+
+    /** @param  array<string, string>  $emailDetails */
+    private function notifyHrAndAdminStakeholders(
+        int $companyId,
+        ?User $exclude,
+        string $type,
+        string $title,
+        string $body,
+        string $actionUrl,
+        string $relatedType,
+        int $relatedId,
+        string $emailSubject,
+        string $emailIntro,
+        array $emailDetails,
+    ): void {
+        $recipients = $this->recipientService->hrAndAdminRecipientsForCompany($companyId, $exclude);
+
+        foreach ($recipients as $recipient) {
+            $this->persistNotification(
+                companyId: $companyId,
+                userId: $recipient->id,
+                type: $type,
+                title: $title,
+                body: $body,
+                actionUrl: $actionUrl,
+                relatedType: $relatedType,
+                relatedId: $relatedId,
+            );
+
+            try {
+                Mail::to($recipient->email)->send(new WorkflowActionMail(
+                    recipientName: $recipient->name,
+                    subjectLine: $emailSubject,
+                    intro: $emailIntro,
+                    details: $emailDetails,
+                    actionUrl: $actionUrl,
+                    actionLabel: 'Review request',
+                ));
+            } catch (\Throwable $exception) {
+                Log::warning('Workflow notification email failed.', [
+                    'recipient_id' => $recipient->id,
+                    'type' => $type,
+                    'related_id' => $relatedId,
+                    'message' => $exception->getMessage(),
+                ]);
+            }
+        }
     }
 
     /** @param  array<string, string>  $emailDetails */

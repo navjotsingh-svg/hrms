@@ -37,7 +37,7 @@
                         </div>
                         <div class="col-md-6">
                             <label for="punch_out_time" class="form-label">New logout (punch out)</label>
-                            <input type="time" class="form-control" id="punch_out_time" name="punch_out_time">
+                            <input type="time" class="form-control" id="punch_out_time" name="punch_out_time" placeholder="Required if logout was missed">
                         </div>
                     </div>
                     <div class="mb-0">

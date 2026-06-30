@@ -1,4 +1,4 @@
-import { Modal } from 'bootstrap';
+import { Modal, Tab } from 'bootstrap';
 import api, { getErrorMessage } from './api';
 import { setSubmitLoading } from './form-utils';
 import { renderReviewIconActionGroup, renderViewDocumentIconButton, renderDeleteDocumentIconButton, renderReviewIconActions } from './review-actions';
@@ -92,6 +92,25 @@ const getInitials = (name = '') => {
     }
 
     return `${parts[0][0]}${parts[parts.length - 1][0]}`.toUpperCase();
+};
+
+const escapeHtml = (value = '') => String(value)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+
+const renderPersonChip = (person) => {
+    const photo = person.profile_photo_url
+        ? `<img src="${escapeHtml(person.profile_photo_url)}" alt="" class="profile-org-avatar-img">`
+        : `<span class="profile-org-avatar-initials">${escapeHtml(getInitials(person.full_name))}</span>`;
+
+    return `
+        <div class="profile-org-person">
+            <span class="profile-org-avatar">${photo}</span>
+            <span class="profile-org-person-name">${escapeHtml(person.full_name)}</span>
+        </div>
+    `;
 };
 
 const renderDl = (container, rows) => {
@@ -231,6 +250,7 @@ const renderReviewActions = (canReviewItem, status, type, id) => {
 const REVIEW_TYPE_ATTRS = {
     document: ['data-approve-document', 'data-reject-document'],
     payment_method: ['data-approve-payment-method', 'data-reject-payment-method'],
+    profile_photo: ['data-approve-profile-photo', 'data-reject-profile-photo'],
     compliance_field: ['data-approve-compliance-field', 'data-reject-compliance-field'],
     personal_section: ['data-approve-personal-section', 'data-reject-personal-section'],
     family_member: ['data-approve-family-member', 'data-reject-family-member'],
@@ -305,19 +325,101 @@ document.addEventListener('DOMContentLoaded', async () => {
         }).join('');
     };
 
-    const renderHeader = (employee) => {
-        const departments = employee.departments?.length
-            ? employee.departments.map((department) => department.name).join(', ')
-            : (employee.department?.name || '—');
+    const renderEmpProfilePhoto = (employee) => {
+        const photoEl = document.getElementById('empProfilePhotoImage');
+        const initialsEl = document.getElementById('empProfileAvatarInitials');
+        const statusEl = document.getElementById('empProfilePhotoStatus');
+        const submission = employee?.profile_photo_submission;
+        const photoUrl = employee?.profile_photo_url;
+        const name = employee?.full_name || 'Employee';
 
-        document.getElementById('empProfileAvatarInitials').textContent = getInitials(employee.full_name);
+        if (initialsEl) {
+            initialsEl.textContent = getInitials(name);
+        }
+
+        if (photoUrl && photoEl) {
+            photoEl.src = photoUrl;
+            photoEl.classList.remove('d-none');
+            initialsEl?.classList.add('d-none');
+        } else if (photoEl) {
+            photoEl.removeAttribute('src');
+            photoEl.classList.add('d-none');
+            initialsEl?.classList.remove('d-none');
+        }
+
+        if (!statusEl) {
+            return;
+        }
+
+        if (submission?.status === 'pending') {
+            statusEl.className = 'profile-photo-status profile-photo-status--pending small mb-0';
+            statusEl.textContent = 'Pending for approval from management.';
+            statusEl.classList.remove('d-none');
+            return;
+        }
+
+        if (submission?.status === 'rejected') {
+            statusEl.className = 'profile-photo-status profile-photo-status--rejected small mb-0';
+            statusEl.textContent = submission.notes
+                ? `Photo rejected: ${submission.notes}`
+                : 'Profile photo rejected. Employee should upload a clearer face photo.';
+            statusEl.classList.remove('d-none');
+            return;
+        }
+
+        statusEl.classList.add('d-none');
+        statusEl.textContent = '';
+    };
+
+    const renderEmpProfileOrgSidebar = (employee) => {
+        const managerList = document.getElementById('empProfileManagerList');
+        const reportsList = document.getElementById('empProfileDirectReportsList');
+
+        if (managerList) {
+            managerList.innerHTML = employee?.manager
+                ? renderPersonChip(employee.manager)
+                : '<span class="text-muted small">No manager assigned</span>';
+        }
+
+        if (reportsList) {
+            const reports = employee?.direct_reports || [];
+
+            reportsList.innerHTML = reports.length
+                ? reports.map((report) => renderPersonChip(report)).join('')
+                : '<span class="text-muted small">No direct reports</span>';
+        }
+    };
+
+    const renderHeader = (employee) => {
+        const designation = employee.designation || employee.role?.name || '—';
+        const email = employee.email || '—';
+
+        renderEmpProfilePhoto(employee);
+        renderEmpProfileOrgSidebar(employee);
+
         document.getElementById('empProfileDisplayName').textContent = employee.full_name || '—';
-        document.getElementById('empProfileDisplayEmail').textContent = employee.email || '—';
-        document.getElementById('empProfileDisplayCode').textContent = employee.employee_code || '—';
-        document.getElementById('empProfileDisplayRole').textContent = employee.role?.name || '—';
-        document.getElementById('empProfileDisplayDepartment').textContent = departments !== '—'
-            ? `Department · ${departments}`
-            : '';
+
+        const designationEl = document.getElementById('empProfileDisplayDesignation');
+        if (designationEl) {
+            designationEl.textContent = designation;
+        }
+
+        const emailEl = document.getElementById('empProfileDisplayEmail');
+        if (emailEl) {
+            emailEl.textContent = email;
+            emailEl.href = email.includes('@') ? `mailto:${email}` : '#';
+        }
+
+        const subtitle = document.getElementById('empProfilePageSubtitle');
+        if (subtitle) {
+            const departments = employee.departments?.length
+                ? employee.departments.map((department) => department.name).join(', ')
+                : (employee.department?.name || '');
+            const parts = [employee.employee_code, designation, departments].filter(Boolean);
+            subtitle.textContent = parts.length
+                ? parts.join(' · ')
+                : 'Review submitted profile details and pending approvals.';
+        }
     };
 
     const renderWorkTab = (employee) => {
@@ -843,6 +945,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         const approveMap = [
             ['data-approve-document', 'document', (id) => `/employee-documents/${id}/approve`],
             ['data-approve-payment-method', 'payment_method', (id) => `/employee-payment-methods/${id}/approve`],
+            ['data-approve-profile-photo', 'profile_photo', (id) => `/employee-profile-photos/${id}/approve`],
             ['data-approve-compliance-field', 'compliance_field', (id) => `/employee-compliance-fields/${id}/approve`],
             ['data-approve-personal-section', 'personal_section', (id) => `/employee-personal-sections/${id}/approve`],
             ['data-approve-family-member', 'family_member', (id) => `/employee-family-members/${id}/approve`],
@@ -872,6 +975,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         const rejectMap = [
             ['data-reject-document', 'document', (id) => `/employee-documents/${id}/reject`],
             ['data-reject-payment-method', 'payment_method', (id) => `/employee-payment-methods/${id}/reject`],
+            ['data-reject-profile-photo', 'profile_photo', (id) => `/employee-profile-photos/${id}/reject`],
             ['data-reject-compliance-field', 'compliance_field', (id) => `/employee-compliance-fields/${id}/reject`],
             ['data-reject-personal-section', 'personal_section', (id) => `/employee-personal-sections/${id}/reject`],
             ['data-reject-family-member', 'family_member', (id) => `/employee-family-members/${id}/reject`],
@@ -1091,6 +1195,14 @@ document.addEventListener('DOMContentLoaded', async () => {
     });
 
     document.getElementById('empProfileTimelineRefresh')?.addEventListener('click', loadTimeline);
+
+    document.getElementById('empProfileViewWorkBtn')?.addEventListener('click', () => {
+        const tab = document.getElementById('emp-profile-work-tab');
+
+        if (tab) {
+            Tab.getOrCreateInstance(tab).show();
+        }
+    });
 
     try {
         await loadProfile();

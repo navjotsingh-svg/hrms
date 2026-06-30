@@ -66,6 +66,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     const submitBtn = document.getElementById('employeeSubmitBtn');
     const prevBtn = document.getElementById('wizardPrevBtn');
     const nextBtn = document.getElementById('wizardNextBtn');
+    const saveBtn = document.getElementById('wizardSaveBtn');
     const progressFill = document.getElementById('wizardProgressFill');
     const reviewSummary = document.getElementById('reviewSummary');
     const portalAccessSection = document.getElementById('portalAccessSection');
@@ -84,8 +85,13 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
 
     if (isUpdate && submitBtn) {
-        submitBtn.textContent = 'Update Employee';
+        submitBtn.textContent = 'Save';
     }
+
+    form.querySelectorAll('.wizard-step').forEach((stepEl) => {
+        stepEl.setAttribute('role', 'button');
+        stepEl.setAttribute('tabindex', isUpdate ? '0' : '-1');
+    });
 
     document.getElementById('salaryRevisionNotesSection')?.classList.toggle('d-none', !isUpdate);
 
@@ -100,6 +106,17 @@ document.addEventListener('DOMContentLoaded', async () => {
     let departmentSelect = null;
     let companyWeeklyOffWeekdays = [0];
     let leaveTypeOptions = [];
+    let companyPayrollSettings = {
+        pf_applicable: true,
+        esi_applicable: false,
+        professional_tax_applicable: true,
+        basic_salary_percent: 50,
+        hra_percent: 40,
+        special_allowance_percent: 0,
+        conveyance_allowance: 0,
+        medical_allowance: 0,
+        other_allowance: 0,
+    };
 
     const today = new Date();
     const maxJoiningDate = toDateInputValue(today);
@@ -127,7 +144,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         return select?.options[select.selectedIndex]?.text?.trim() || '—';
     };
 
-    const getBasicSalary = () => parseFloat(getValue('basic_salary')) || 0;
+    const getBasicSalary = () => getMonthlyCtc() * (parseFloat(companyPayrollSettings.basic_salary_percent) || 0) / 100;
 
     const getMonthlyCtc = () => {
         const annualCtc = parseFloat(getValue('annual_ctc')) || 0;
@@ -135,9 +152,15 @@ document.addEventListener('DOMContentLoaded', async () => {
         return annualCtc > 0 ? annualCtc / 12 : 0;
     };
 
-    const getHraAmount = () => getMonthlyCtc() * (parseFloat(getValue('hra_percent')) || 0) / 100;
+    const getHraAmount = () => getMonthlyCtc() * (parseFloat(companyPayrollSettings.hra_percent) || 0) / 100;
 
-    const getSpecialAllowanceAmount = () => getMonthlyCtc() * (parseFloat(getValue('special_allowance_percent')) || 0) / 100;
+    const getSpecialAllowanceAmount = () => getMonthlyCtc() * (parseFloat(companyPayrollSettings.special_allowance_percent) || 0) / 100;
+
+    const getFixedAllowancesTotal = () => (
+        (parseFloat(companyPayrollSettings.conveyance_allowance) || 0)
+        + (parseFloat(companyPayrollSettings.medical_allowance) || 0)
+        + (parseFloat(companyPayrollSettings.other_allowance) || 0)
+    );
 
     const getDepartmentIds = () => {
         const select = form.querySelector('#department_ids');
@@ -481,11 +504,33 @@ document.addEventListener('DOMContentLoaded', async () => {
         return true;
     };
 
-    const calculateMonthlyGross = () => {
-        const fixedFields = ['conveyance_allowance', 'medical_allowance', 'other_allowance'];
-        const fixedTotal = fixedFields.reduce((sum, field) => sum + (parseFloat(getValue(field)) || 0), 0);
+    const calculateMonthlyGross = () => (
+        getBasicSalary() + getHraAmount() + getSpecialAllowanceAmount() + getFixedAllowancesTotal()
+    );
 
-        return getBasicSalary() + getHraAmount() + getSpecialAllowanceAmount() + fixedTotal;
+    const renderSalaryStructurePreview = () => {
+        const list = document.getElementById('employeeSalaryStructurePreviewList');
+
+        if (!list) {
+            return;
+        }
+
+        const basicPercent = companyPayrollSettings.basic_salary_percent ?? 50;
+        const hraPercent = companyPayrollSettings.hra_percent ?? 40;
+        const specialPercent = companyPayrollSettings.special_allowance_percent ?? 0;
+        const rows = [
+            ['Basic', `${basicPercent}% (${formatCurrency(getBasicSalary())})`],
+            ['HRA', `${hraPercent}% (${formatCurrency(getHraAmount())})`],
+            ['Special Allowance', `${specialPercent}% (${formatCurrency(getSpecialAllowanceAmount())})`],
+            ['Fixed Allowances', formatCurrency(getFixedAllowancesTotal())],
+        ];
+
+        list.innerHTML = rows.map(([label, value]) => `
+            <div class="profile-dl-row">
+                <dt>${label}</dt>
+                <dd>${value}</dd>
+            </div>
+        `).join('');
     };
 
     const updateSalarySummary = () => {
@@ -493,17 +538,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         const monthly = calculateMonthlyGross();
         document.getElementById('summaryAnnualCtc').textContent = formatCurrency(annual);
         document.getElementById('summaryMonthlyGross').textContent = formatCurrency(monthly);
-
-        const hraPreview = document.getElementById('hraAmountPreview');
-        const specialPreview = document.getElementById('specialAllowanceAmountPreview');
-
-        if (hraPreview) {
-            hraPreview.textContent = formatCurrency(getHraAmount());
-        }
-
-        if (specialPreview) {
-            specialPreview.textContent = formatCurrency(getSpecialAllowanceAmount());
-        }
+        renderSalaryStructurePreview();
     };
 
     const validateSyncField = (field) => {
@@ -527,7 +562,6 @@ document.addEventListener('DOMContentLoaded', async () => {
             employment_type: 'Employment type is required.',
             status: 'Status is required.',
             annual_ctc: 'Annual CTC is required.',
-            basic_salary: 'Basic salary is required.',
             salary_effective_from: 'Salary effective date is required.',
             probation_period_months: 'Probation period is required.',
             probation_end_date: 'Probation end date is required.',
@@ -553,11 +587,6 @@ document.addEventListener('DOMContentLoaded', async () => {
             return false;
         }
 
-        if (field === 'basic_salary' && value && parseFloat(value) <= 0) {
-            setFieldError(form, field, 'Basic salary must be greater than zero.');
-            return false;
-        }
-
         if (field === 'postal_code' && value && !/^[0-9]{4,10}$/.test(value)) {
             setFieldError(form, field, 'Pincode must be 4 to 10 digits.');
             return false;
@@ -565,21 +594,6 @@ document.addEventListener('DOMContentLoaded', async () => {
 
         if (['date_of_birth', 'joining_date', 'salary_effective_from', 'probation_end_date'].includes(field) && value) {
             if (!validateDateField(field, value)) {
-                return false;
-            }
-        }
-
-        if (['hra_percent', 'special_allowance_percent'].includes(field) && value) {
-            const percent = parseFloat(value);
-            if (percent < 0 || percent > 100) {
-                setFieldError(form, field, 'Percentage must be between 0 and 100.');
-                return false;
-            }
-        }
-
-        if (['annual_ctc', 'basic_salary', 'conveyance_allowance', 'medical_allowance', 'other_allowance'].includes(field) && value) {
-            if (parseFloat(value) < 0) {
-                setFieldError(form, field, 'Amount cannot be negative.');
                 return false;
             }
         }
@@ -636,7 +650,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             return fields;
         }
         if (step === 3) {
-            return ['annual_ctc', 'basic_salary', 'salary_effective_from', 'hra_percent', 'special_allowance_percent', 'conveyance_allowance', 'medical_allowance', 'other_allowance'];
+            return ['annual_ctc', 'salary_effective_from'];
         }
         return [];
     };
@@ -700,8 +714,27 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
 
         prevBtn?.classList.toggle('d-none', currentStep === 1);
-        nextBtn?.classList.toggle('d-none', currentStep === TOTAL_STEPS);
-        submitBtn?.classList.toggle('d-none', currentStep !== TOTAL_STEPS);
+
+        if (isUpdate) {
+            saveBtn?.classList.toggle('d-none', currentStep === TOTAL_STEPS);
+            nextBtn?.classList.toggle('d-none', currentStep >= TOTAL_STEPS - 1);
+            submitBtn?.classList.toggle('d-none', currentStep !== TOTAL_STEPS);
+            if (nextBtn && currentStep < TOTAL_STEPS - 1) {
+                nextBtn.textContent = 'Save & Next →';
+            }
+        } else {
+            saveBtn?.classList.add('d-none');
+            nextBtn?.classList.toggle('d-none', currentStep === TOTAL_STEPS);
+            submitBtn?.classList.toggle('d-none', currentStep !== TOTAL_STEPS);
+            if (nextBtn) {
+                nextBtn.textContent = 'Continue →';
+            }
+        }
+
+        form.querySelectorAll('.wizard-step').forEach((stepEl) => {
+            stepEl.classList.toggle('wizard-step--navigable', isUpdate);
+            stepEl.setAttribute('aria-current', Number(stepEl.dataset.step) === currentStep ? 'step' : 'false');
+        });
 
         if (currentStep === TOTAL_STEPS) {
             buildReviewSummary();
@@ -762,13 +795,14 @@ document.addEventListener('DOMContentLoaded', async () => {
                 rows: [
                     ['Annual CTC', formatCurrency(getValue('annual_ctc'))],
                     ['Monthly Gross', formatCurrency(calculateMonthlyGross())],
-                    ['Basic', formatCurrency(getValue('basic_salary'))],
-                    ['HRA', `${getValue('hra_percent') || 0}% (${formatCurrency(getHraAmount())})`],
-                    ['Special Allowance', `${getValue('special_allowance_percent') || 0}% (${formatCurrency(getSpecialAllowanceAmount())})`],
+                    ['Basic', `${companyPayrollSettings.basic_salary_percent ?? 50}% (${formatCurrency(getBasicSalary())})`],
+                    ['HRA', `${companyPayrollSettings.hra_percent ?? 40}% (${formatCurrency(getHraAmount())})`],
+                    ['Special Allowance', `${companyPayrollSettings.special_allowance_percent ?? 0}% (${formatCurrency(getSpecialAllowanceAmount())})`],
+                    ['Fixed Allowances', formatCurrency(getFixedAllowancesTotal())],
                     ['Effective From', getValue('salary_effective_from') || '—'],
-                    ['PF', form.querySelector('#pf_applicable')?.checked ? 'Yes' : 'No'],
-                    ['ESI', form.querySelector('#esi_applicable')?.checked ? 'Yes' : 'No'],
-                    ['Prof. Tax', form.querySelector('#professional_tax_applicable')?.checked ? 'Yes' : 'No'],
+                    ['PF', companyPayrollSettings.pf_applicable ? 'Yes' : 'No'],
+                    ['ESI', companyPayrollSettings.esi_applicable ? 'Yes' : 'No'],
+                    ['Prof. Tax', companyPayrollSettings.professional_tax_applicable ? 'Yes' : 'No'],
                 ],
             },
             {
@@ -1041,15 +1075,6 @@ document.addEventListener('DOMContentLoaded', async () => {
             country: nullable(getValue('country')),
             postal_code: nullable(getValue('postal_code')),
             annual_ctc: num('annual_ctc'),
-            basic_salary: num('basic_salary'),
-            hra_percent: num('hra_percent'),
-            special_allowance_percent: num('special_allowance_percent'),
-            conveyance_allowance: num('conveyance_allowance'),
-            medical_allowance: num('medical_allowance'),
-            other_allowance: num('other_allowance'),
-            pf_applicable: form.querySelector('#pf_applicable')?.checked ?? false,
-            esi_applicable: form.querySelector('#esi_applicable')?.checked ?? false,
-            professional_tax_applicable: form.querySelector('#professional_tax_applicable')?.checked ?? true,
             salary_effective_from: getValue('salary_effective_from'),
             salary_revision_notes: nullable(getValue('salary_revision_notes')),
         };
@@ -1061,6 +1086,83 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
 
         return payload;
+    };
+
+    const validateStepsForSave = async () => {
+        if (currentStep === TOTAL_STEPS) {
+            for (let step = 1; step <= 3; step += 1) {
+                const valid = await validateStep(step);
+                if (!valid) {
+                    currentStep = step;
+                    updateStepUi();
+                    showAlert(`Please fix errors in step ${step} before saving.`);
+                    focusFirstInvalidField(form);
+                    return false;
+                }
+            }
+
+            return true;
+        }
+
+        const valid = await validateStep(currentStep);
+        if (!valid) {
+            showAlert('Please complete all required fields before saving.');
+            focusFirstInvalidField(form);
+            return false;
+        }
+
+        return true;
+    };
+
+    const saveEmployee = async ({ advanceStep = false, triggerButton = saveBtn } = {}) => {
+        if (!isUpdate || isSubmitting) {
+            return false;
+        }
+
+        const valid = await validateStepsForSave();
+        if (!valid) {
+            return false;
+        }
+
+        isSubmitting = true;
+        setSubmitLoading(triggerButton, true, { isUpdate: true });
+
+        try {
+            const payload = getPayload();
+            const response = await api.put(`/employees/${employeeId}`, payload);
+            const employee = response.data?.data?.employee;
+
+            if (employee) {
+                await populateForm(employee);
+            }
+
+            showAlert(response.data.message || 'Employee saved successfully.', 'success');
+
+            if (advanceStep && currentStep < TOTAL_STEPS) {
+                currentStep += 1;
+                updateStepUi();
+                window.scrollTo({ top: 0, behavior: 'smooth' });
+            }
+
+            return true;
+        } catch (error) {
+            applyBackendErrors(form, error.response?.data?.errors, setFieldError);
+            showAlert(getErrorMessage(error));
+            return false;
+        } finally {
+            isSubmitting = false;
+            setSubmitLoading(triggerButton, false, { isUpdate: true });
+        }
+    };
+
+    const goToStep = (step) => {
+        if (step < 1 || step > TOTAL_STEPS || step === currentStep) {
+            return;
+        }
+
+        currentStep = step;
+        updateStepUi();
+        window.scrollTo({ top: 0, behavior: 'smooth' });
     };
 
     const populateForm = async (employee) => {
@@ -1110,16 +1212,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (employee.salary) {
             const salary = employee.salary;
             setInputValue('annual_ctc', salary.annual_ctc ?? '');
-            setInputValue('basic_salary', salary.basic_salary ?? '');
-            setInputValue('hra_percent', salary.hra_percent ?? 40);
-            setInputValue('special_allowance_percent', salary.special_allowance_percent ?? 0);
-            setInputValue('conveyance_allowance', salary.conveyance_allowance ?? 0);
-            setInputValue('medical_allowance', salary.medical_allowance ?? 0);
-            setInputValue('other_allowance', salary.other_allowance ?? 0);
             setDateInput('salary_effective_from', salary.salary_effective_from);
-            form.querySelector('#pf_applicable').checked = Boolean(salary.pf_applicable);
-            form.querySelector('#esi_applicable').checked = Boolean(salary.esi_applicable);
-            form.querySelector('#professional_tax_applicable').checked = Boolean(salary.professional_tax_applicable);
         }
 
         hasPortalAccess = Boolean(employee.has_portal_access);
@@ -1273,13 +1366,20 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     prevBtn?.addEventListener('click', () => {
         if (currentStep > 1) {
-            currentStep -= 1;
-            updateStepUi();
-            window.scrollTo({ top: 0, behavior: 'smooth' });
+            goToStep(currentStep - 1);
         }
     });
 
+    saveBtn?.addEventListener('click', () => {
+        saveEmployee({ triggerButton: saveBtn });
+    });
+
     nextBtn?.addEventListener('click', async () => {
+        if (isUpdate) {
+            await saveEmployee({ advanceStep: true, triggerButton: nextBtn });
+            return;
+        }
+
         const valid = await validateStep(currentStep);
         if (!valid) {
             showAlert('Please complete all required fields before continuing.');
@@ -1288,16 +1388,39 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
 
         if (currentStep < TOTAL_STEPS) {
-            currentStep += 1;
-            updateStepUi();
-            window.scrollTo({ top: 0, behavior: 'smooth' });
+            goToStep(currentStep + 1);
         }
+    });
+
+    form.querySelectorAll('.wizard-step').forEach((stepEl) => {
+        const activateStep = () => {
+            if (!isUpdate) {
+                return;
+            }
+
+            goToStep(Number(stepEl.dataset.step));
+        };
+
+        stepEl.addEventListener('click', activateStep);
+        stepEl.addEventListener('keydown', (event) => {
+            if (event.key === 'Enter' || event.key === ' ') {
+                event.preventDefault();
+                activateStep();
+            }
+        });
     });
 
     try {
         setupDateConstraints();
         initManagerSearch();
         await Promise.all([loadRoles(), loadShifts(), loadCompanyWeeklyOff(), loadLeaveTypes()]);
+        try {
+            const { data } = await api.get('/payroll-settings');
+            companyPayrollSettings = data.data || companyPayrollSettings;
+            updateSalarySummary();
+        } catch {
+            // Keep defaults when payroll settings are unavailable.
+        }
         if (employeeId) {
             await loadManagers(employeeId);
             const { data } = await api.get(`/employees/${employeeId}`);
@@ -1323,6 +1446,11 @@ document.addEventListener('DOMContentLoaded', async () => {
             return;
         }
 
+        if (isUpdate) {
+            await saveEmployee({ triggerButton: submitBtn });
+            return;
+        }
+
         for (let step = 1; step <= 3; step += 1) {
             const valid = await validateStep(step);
             if (!valid) {
@@ -1339,9 +1467,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
         try {
             const payload = getPayload();
-            const response = employeeId
-                ? await api.put(`/employees/${employeeId}`, payload)
-                : await api.post('/employees', payload);
+            const response = await api.post('/employees', payload);
 
             const message = response.data.message || 'Employee saved successfully.';
             setFlashMessage(message, flashMessageType(message));

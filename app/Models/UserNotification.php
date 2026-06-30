@@ -21,6 +21,10 @@ class UserNotification extends Model
 
     public const TYPE_MOMENT_NEW = 'moment_new';
 
+    public const TYPE_PROFILE_PHOTO_SUBMITTED = 'profile_photo_submitted';
+
+    public const TYPE_PROFILE_PHOTO_DECISION = 'profile_photo_decision';
+
     protected $fillable = [
         'company_id',
         'user_id',

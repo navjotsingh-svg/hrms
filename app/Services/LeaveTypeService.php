@@ -23,6 +23,7 @@ class LeaveTypeService
             ['name' => 'Marriage Leave', 'code' => 'MRL', 'annual_quota' => 3, 'requires_proof' => true, 'color' => '#f59e0b', 'sort_order' => 8],
             ['name' => 'Comp Off', 'code' => 'COMP', 'annual_quota' => 0, 'requires_proof' => false, 'color' => '#14b8a6', 'sort_order' => 9],
             ['name' => 'Loss of Pay', 'code' => 'LOP', 'annual_quota' => null, 'is_paid' => false, 'requires_proof' => false, 'color' => '#64748b', 'sort_order' => 10],
+            ['name' => 'Work From Home', 'code' => 'WFH', 'annual_quota' => null, 'allows_attendance_punch' => true, 'requires_proof' => false, 'color' => '#8b5cf6', 'sort_order' => 12],
             ['name' => 'Short Leave', 'code' => 'SHL', 'annual_quota' => 24, 'max_days_per_request' => 2, 'is_hourly_leave' => true, 'max_hours_per_month' => 4, 'allowed_hourly_durations' => [60, 120], 'requires_proof' => false, 'color' => '#0ea5e9', 'sort_order' => 11],
         ];
     }
@@ -143,6 +144,7 @@ class LeaveTypeService
             'max_hours_per_month' => $item['max_hours_per_month'] ?? null,
             'allowed_hourly_durations' => $item['allowed_hourly_durations'] ?? null,
             'is_paid' => $item['is_paid'] ?? true,
+            'allows_attendance_punch' => $item['allows_attendance_punch'] ?? false,
             'requires_proof' => $item['requires_proof'] ?? false,
             'color' => $item['color'],
             'sort_order' => $item['sort_order'],

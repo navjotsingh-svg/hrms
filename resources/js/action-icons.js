@@ -7,7 +7,7 @@ export const DELETE_ICON = '<svg xmlns="http://www.w3.org/2000/svg" width="16" h
 export const CANCEL_ICON = '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 15A7 7 0 1 1 8 1a7 7 0 0 1 0 14m0 1A8 8 0 1 0 8 0a8 8 0 0 0 0 16"/><path d="M4.646 4.646a.5.5 0 0 1 .708 0L8 7.293l2.646-2.647a.5.5 0 0 1 .708.708L8.707 8l2.647 2.646a.5.5 0 0 1-.708.708L8 8.707l-2.646 2.647a.5.5 0 0 1-.708-.708L7.293 8 4.646 5.354a.5.5 0 0 1 0-.708"/></svg>';
 
 export const renderViewLink = (href, label = 'View') => `
-    <a href="${href}" class="table-action-btn table-action-btn--view" title="${label}" aria-label="${label}">
+    <a href="${href}" class="table-action-btn table-action-btn--view" data-save-return="1" title="${label}" aria-label="${label}">
         ${VIEW_ICON}
     </a>
 `;
@@ -56,6 +56,51 @@ export const renderCancelIconButton = (attrName, id, label = 'Cancel request (wi
     </button>
 `;
 
+const ACTION_BUTTON_ORDER = [
+    'table-action-btn--view',
+    'table-action-btn--approve',
+    'table-action-btn--reject',
+    'table-action-btn--edit',
+    'table-action-btn--delete',
+    'table-action-btn--cancel',
+    'table-action-btn--mail',
+];
+
+const actionButtonSortKey = (html) => {
+    const index = ACTION_BUTTON_ORDER.findIndex((className) => html.includes(className));
+
+    return index === -1 ? ACTION_BUTTON_ORDER.length : index;
+};
+
+export const sortActionButtons = (html = '') => {
+    if (!html || !html.includes('table-action-btn')) {
+        return html;
+    }
+
+    const buttons = html.match(/<(a|button)\b[^>]*table-action-btn[^>]*>[\s\S]*?<\/\1>/gi);
+
+    if (!buttons || buttons.length <= 1) {
+        return html;
+    }
+
+    return [...buttons]
+        .sort((left, right) => actionButtonSortKey(left) - actionButtonSortKey(right))
+        .join('');
+};
+
 export const renderActionGroup = (items) => `
-    <div class="table-action-group">${items}</div>
+    <div class="table-action-group">${sortActionButtons(items)}</div>
 `;
+
+export const composeActionGroup = (parts) => {
+    const html = ['view', 'approve', 'reject', 'edit', 'submit', 'add', 'delete', 'cancel']
+        .map((key) => parts[key] || '')
+        .filter(Boolean)
+        .join('');
+
+    if (!html) {
+        return '<span class="text-muted">—</span>';
+    }
+
+    return renderActionGroup(html);
+};

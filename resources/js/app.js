@@ -4,7 +4,7 @@ import './leave-calendar';
 import './notifications';
 import './moments-badges';
 import api, { clearToken, destroyWebSession } from './api';
-import { initFormStatusToggles } from './form-utils';
+import { initFormStatusToggles, initReturnUrlCapture } from './form-utils';
 
 const SIDEBAR_COLLAPSED_KEY = 'hrms_sidebar_collapsed';
 
@@ -40,6 +40,7 @@ const setSidebarCollapsed = (collapsed) => {
 
 document.addEventListener('DOMContentLoaded', () => {
     initFormStatusToggles();
+    initReturnUrlCapture();
 
     const sidebarToggle = document.getElementById('sidebarDesktopToggle');
 

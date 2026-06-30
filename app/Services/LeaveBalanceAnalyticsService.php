@@ -410,7 +410,7 @@ class LeaveBalanceAnalyticsService
             $query->where('designation', $filters['designation']);
         }
 
-        return $query->orderBy('first_name')->orderBy('last_name')->get()->keyBy('id');
+        return $query->orderedByName()->get()->keyBy('id');
     }
 
     private function sumApprovedLeaveDays(int $employeeId, int $leaveTypeId, string $from, string $to): float

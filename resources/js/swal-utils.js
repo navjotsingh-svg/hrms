@@ -107,3 +107,32 @@ export const confirmRequestCancel = () => confirmAction({
     confirmText: 'Yes, cancel',
     confirmButtonColor: '#d97706',
 });
+
+export const showInfoAlert = ({
+    title = 'Notice',
+    text,
+    icon = 'info',
+    confirmText = 'OK',
+} = {}) => Swal.fire({
+    title,
+    text,
+    icon,
+    confirmButtonText: confirmText,
+    confirmButtonColor: '#2563eb',
+});
+
+export const showErrorAlert = ({
+    title = 'Something went wrong',
+    text,
+} = {}) => Swal.fire({
+    title,
+    text,
+    icon: 'error',
+    confirmButtonText: 'OK',
+    confirmButtonColor: '#dc3545',
+});
+
+export const showProfilePhotoPendingNotice = () => showInfoAlert({
+    title: 'Profile photo submitted',
+    text: 'Pending for approval from management.',
+});

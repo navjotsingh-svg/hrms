@@ -117,8 +117,7 @@ class ProjectService
             ->where('company_id', $companyId)
             ->where('status', 'active')
             ->whereIn('id', $selectableIds)
-            ->orderBy('first_name')
-            ->orderBy('last_name')
+            ->orderedByName()
             ->get(['id', 'first_name', 'last_name', 'employee_code']);
 
         return [

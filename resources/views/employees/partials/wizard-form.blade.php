@@ -388,88 +388,29 @@
             </div>
         </div>
 
-        <div class="wizard-form-section">
-            <div class="wizard-form-section-head">
-                <span class="wizard-form-section-icon" aria-hidden="true">🧾</span>
-                <div>
-                    <h6 class="wizard-form-section-title">Monthly Salary Components</h6>
-                    <p class="wizard-form-section-desc">Break down monthly earnings into standard components.</p>
-                </div>
-            </div>
-            <div class="wizard-form-section-body row g-3 g-md-4">
-                <div class="col-md-4">
-                    <label for="basic_salary" class="form-label">Basic Salary (₹) <span class="text-danger">*</span></label>
-                    <input type="number" class="form-control salary-input" id="basic_salary" name="basic_salary" min="1" step="0.01" required placeholder="25000">
-                    <div class="invalid-feedback d-block" data-error="basic_salary"></div>
-                </div>
-                <div class="col-md-4">
-                    <label for="hra_percent" class="form-label">HRA (%)</label>
-                    <div class="input-group">
-                        <input type="number" class="form-control salary-input" id="hra_percent" name="hra_percent" min="0" max="100" step="0.01" value="40">
-                        <span class="input-group-text">%</span>
-                    </div>
-                    <div class="form-text">% of monthly CTC — Amount: <span id="hraAmountPreview">₹ 0</span></div>
-                    <div class="invalid-feedback d-block" data-error="hra_percent"></div>
-                </div>
-                <div class="col-md-4">
-                    <label for="special_allowance_percent" class="form-label">Special Allowance (%)</label>
-                    <div class="input-group">
-                        <input type="number" class="form-control salary-input" id="special_allowance_percent" name="special_allowance_percent" min="0" max="100" step="0.01" value="0">
-                        <span class="input-group-text">%</span>
-                    </div>
-                    <div class="form-text">% of monthly CTC — Amount: <span id="specialAllowanceAmountPreview">₹ 0</span></div>
-                    <div class="invalid-feedback d-block" data-error="special_allowance_percent"></div>
-                </div>
-                <div class="col-md-4">
-                    <label for="conveyance_allowance" class="form-label">Conveyance (₹)</label>
-                    <input type="number" class="form-control salary-input" id="conveyance_allowance" name="conveyance_allowance" min="0" step="0.01" value="0">
-                    <div class="invalid-feedback d-block" data-error="conveyance_allowance"></div>
-                </div>
-                <div class="col-md-4">
-                    <label for="medical_allowance" class="form-label">Medical (₹)</label>
-                    <input type="number" class="form-control salary-input" id="medical_allowance" name="medical_allowance" min="0" step="0.01" value="0">
-                    <div class="invalid-feedback d-block" data-error="medical_allowance"></div>
-                </div>
-                <div class="col-md-4">
-                    <label for="other_allowance" class="form-label">Other Allowance (₹)</label>
-                    <input type="number" class="form-control salary-input" id="other_allowance" name="other_allowance" min="0" step="0.01" value="0">
-                    <div class="invalid-feedback d-block" data-error="other_allowance"></div>
-                </div>
+        <div class="wizard-info-banner mb-4">
+            <span class="wizard-info-banner-icon" aria-hidden="true">⚙️</span>
+            <div>
+                <strong>Salary components are managed in Payroll Settings</strong>
+                <p class="mb-0">Basic %, HRA, allowances, and statutory compliance apply company-wide. Configure them under <strong>Payroll → Payroll Settings</strong>.</p>
             </div>
         </div>
 
-        <div class="wizard-form-section">
-            <div class="wizard-form-section-head">
-                <span class="wizard-form-section-icon" aria-hidden="true">⚖️</span>
-                <div>
-                    <h6 class="wizard-form-section-title">Statutory Compliance</h6>
-                    <p class="wizard-form-section-desc">Enable applicable statutory deductions for payroll.</p>
-                </div>
-            </div>
-            <div class="wizard-form-section-body">
-                <div class="wizard-toggle-grid">
-                    <label class="wizard-toggle-card" for="pf_applicable">
-                        <input class="form-check-input" type="checkbox" id="pf_applicable" name="pf_applicable" value="1" checked>
-                        <span class="wizard-toggle-card-body">
-                            <strong>PF Applicable</strong>
-                            <small>Provident Fund contribution</small>
-                        </span>
-                    </label>
-                    <label class="wizard-toggle-card" for="esi_applicable">
-                        <input class="form-check-input" type="checkbox" id="esi_applicable" name="esi_applicable" value="1">
-                        <span class="wizard-toggle-card-body">
-                            <strong>ESI Applicable</strong>
-                            <small>Employee State Insurance</small>
-                        </span>
-                    </label>
-                    <label class="wizard-toggle-card" for="professional_tax_applicable">
-                        <input class="form-check-input" type="checkbox" id="professional_tax_applicable" name="professional_tax_applicable" value="1" checked>
-                        <span class="wizard-toggle-card-body">
-                            <strong>Professional Tax</strong>
-                            <small>State professional tax deduction</small>
-                        </span>
-                    </label>
-                </div>
+        <div class="profile-info-card mb-4" id="employeeSalaryStructurePreview">
+            <h6 class="profile-info-card-title mb-3">Estimated Monthly Breakdown</h6>
+            <dl class="profile-dl profile-dl-compact mb-0" id="employeeSalaryStructurePreviewList">
+                <div class="profile-dl-row"><dt>Basic</dt><dd>—</dd></div>
+                <div class="profile-dl-row"><dt>HRA</dt><dd>—</dd></div>
+                <div class="profile-dl-row"><dt>Special Allowance</dt><dd>—</dd></div>
+                <div class="profile-dl-row"><dt>Fixed Allowances</dt><dd>—</dd></div>
+            </dl>
+        </div>
+
+        <div class="wizard-info-banner mb-4">
+            <span class="wizard-info-banner-icon" aria-hidden="true">⚖️</span>
+            <div>
+                <strong>Statutory compliance is managed in Payroll Settings</strong>
+                <p class="mb-0">PF, ESI, and Professional Tax apply company-wide. Configure them under <strong>Payroll → Settings</strong>.</p>
             </div>
         </div>
 
@@ -537,6 +478,9 @@
         <div class="wizard-footer-actions">
             <button type="button" class="btn btn-outline-secondary d-none" id="wizardPrevBtn">
                 ← Previous
+            </button>
+            <button type="button" class="btn btn-outline-primary px-4 d-none" id="wizardSaveBtn">
+                Save
             </button>
             <button type="button" class="btn btn-primary px-4" id="wizardNextBtn">
                 Continue →

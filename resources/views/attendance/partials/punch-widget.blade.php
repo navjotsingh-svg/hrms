@@ -22,14 +22,20 @@
                 <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
             </div>
             <div class="modal-body pt-2">
-                <p class="small text-muted mb-2" id="{{ $prefix }}ModalHint">Align your face in the frame and tap capture.</p>
+                <p class="small text-muted mb-2" id="{{ $prefix }}ModalHint">Align your face in the frame. Your photo must match your profile photo.</p>
                 <div class="attendance-camera-wrap attendance-camera-wrap--modal mb-2">
-                    <video id="{{ $prefix }}Camera" class="attendance-camera d-none" autoplay playsinline muted></video>
+                    <video id="{{ $prefix }}Camera" class="attendance-camera d-none" autoplay playsinline webkit-playsinline muted></video>
                     <canvas id="{{ $prefix }}CameraCanvas" class="d-none"></canvas>
                     <div class="attendance-camera-placeholder" id="{{ $prefix }}CameraPlaceholder">
                         <span>Opening camera...</span>
                     </div>
+                    <div class="attendance-live-match d-none" id="{{ $prefix }}LiveMatchOverlay" aria-live="polite">
+                        <div class="attendance-live-match-value" id="{{ $prefix }}LiveMatchValue">—%</div>
+                        <div class="attendance-live-match-label">live match</div>
+                    </div>
                 </div>
+                <div class="small attendance-face-status attendance-face-status--muted mb-1 d-none" id="{{ $prefix }}ModalFaceStatus">Face verification will run before saving your punch.</div>
+                <div class="small text-muted mb-1" id="{{ $prefix }}ModalIpStatus">Checking network IP...</div>
                 <div class="small text-muted" id="{{ $prefix }}ModalLocationStatus">Getting location...</div>
             </div>
             <div class="modal-footer border-0 pt-0">

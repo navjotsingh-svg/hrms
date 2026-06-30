@@ -26,6 +26,9 @@ class AttendancePunch extends Model
         'longitude',
         'location_name',
         'selfie_path',
+        'ip_address',
+        'mac_address',
+        'face_match_score',
         'source',
         'regularization_request_id',
     ];
@@ -46,6 +49,7 @@ class AttendancePunch extends Model
             'punched_at' => 'datetime',
             'latitude' => 'float',
             'longitude' => 'float',
+            'face_match_score' => 'decimal:2',
         ];
     }
 

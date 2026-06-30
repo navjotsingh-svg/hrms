@@ -20,13 +20,13 @@
 @endsection
 
 @section('content')
-    <div class="content-card profile-page-card mb-4">
-        <div class="content-card-body profile-header-wrap">
+    <div class="profile-dashboard-grid">
+        <aside class="profile-dashboard-sidebar">
             @include('profile.partials.header')
-        </div>
-    </div>
+        </aside>
 
-    <div class="content-card profile-page-card">
+        <div class="profile-dashboard-main">
+            <div class="content-card profile-page-card">
         <div class="profile-tab-nav-wrap">
             <ul class="nav nav-tabs profile-tab-nav" id="profileTabs" role="tablist">
                 <li class="nav-item" role="presentation">
@@ -74,6 +74,8 @@
             </div>
             <div class="tab-pane fade" id="profileOtherPane" role="tabpanel">
                 @include('profile.partials.tabs.other')
+            </div>
+        </div>
             </div>
         </div>
     </div>

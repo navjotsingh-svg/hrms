@@ -21,6 +21,7 @@ class LeaveType extends Model
         'max_hours_per_month',
         'allowed_hourly_durations',
         'is_paid',
+        'allows_attendance_punch',
         'requires_proof',
         'color',
         'sort_order',
@@ -37,6 +38,7 @@ class LeaveType extends Model
             'max_hours_per_month' => 'integer',
             'allowed_hourly_durations' => 'array',
             'is_paid' => 'boolean',
+            'allows_attendance_punch' => 'boolean',
             'requires_proof' => 'boolean',
             'sort_order' => 'integer',
         ];
@@ -60,6 +62,26 @@ class LeaveType extends Model
     public function isCompOff(): bool
     {
         return in_array(strtoupper($this->code), ['COMP', 'CO'], true);
+    }
+
+    public function allowsAttendancePunch(): bool
+    {
+        if ($this->allows_attendance_punch) {
+            return true;
+        }
+
+        $code = strtoupper(trim((string) $this->code));
+
+        if (in_array($code, ['WFH', 'WFHOME'], true)) {
+            return true;
+        }
+
+        return str_contains(strtolower(trim((string) $this->name)), 'work from home');
+    }
+
+    public function isWorkFromHome(): bool
+    {
+        return $this->allowsAttendancePunch();
     }
 
     public function isHourlyLeave(): bool

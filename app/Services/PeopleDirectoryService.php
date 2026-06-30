@@ -13,8 +13,7 @@ class PeopleDirectoryService
     {
         $query = $this->baseQuery($user)
             ->with(['department', 'departments'])
-            ->orderBy('first_name')
-            ->orderBy('last_name');
+            ->orderedByName();
 
         if ($search = trim((string) ($filters['search'] ?? ''))) {
             $query->where(function ($builder) use ($search) {
@@ -38,8 +37,7 @@ class PeopleDirectoryService
 
         $employees = $this->baseQuery($user)
             ->with(['department'])
-            ->orderBy('first_name')
-            ->orderBy('last_name')
+            ->orderedByName()
             ->get();
 
         $byManager = $employees->groupBy(
@@ -151,7 +149,9 @@ class PeopleDirectoryService
     ): Collection {
         return $byManager
             ->get((string) $employee->id, collect())
-            ->filter(fn (Employee $report) => $departmentEmployeeIds->has($report->id));
+            ->filter(fn (Employee $report) => $departmentEmployeeIds->has($report->id))
+            ->sortBy(fn (Employee $report) => strtolower($report->full_name))
+            ->values();
     }
 
     /**

@@ -11,7 +11,6 @@ import { renderEmployeeNameBlock } from './request-display';
 
 const AVATAR_COLORS = ['#3b82f6', '#8b5cf6', '#ec4899', '#f59e0b', '#14b8a6', '#6366f1', '#ef4444', '#22c55e'];
 
-let refreshTimer = null;
 let clockTimer = null;
 let punchInitialized = false;
 let punchController = null;
@@ -205,7 +204,7 @@ const renderPendingApprovals = (items = [], pagination = null, showSection = tru
             <td>${item.category_label || item.subject || 'Request'}</td>
             <td>${item.submitted_at_label || '—'}</td>
             <td><span class="badge text-bg-warning">${item.status_label || 'Pending'}</span></td>
-            <td class="text-end">${renderRequestActions(item)}</td>
+            <td class="text-end">${renderRequestActions(item, { includeReview: true })}</td>
         </tr>
     `;
     }).join('');
@@ -491,13 +490,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         await loadPendingApprovals(Number(button.dataset.page));
     });
 
-    refreshTimer = window.setInterval(loadDashboard, 30000);
-
     window.addEventListener('beforeunload', () => {
-        if (refreshTimer) {
-            window.clearInterval(refreshTimer);
-        }
-
         if (clockTimer) {
             window.clearInterval(clockTimer);
         }

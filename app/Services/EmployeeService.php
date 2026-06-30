@@ -21,27 +21,22 @@ class EmployeeService
 {
     private const SALARY_KEYS = [
         'annual_ctc',
-        'basic_salary',
-        'hra_percent',
-        'special_allowance_percent',
-        'conveyance_allowance',
-        'medical_allowance',
-        'other_allowance',
-        'pf_applicable',
-        'esi_applicable',
-        'professional_tax_applicable',
         'salary_effective_from',
         'salary_payout_from',
     ];
 
-    public function __construct(private EmployeeAccessService $employeeAccessService, private ActivityLogService $activityLogService) {}
+    public function __construct(
+        private EmployeeAccessService $employeeAccessService,
+        private ActivityLogService $activityLogService,
+        private CompanyPayrollSettingsService $companyPayrollSettingsService,
+    ) {}
 
     public function listForCompany(int $companyId, array $filters = [], ?array $visibleEmployeeIds = null): LengthAwarePaginator
     {
         $query = Employee::query()
             ->where('company_id', $companyId)
             ->with(['department', 'departments', 'role', 'manager', 'shift'])
-            ->latest();
+            ->orderedByName();
 
         if ($visibleEmployeeIds !== null) {
             if ($visibleEmployeeIds === []) {
@@ -80,7 +75,7 @@ class EmployeeService
         $givePortalAccess = (bool) ($data['give_portal_access'] ?? false);
         unset($data['give_portal_access']);
 
-        $salaryData = $this->extractSalaryData($data);
+        $salaryData = $this->extractSalaryData($data, $companyId);
         $departmentIds = $this->extractDepartmentIds($data);
         $weeklyOffData = $this->extractWeeklyOffData($data);
         $leaveTypeIds = $this->extractLeaveTypeIds($data);
@@ -178,7 +173,7 @@ class EmployeeService
             : null;
         unset($data['give_portal_access']);
 
-        $salaryData = $this->extractSalaryData($data);
+        $salaryData = $this->extractSalaryData($data, (int) $employee->company_id);
         $salaryRevisionNotes = $this->extractSalaryRevisionNotes($data);
         $departmentIds = $this->extractDepartmentIds($data);
         $weeklyOffData = $this->extractWeeklyOffData($data);
@@ -684,7 +679,7 @@ class EmployeeService
         return 'EMP'.str_pad((string) $nextNumber, 4, '0', STR_PAD_LEFT);
     }
 
-    private function extractSalaryData(array &$data): ?array
+    private function extractSalaryData(array &$data, int $companyId): ?array
     {
         $salary = [];
 
@@ -695,7 +690,7 @@ class EmployeeService
             }
         }
 
-        return $salary !== [] ? $this->normalizeSalaryData($salary) : null;
+        return $salary !== [] ? $this->normalizeSalaryData($salary, $companyId) : null;
     }
 
     private function extractSalaryRevisionNotes(array &$data): ?string
@@ -763,25 +758,26 @@ class EmployeeService
         ]);
     }
 
-    private function normalizeSalaryData(array $salary): array
+    private function normalizeSalaryData(array $salary, int $companyId): array
     {
+        $settings = $this->companyPayrollSettingsService->getForCompany($companyId);
         $annualCtc = (float) ($salary['annual_ctc'] ?? 0);
         $monthlyCtc = $annualCtc > 0 ? $annualCtc / 12 : 0;
-        $hraPercent = (float) ($salary['hra_percent'] ?? 0);
-        $specialPercent = (float) ($salary['special_allowance_percent'] ?? 0);
+        $basicPercent = (float) ($settings['basic_salary_percent'] ?? 50);
+        $hraPercent = (float) ($settings['hra_percent'] ?? 40);
+        $specialPercent = (float) ($settings['special_allowance_percent'] ?? 0);
 
+        $salary['basic_salary'] = round($monthlyCtc * $basicPercent / 100, 2);
         $salary['hra_percent'] = $hraPercent;
         $salary['special_allowance_percent'] = $specialPercent;
         $salary['hra'] = round($monthlyCtc * $hraPercent / 100, 2);
         $salary['special_allowance'] = round($monthlyCtc * $specialPercent / 100, 2);
-
-        foreach (['conveyance_allowance', 'medical_allowance', 'other_allowance'] as $field) {
-            $salary[$field] = $salary[$field] ?? 0;
-        }
-
-        $salary['pf_applicable'] = (bool) ($salary['pf_applicable'] ?? true);
-        $salary['esi_applicable'] = (bool) ($salary['esi_applicable'] ?? false);
-        $salary['professional_tax_applicable'] = (bool) ($salary['professional_tax_applicable'] ?? true);
+        $salary['conveyance_allowance'] = (float) ($settings['conveyance_allowance'] ?? 0);
+        $salary['medical_allowance'] = (float) ($settings['medical_allowance'] ?? 0);
+        $salary['other_allowance'] = (float) ($settings['other_allowance'] ?? 0);
+        $salary['pf_applicable'] = $settings['pf_applicable'];
+        $salary['esi_applicable'] = $settings['esi_applicable'];
+        $salary['professional_tax_applicable'] = $settings['professional_tax_applicable'];
 
         if (empty($salary['salary_payout_from']) && ! empty($salary['salary_effective_from'])) {
             $salary['salary_payout_from'] = $salary['salary_effective_from'];
@@ -930,7 +926,7 @@ class EmployeeService
 
     public function reviseSalary(Employee $employee, array $salaryData, ?User $revisedBy = null, ?string $revisionNotes = null): EmployeeSalary
     {
-        $normalized = $this->normalizeSalaryData($salaryData);
+        $normalized = $this->normalizeSalaryData($salaryData, (int) $employee->company_id);
 
         return DB::transaction(function () use ($employee, $normalized, $revisedBy, $revisionNotes) {
             $existing = EmployeeSalary::query()->where('employee_id', $employee->id)->first();
@@ -992,7 +988,7 @@ class EmployeeService
         }
 
         $existing = EmployeeSalary::query()->where('employee_id', $employee->id)->first();
-        $this->persistSalary($employee, $this->normalizeSalaryData($salaryData), $existing);
+        $this->persistSalary($employee, $this->normalizeSalaryData($salaryData, (int) $employee->company_id), $existing);
     }
 
     private function persistSalary(Employee $employee, array $salaryData, ?EmployeeSalary $existing): EmployeeSalary

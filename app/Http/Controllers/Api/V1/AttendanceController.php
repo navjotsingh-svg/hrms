@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Http\Concerns\ApiResponse;
 use App\Http\Requests\StoreAttendancePunchRequest;
 use App\Services\ActivityLogService;
+use App\Services\AttendanceNetworkService;
 use App\Services\AttendanceService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -17,6 +18,7 @@ class AttendanceController extends Controller
     public function __construct(
         private AttendanceService $attendanceService,
         private ActivityLogService $activityLogService,
+        private AttendanceNetworkService $attendanceNetworkService,
     ) {}
 
     public function status(Request $request): JsonResponse
@@ -34,12 +36,27 @@ class AttendanceController extends Controller
         $user = $request->user();
 
         try {
+            $ipAddress = $this->attendanceNetworkService->resolveClientIpFromRequest($request);
+
+            $macAddress = $this->attendanceNetworkService->resolveClientMac(
+                [
+                    $request->header('X-Client-MAC'),
+                    $request->header('X-Device-MAC'),
+                    $request->header('X-Forwarded-Mac'),
+                ],
+                $request->input('mac_address'),
+            );
+
             $result = $this->attendanceService->punch(
                 $user,
                 $request->file('selfie'),
                 (float) $request->input('latitude'),
                 (float) $request->input('longitude'),
                 $request->input('location_name'),
+                $request->filled('face_match_score') ? (float) $request->input('face_match_score') : null,
+                $request->input('selfie_face_descriptor'),
+                $ipAddress,
+                $macAddress,
             );
 
             $this->activityLogService->logAttendancePunch($user, $request, true, $result);
@@ -137,7 +154,12 @@ class AttendanceController extends Controller
             'can_manage_attendance_masters' => $user->canManageAttendanceMasters(),
             'team_employees' => ($canViewTeam || $canViewCompanyTeam) ? $this->attendanceService->teamEmployeesForUser($user) : [],
             'self_employee_id' => $user->employee?->id,
-            'default_view_own' => $user->isHrManager() && ! $user->isCompanyAdmin(),
+            'default_view_own' => ($user->isHrManager() && ! $user->isCompanyAdmin())
+                || (
+                    $user->employee?->id !== null
+                    && ! $canViewAll
+                    && ($canViewTeam || $canViewCompanyTeam)
+                ),
         ];
     }
 }

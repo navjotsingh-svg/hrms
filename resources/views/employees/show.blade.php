@@ -38,50 +38,35 @@
     </div>
     @endif
 
-    <div id="empProfilePendingSection" class="content-card profile-page-card mb-4 d-none">
-        <div class="content-card-body">
-            <div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-3">
-                <h3 class="profile-info-card-title mb-0">Pending Approvals</h3>
-                <span class="badge text-bg-warning" id="empProfilePendingCount">0 pending</span>
-            </div>
-            <div class="table-responsive">
-                <table class="table profile-documents-table mb-0">
-                    <thead>
-                        <tr>
-                            <th>Section</th>
-                            <th>Details</th>
-                            <th>Submitted</th>
-                            <th class="text-end">Actions</th>
-                        </tr>
-                    </thead>
-                    <tbody id="empProfilePendingBody"></tbody>
-                </table>
-            </div>
-        </div>
-    </div>
+    <div class="profile-dashboard-grid">
+        <aside class="profile-dashboard-sidebar">
+            @include('employees.partials.profile-sidebar')
+        </aside>
 
-    <div class="content-card profile-page-card mb-4">
-        <div class="content-card-body profile-header-wrap">
-            <div class="profile-header">
-                <div class="profile-header-avatar" aria-hidden="true">
-                    <span id="empProfileAvatarInitials">—</span>
-                </div>
-                <div class="profile-header-body">
-                    <h2 class="profile-header-name" id="empProfileDisplayName">Loading...</h2>
-                    <p class="profile-header-meta mb-0">
-                        <span id="empProfileDisplayEmail">—</span>
-                        <span class="profile-header-separator" aria-hidden="true">·</span>
-                        <span id="empProfileDisplayCode">—</span>
-                        <span class="profile-header-separator" aria-hidden="true">·</span>
-                        <span id="empProfileDisplayRole">—</span>
-                    </p>
-                    <p class="profile-header-company mb-0" id="empProfileDisplayDepartment"></p>
+        <div class="profile-dashboard-main">
+            <div id="empProfilePendingSection" class="content-card profile-page-card mb-4 d-none">
+                <div class="content-card-body">
+                    <div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-3">
+                        <h3 class="profile-info-card-title mb-0">Pending Approvals</h3>
+                        <span class="badge text-bg-warning" id="empProfilePendingCount">0 pending</span>
+                    </div>
+                    <div class="table-responsive">
+                        <table class="table profile-documents-table mb-0">
+                            <thead>
+                                <tr>
+                                    <th>Section</th>
+                                    <th>Details</th>
+                                    <th>Submitted</th>
+                                    <th class="text-end">Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody id="empProfilePendingBody"></tbody>
+                        </table>
+                    </div>
                 </div>
             </div>
-        </div>
-    </div>
 
-    <div class="content-card profile-page-card">
+            <div class="content-card profile-page-card">
         <div class="profile-tab-nav-wrap">
             <ul class="nav nav-tabs profile-tab-nav" id="empProfileTabs" role="tablist">
                 <li class="nav-item" role="presentation">
@@ -266,6 +251,8 @@
                         <div class="text-muted py-4 text-center">Open this tab to load timeline entries.</div>
                     </div>
                 </div>
+            </div>
+        </div>
             </div>
         </div>
     </div>

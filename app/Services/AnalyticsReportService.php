@@ -512,8 +512,7 @@ class AnalyticsReportService
         $query = Employee::query()
             ->with(['department', 'shift'])
             ->where('company_id', $user->company_id)
-            ->orderBy('first_name')
-            ->orderBy('last_name');
+            ->orderedByName();
 
         $status = $filters['status'] ?? 'active';
 

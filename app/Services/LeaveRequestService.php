@@ -37,26 +37,32 @@ class LeaveRequestService
             ->where('company_id', $user->company_id)
             ->orderByDesc('created_at');
 
-        if (! $user->canViewAllLeaveRequests()) {
+        if ($user->hasPermission('leave.manage')) {
+            if (! empty($filters['employee_id'])) {
+                $query->where('employee_id', $filters['employee_id']);
+            }
+        } elseif ($user->canApproveLeave()) {
             $employee = $this->employeeAccessService->linkedEmployee($user);
 
             if (! $employee) {
                 throw new AccessDeniedHttpException('No employee profile linked to your account.');
             }
 
-            if ($user->canApproveLeave()) {
-                $subordinateIds = $this->employeeAccessService->subordinateIdsForUser($user);
-                $visibleEmployeeIds = array_values(array_unique([
-                    ...$subordinateIds,
-                    $employee->id,
-                ]));
+            $subordinateIds = $this->employeeAccessService->subordinateIdsForUser($user);
+            $visibleEmployeeIds = array_values(array_unique([
+                ...$subordinateIds,
+                $employee->id,
+            ]));
 
-                $query->whereIn('employee_id', $visibleEmployeeIds);
-            } else {
-                $query->where('employee_id', $employee->id);
+            $query->whereIn('employee_id', $visibleEmployeeIds);
+        } else {
+            $employee = $this->employeeAccessService->linkedEmployee($user);
+
+            if (! $employee) {
+                throw new AccessDeniedHttpException('No employee profile linked to your account.');
             }
-        } elseif (! empty($filters['employee_id'])) {
-            $query->where('employee_id', $filters['employee_id']);
+
+            $query->where('employee_id', $employee->id);
         }
 
         if (! empty($filters['status'])) {

@@ -29,6 +29,7 @@ Route::prefix('v1')->name('api.')->group(function () {
         Route::post('profile/personal-sections', [ProfileController::class, 'storePersonalSection'])->name('profile.personal-sections.store');
         Route::post('profile/compliance-fields', [ProfileController::class, 'storeComplianceField'])->name('profile.compliance-fields.store');
         Route::post('profile/payment-methods', [ProfileController::class, 'storePaymentMethod'])->name('profile.payment-methods.store');
+        Route::post('profile/photo', [ProfileController::class, 'storeProfilePhoto'])->name('profile.photo.store');
         Route::get('profile/payment-method-proofs/{employeePaymentMethodProof}/download', [ProfileController::class, 'downloadPaymentMethodProof'])
             ->name('profile.payment-method-proofs.download')
             ->whereNumber('employeePaymentMethodProof');
@@ -140,6 +141,18 @@ Route::prefix('v1')->name('api.')->group(function () {
                 ->name('employee-payment-method-proofs.download')
                 ->whereNumber('employeePaymentMethodProof');
 
+            Route::get('employee-profile-photos/pending', [\App\Http\Controllers\Api\V1\EmployeeProfilePhotoController::class, 'pending'])
+                ->name('employee-profile-photos.pending');
+            Route::get('employee-profile-photos/{employeeProfilePhoto}/download', [\App\Http\Controllers\Api\V1\EmployeeProfilePhotoController::class, 'download'])
+                ->name('employee-profile-photos.download')
+                ->whereNumber('employeeProfilePhoto');
+            Route::patch('employee-profile-photos/{employeeProfilePhoto}/approve', [\App\Http\Controllers\Api\V1\EmployeeProfilePhotoController::class, 'approve'])
+                ->name('employee-profile-photos.approve')
+                ->whereNumber('employeeProfilePhoto');
+            Route::patch('employee-profile-photos/{employeeProfilePhoto}/reject', [\App\Http\Controllers\Api\V1\EmployeeProfilePhotoController::class, 'reject'])
+                ->name('employee-profile-photos.reject')
+                ->whereNumber('employeeProfilePhoto');
+
             Route::get('employee-family-members/pending', [\App\Http\Controllers\Api\V1\EmployeeFamilyMemberController::class, 'pending'])
                 ->name('employee-family-members.pending');
             Route::patch('employee-family-members/{employeeFamilyMember}/approve', [\App\Http\Controllers\Api\V1\EmployeeFamilyMemberController::class, 'approve'])
@@ -167,7 +180,7 @@ Route::prefix('v1')->name('api.')->group(function () {
                 ->name('employee-compliance-fields.reject')
                 ->whereNumber('employeeComplianceField');
 
-            Route::middleware('company.permission:departments.view')->group(function () {
+            Route::middleware('company.permission:departments.view,employees.manage')->group(function () {
                 Route::get('departments', [\App\Http\Controllers\Api\V1\DepartmentController::class, 'index'])
                     ->name('departments.index');
                 Route::get('departments/{department}', [\App\Http\Controllers\Api\V1\DepartmentController::class, 'show'])
@@ -192,7 +205,7 @@ Route::prefix('v1')->name('api.')->group(function () {
                     ->whereNumber('department');
             });
 
-            Route::middleware('company.permission:shifts.view')->group(function () {
+            Route::middleware('company.permission:shifts.view,employees.manage')->group(function () {
                 Route::get('shifts', [\App\Http\Controllers\Api\V1\ShiftController::class, 'index'])
                     ->name('shifts.index');
                 Route::get('shifts/{shift}', [\App\Http\Controllers\Api\V1\ShiftController::class, 'show'])
@@ -456,6 +469,10 @@ Route::prefix('v1')->name('api.')->group(function () {
 
             Route::post('attendance/punch', [\App\Http\Controllers\Api\V1\AttendanceController::class, 'punch'])
                 ->name('attendance.punch');
+            Route::post('attendance/face-reference', [\App\Http\Controllers\Api\V1\AttendanceSettingsController::class, 'syncFaceReference'])
+                ->name('attendance.face-reference.sync');
+            Route::get('attendance/current-ip', [\App\Http\Controllers\Api\V1\AttendanceSettingsController::class, 'currentIp'])
+                ->name('attendance.current-ip');
 
             Route::middleware('company.permission:attendance.regularize')->group(function () {
                 Route::get('attendance-regularizations/eligible-dates', [\App\Http\Controllers\Api\V1\AttendanceRegularizationController::class, 'eligibleDates'])
@@ -520,8 +537,14 @@ Route::prefix('v1')->name('api.')->group(function () {
                     ->whereNumber(['employee', 'leaveType']);
             });
 
+            Route::middleware('company.permission:leave.manage,employees.manage')->group(function () {
+                Route::get('leave-types', [\App\Http\Controllers\Api\V1\LeaveTypeController::class, 'index'])
+                    ->name('leave-types.index');
+            });
+
             Route::middleware('company.permission:leave.manage')->group(function () {
                 Route::apiResource('leave-types', \App\Http\Controllers\Api\V1\LeaveTypeController::class)
+                    ->except(['index'])
                     ->names('leave-types')
                     ->whereNumber('leave_type');
                 Route::patch('leave-balances/{balance}', [\App\Http\Controllers\Api\V1\LeaveBalanceController::class, 'update'])
@@ -573,15 +596,24 @@ Route::prefix('v1')->name('api.')->group(function () {
                     ->whereNumber('leave_request');
             });
 
-            Route::middleware('company.permission:attendance.manage')->group(function () {
+            Route::middleware('company.permission:attendance.manage,employees.manage')->group(function () {
                 Route::get('weekly-off', [\App\Http\Controllers\Api\V1\WeeklyOffController::class, 'show'])
                     ->name('weekly-off.show');
+            });
+
+            Route::middleware('company.permission:attendance.manage')->group(function () {
                 Route::put('weekly-off', [\App\Http\Controllers\Api\V1\WeeklyOffController::class, 'update'])
                     ->name('weekly-off.update');
                 Route::get('portal-start', [\App\Http\Controllers\Api\V1\PortalStartController::class, 'show'])
                     ->name('portal-start.show');
                 Route::put('portal-start', [\App\Http\Controllers\Api\V1\PortalStartController::class, 'update'])
                     ->name('portal-start.update');
+                Route::get('attendance/network-settings', [\App\Http\Controllers\Api\V1\AttendanceSettingsController::class, 'showNetwork'])
+                    ->name('attendance.network-settings.show');
+                Route::put('attendance/network-settings', [\App\Http\Controllers\Api\V1\AttendanceSettingsController::class, 'updateNetwork'])
+                    ->name('attendance.network-settings.update');
+                Route::put('attendance/face-settings', [\App\Http\Controllers\Api\V1\AttendanceSettingsController::class, 'updateFace'])
+                    ->name('attendance.face-settings.update');
                 Route::post('holidays', [\App\Http\Controllers\Api\V1\HolidayController::class, 'store'])
                     ->name('holidays.store');
                 Route::put('holidays/{holiday}', [\App\Http\Controllers\Api\V1\HolidayController::class, 'update'])
@@ -643,6 +675,13 @@ Route::prefix('v1')->name('api.')->group(function () {
                 Route::get('payroll-periods/{payrollPeriod}/export', [\App\Http\Controllers\Api\V1\PayrollController::class, 'export'])
                     ->name('payroll-periods.export')
                     ->whereNumber('payrollPeriod');
+                Route::put('payroll-settings', [\App\Http\Controllers\Api\V1\CompanyPayrollSettingsController::class, 'update'])
+                    ->name('payroll-settings.update');
+            });
+
+            Route::middleware('company.member')->group(function () {
+                Route::get('payroll-settings', [\App\Http\Controllers\Api\V1\CompanyPayrollSettingsController::class, 'show'])
+                    ->name('payroll-settings.show');
             });
 
             Route::middleware('company.permission:performance.participate')->group(function () {
@@ -885,6 +924,9 @@ Route::prefix('v1')->name('api.')->group(function () {
                     ->whereNumber('employee');
                 Route::post('employees/{employee}/profile/payment-methods', [\App\Http\Controllers\Api\V1\EmployeeProfileController::class, 'storePaymentMethod'])
                     ->name('employees.profile.payment-methods.store')
+                    ->whereNumber('employee');
+                Route::post('employees/{employee}/profile/photo', [\App\Http\Controllers\Api\V1\EmployeeProfileController::class, 'storeProfilePhoto'])
+                    ->name('employees.profile.photo.store')
                     ->whereNumber('employee');
                 Route::post('employees/{employee}/profile/compliance-fields', [\App\Http\Controllers\Api\V1\EmployeeProfileController::class, 'storeComplianceField'])
                     ->name('employees.profile.compliance-fields.store')

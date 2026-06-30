@@ -84,8 +84,7 @@ class MomentService
         $employees = Employee::query()
             ->where('company_id', $user->company_id)
             ->where('status', 'active')
-            ->orderBy('first_name')
-            ->orderBy('last_name')
+            ->orderedByName()
             ->get(['id', 'first_name', 'last_name', 'employee_code', 'date_of_birth', 'joining_date'])
             ->map(fn (Employee $employee) => [
                 'id' => $employee->id,

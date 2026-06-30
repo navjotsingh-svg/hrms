@@ -1,5 +1,5 @@
 import api from './api';
-import { renderActionGroup, renderCancelIconButton, renderViewLink } from './action-icons';
+import { composeActionGroup, renderCancelIconButton, renderViewLink } from './action-icons';
 import { renderApproveIconButton, renderRejectIconButton } from './review-actions';
 import { confirmLeaveCancel, confirmRequestCancel, promptRequestReviewRemarks } from './swal-utils';
 
@@ -23,6 +23,10 @@ export const reviewEndpoints = {
     payment_method: (id) => ({
         approve: `/employee-payment-methods/${id}/approve`,
         reject: `/employee-payment-methods/${id}/reject`,
+    }),
+    profile_photo: (id) => ({
+        approve: `/employee-profile-photos/${id}/approve`,
+        reject: `/employee-profile-photos/${id}/reject`,
     }),
     family_member: (id) => ({
         approve: `/employee-family-members/${id}/approve`,
@@ -92,45 +96,42 @@ export const buildReviewPayload = (kind, action, notes) => {
 
 export const renderRequestActions = (item, {
     includeView = true,
+    includeReview = false,
+    viewOverride = null,
     approveAttr = 'data-approve-request',
     rejectAttr = 'data-reject-request',
     cancelAttr = 'data-cancel-request',
-} = {}) => {
-    const actions = [];
-
-    if (includeView && item.view_url) {
-        actions.push(renderViewLink(item.view_url, 'View request'));
-    }
-
-    if (canShowRequestReviewActions(item)) {
-        actions.push(renderApproveIconButton(approveAttr, reviewToken(item), 'Approve request'));
-        actions.push(renderRejectIconButton(rejectAttr, reviewToken(item), 'Reject request (decline)'));
-    }
-
-    if (canShowRequestCancelAction(item)) {
-        actions.push(renderCancelIconButton(cancelAttr, `${item.category}:${item.entity_id}`, 'Cancel request (withdraw)'));
-    }
-
-    return actions.length ? renderActionGroup(actions.join('')) : '<span class="text-muted">—</span>';
-};
+} = {}) => composeActionGroup({
+    view: includeView && (viewOverride || (item.view_url ? renderViewLink(item.view_url, 'View request') : '')),
+    approve: includeReview && canShowRequestReviewActions(item)
+        ? renderApproveIconButton(approveAttr, reviewToken(item), 'Approve request')
+        : '',
+    reject: includeReview && canShowRequestReviewActions(item)
+        ? renderRejectIconButton(rejectAttr, reviewToken(item), 'Reject request (decline)')
+        : '',
+    cancel: canShowRequestCancelAction(item)
+        ? renderCancelIconButton(cancelAttr, `${item.category}:${item.entity_id}`, 'Cancel request (withdraw)')
+        : '',
+});
 
 export const renderHeaderReviewActions = (item, {
     approveAttr = 'data-approve-request',
     rejectAttr = 'data-reject-request',
     cancelAttr = 'data-cancel-request',
 } = {}) => {
-    const actions = [];
+    const parts = {
+        approve: canShowRequestReviewActions(item)
+            ? renderApproveIconButton(approveAttr, reviewToken(item), 'Approve request')
+            : '',
+        reject: canShowRequestReviewActions(item)
+            ? renderRejectIconButton(rejectAttr, reviewToken(item), 'Reject request (decline)')
+            : '',
+        cancel: canShowRequestCancelAction(item)
+            ? renderCancelIconButton(cancelAttr, `${item.category}:${item.entity_id}`, 'Cancel request (withdraw)')
+            : '',
+    };
 
-    if (canShowRequestReviewActions(item)) {
-        actions.push(renderApproveIconButton(approveAttr, reviewToken(item), 'Approve request'));
-        actions.push(renderRejectIconButton(rejectAttr, reviewToken(item), 'Reject request (decline)'));
-    }
-
-    if (canShowRequestCancelAction(item)) {
-        actions.push(renderCancelIconButton(cancelAttr, `${item.category}:${item.entity_id}`, 'Cancel request (withdraw)'));
-    }
-
-    return actions.length ? renderActionGroup(actions.join('')) : '';
+    return Object.values(parts).some(Boolean) ? composeActionGroup(parts) : '';
 };
 
 export const renderDetailReviewActionsBar = (item, {
@@ -140,12 +141,12 @@ export const renderDetailReviewActionsBar = (item, {
 } = {}) => {
     const buttons = [];
 
-    if (item.can_review && item.review_kind && item.review_target) {
+    if (canShowRequestReviewActions(item)) {
         buttons.push(`<button type="button" class="btn btn-success btn-sm" ${approveAttr}="${reviewToken(item)}">Approve</button>`);
         buttons.push(`<button type="button" class="btn btn-outline-danger btn-sm" ${rejectAttr}="${reviewToken(item)}">Reject</button>`);
     }
 
-    if (item.can_cancel && cancelEndpoints[item.category]) {
+    if (canShowRequestCancelAction(item)) {
         buttons.push(`<button type="button" class="btn btn-outline-secondary btn-sm" ${cancelAttr}="${item.category}:${item.entity_id}">Cancel</button>`);
     }
 

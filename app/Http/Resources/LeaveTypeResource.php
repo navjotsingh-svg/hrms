@@ -24,6 +24,7 @@ class LeaveTypeResource extends JsonResource
             'application_policy_label' => $this->applicationPolicyLabel(),
             'quota_unit' => $this->quotaUnit(),
             'is_paid' => $this->is_paid,
+            'allows_attendance_punch' => $this->allowsAttendancePunch(),
             'requires_proof' => $this->requires_proof,
             'color' => $this->color,
             'sort_order' => $this->sort_order,

@@ -42,6 +42,14 @@
         </select>
     </div>
     <div class="col-md-4">
+        <label for="allows_attendance_punch" class="form-label">Allow Punch In/Out</label>
+        <select class="form-select" id="allows_attendance_punch" name="allows_attendance_punch">
+            <option value="0">No — blocks attendance punch</option>
+            <option value="1">Yes — e.g. Work From Home</option>
+        </select>
+        <div class="form-text">Enable for WFH-style leave. Employee can still punch in/out on approved days.</div>
+    </div>
+    <div class="col-md-4">
         <label for="requires_proof" class="form-label">Requires Proof</label>
         <select class="form-select" id="requires_proof" name="requires_proof">
             <option value="0">No</option>

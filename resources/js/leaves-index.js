@@ -1,5 +1,6 @@
 import api, { getErrorMessage } from './api';
-import { renderActionGroup, renderViewLink } from './action-icons';
+import { composeActionGroup, renderCancelIconButton, renderViewLink } from './action-icons';
+import { cancelRequest } from './request-review';
 
 const routes = () => window.HRMS_WEB_ROUTES || {};
 
@@ -42,7 +43,12 @@ document.addEventListener('DOMContentLoaded', async () => {
             <td>${item.dates_label || item.from_date_label || '—'}</td>
             <td>${item.total_days_label || item.total_days}</td>
             <td><span class="company-status-pill ${statusClass(item.status)}">${item.status_label}</span></td>
-            <td>${renderActionGroup(renderViewLink(`${routes().leaveShow || '/leave'}/${item.id}`, 'View leave request'))}</td>
+            <td>${composeActionGroup({
+                view: renderViewLink(`${routes().leaveShow || '/leave'}/${item.id}`, 'View leave request'),
+                cancel: item.can_cancel && item.status === 'pending'
+                    ? renderCancelIconButton('data-cancel-leave', item.id, 'Cancel leave request')
+                    : '',
+            })}</td>
         </tr>`;
     };
 
@@ -81,6 +87,25 @@ document.addEventListener('DOMContentLoaded', async () => {
     paginationList?.addEventListener('click', (e) => {
         const btn = e.target.closest('[data-page]');
         if (btn) loadLeaves(Number(btn.dataset.page));
+    });
+
+    tableBody?.addEventListener('click', async (event) => {
+        const cancel = event.target.closest('[data-cancel-leave]');
+
+        if (!cancel) {
+            return;
+        }
+
+        try {
+            const message = await cancelRequest(`leave:${cancel.dataset.cancelLeave}`);
+
+            if (message) {
+                showAlert(message);
+                await loadLeaves(currentPage);
+            }
+        } catch (error) {
+            showAlert(getErrorMessage(error), 'danger');
+        }
     });
 
     const urlStatus = new URLSearchParams(window.location.search).get('status');

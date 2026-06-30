@@ -8,7 +8,7 @@
             <h1 class="page-title mb-1" id="requestShowTitle">Request Details</h1>
             <p class="page-subtitle mb-0" id="requestShowSubtitle"></p>
         </div>
-        <a href="{{ route('web.requests.index') }}" class="btn btn-outline-secondary">Back</a>
+        <button type="button" class="btn btn-outline-secondary" id="requestShowBackBtn">Back</button>
     </div>
 @endsection
 
@@ -22,5 +22,6 @@
             </div>
         </div>
     </div>
+    @include('partials.document-lightbox')
     @vite(['resources/js/requests-show.js'])
 @endsection
