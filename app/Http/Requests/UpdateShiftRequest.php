@@ -47,6 +47,7 @@ class UpdateShiftRequest extends FormRequest
             ],
             'start_time' => ['required', 'date_format:H:i'],
             'end_time' => ['required', 'date_format:H:i'],
+            'timezone' => ['required', 'timezone:all'],
             'break_duration_minutes' => ['nullable', 'integer', 'min:0', 'max:480'],
             'is_overnight' => ['sometimes', 'boolean'],
             'description' => ['nullable', 'string', 'max:2000'],

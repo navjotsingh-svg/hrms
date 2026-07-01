@@ -10,6 +10,7 @@ use App\Models\LeaveRequestDay;
 use App\Models\Shift;
 use App\Models\User;
 use App\Models\WeeklyOffDay;
+use App\Models\WfhRequest;
 use Carbon\Carbon;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Http\UploadedFile;
@@ -26,6 +27,7 @@ class AttendanceService
         private PortalStartService $portalStartService,
         private GeocodingService $geocodingService,
         private LeaveRequestService $leaveRequestService,
+        private WfhRequestService $wfhRequestService,
         private EmployeeAccessService $employeeAccessService,
         private FaceVerificationService $faceVerificationService,
         private AttendanceNetworkService $attendanceNetworkService,
@@ -33,9 +35,7 @@ class AttendanceService
 
     public function canMarkAttendance(User $user): bool
     {
-        return $user->employee
-            && ! $user->isSuperAdmin()
-            && ! $user->isCompanyAdmin();
+        return $user->canMarkAttendance();
     }
 
     public function canViewAllAttendance(User $user): bool
@@ -121,7 +121,7 @@ class AttendanceService
 
     public function todayStatus(User $user): array
     {
-        $employee = $user->employee;
+        $employee = $this->employeeAccessService->linkedEmployee($user);
 
         if (! $employee) {
             return [
@@ -189,7 +189,13 @@ class AttendanceService
             throw new AccessDeniedHttpException('You are not allowed to mark attendance.');
         }
 
-        $employee = $user->employee->loadMissing('shift');
+        $employee = $this->employeeAccessService->linkedEmployee($user);
+
+        if (! $employee) {
+            throw new NotFoundHttpException('No employee profile is linked to your account.');
+        }
+
+        $employee->loadMissing('shift');
         $today = now()->toDateString();
         $todayPunches = $this->punchesForDate($employee, $today);
         $dayMeta = $this->resolveDayMeta(
@@ -306,6 +312,11 @@ class AttendanceService
             $start->toDateString(),
             $end->toDateString(),
         );
+        $approvedWfhDates = $this->wfhRequestService->approvedDatesForRange(
+            $employee,
+            $start->toDateString(),
+            $end->toDateString(),
+        );
         $joiningDate = $employee->joining_date?->toDateString();
         $days = [];
 
@@ -329,6 +340,7 @@ class AttendanceService
                 $weeklyOffWeekdays,
                 $isToday,
                 $approvedLeaveDays->get($dateString),
+                $approvedWfhDates->get($dateString),
             );
 
             $status = $dayMeta['status'];
@@ -1260,6 +1272,7 @@ class AttendanceService
         ?array $weeklyOffWeekdays = null,
         bool $isToday = false,
         ?LeaveRequestDay $approvedLeaveDay = null,
+        ?WfhRequest $approvedWfhRequest = null,
     ): array {
         $companyId = $employee->company_id;
         $weeklyOffWeekdays ??= $this->attendancePolicyService->weeklyOffWeekdaysForEmployee($employee);
@@ -1309,6 +1322,16 @@ class AttendanceService
         }
 
         $approvedLeaveDay ??= $this->leaveRequestService->approvedLeaveDayOnDate($employee, $dateString);
+        $approvedWfhRequest ??= $this->wfhRequestService->approvedOnDate($employee, $dateString);
+
+        if ($approvedWfhRequest) {
+            return $this->approvedWfhDayMeta(
+                $approvedWfhRequest,
+                $workedMinutes,
+                $requiredMinutes,
+                $punchSummary,
+            );
+        }
 
         if ($approvedLeaveDay) {
             return $this->approvedLeaveDayMeta(
@@ -1450,6 +1473,30 @@ class AttendanceService
             'leave_session_label' => $leaveDay->sessionLabel(),
             'leave_request_id' => $leaveDay->leave_request_id,
         ], $this->leaveRequestService->leaveApprovalMeta($leaveDay->leaveRequest));
+    }
+
+    private function approvedWfhDayMeta(
+        WfhRequest $wfhRequest,
+        int $workedMinutes,
+        int $requiredMinutes,
+        array $punchSummary,
+    ): array {
+        $wfhRequest->loadMissing('reviewedBy');
+
+        return array_merge([
+            'status' => 'wfh',
+            'status_label' => 'Work From Home',
+            'holiday_name' => null,
+            'worked_minutes' => $workedMinutes,
+            'required_minutes' => $requiredMinutes,
+            'punch_in_label' => $punchSummary['punch_in_label'],
+            'punch_out_label' => $punchSummary['punch_out_label'],
+            'can_mark' => true,
+            'day_message' => 'Work from home approved — punch in/out to log your hours.',
+            'leave_type_name' => 'Work From Home',
+            'leave_session_label' => 'Full Day',
+            'leave_request_id' => null,
+        ], $this->wfhRequestService->wfhApprovalMeta($wfhRequest));
     }
 
     private function hasUnclosedPunchSession(Collection $punches): bool

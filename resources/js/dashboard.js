@@ -8,8 +8,9 @@ import {
     renderSimplePagination,
 } from './request-review';
 import { renderEmployeeNameBlock } from './request-display';
+import { prependAutoDismissAlert } from './form-utils';
 
-const AVATAR_COLORS = ['#3b82f6', '#8b5cf6', '#ec4899', '#f59e0b', '#14b8a6', '#6366f1', '#ef4444', '#22c55e'];
+import { renderAvatarHtml } from './avatar';
 
 let clockTimer = null;
 let punchInitialized = false;
@@ -19,19 +20,14 @@ let pendingItems = [];
 let pendingPagination = null;
 let selectedPendingKeys = new Set();
 
-const avatarColor = (seed = '') => {
-    let hash = 0;
-
-    for (let i = 0; i < seed.length; i += 1) {
-        hash = seed.charCodeAt(i) + ((hash << 5) - hash);
-    }
-
-    return AVATAR_COLORS[Math.abs(hash) % AVATAR_COLORS.length];
-};
-
 const renderPersonChip = (person) => `
     <div class="dash-person-chip dash-person-chip--static" title="${person.name}">
-        <span class="dash-person-avatar" style="background:${avatarColor(person.name)}">${person.initials}</span>
+        ${renderAvatarHtml({
+            name: person.name,
+            photoUrl: person.profile_photo_url,
+            initials: person.initials,
+            className: 'dash-person-avatar',
+        })}
         <span class="dash-person-meta">
             <span class="dash-person-name">${person.name}</span>
             <span class="dash-person-date">${person.date_label || person.joined_label || ''}</span>
@@ -410,10 +406,12 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     bindRequestReviewHandlers(pendingCard, {
         onSuccess: async (message) => {
-            const alert = document.createElement('div');
-            alert.className = 'alert alert-success alert-dismissible fade show mx-3 mt-3';
-            alert.innerHTML = `${message}<button type="button" class="btn-close" data-bs-dismiss="alert"></button>`;
-            pendingCard?.querySelector('.dash-home-card-body')?.prepend(alert);
+            prependAutoDismissAlert(
+                pendingCard?.querySelector('.dash-home-card-body'),
+                message,
+                'success',
+                { className: 'mx-3 mt-3' },
+            );
             selectedPendingKeys.clear();
             await loadPendingApprovals(pendingPage);
             await loadDashboard();

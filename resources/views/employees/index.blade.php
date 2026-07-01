@@ -70,7 +70,6 @@
                             <tr>
                                 <th class="companies-th-serial">#</th>
                                 <th>Employee</th>
-                                <th>Code</th>
                                 <th>Department</th>
                                 <th>Role</th>
                                 <th>Portal</th>
@@ -80,7 +79,7 @@
                         </thead>
                         <tbody id="employeesTableBody">
                             <tr>
-                                <td colspan="8" class="text-center text-muted py-5">Loading employees...</td>
+                                <td colspan="7" class="text-center text-muted py-5">Loading employees...</td>
                             </tr>
                         </tbody>
                     </table>

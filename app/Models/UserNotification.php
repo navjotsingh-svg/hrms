@@ -19,7 +19,27 @@ class UserNotification extends Model
 
     public const TYPE_REGULARIZATION_DECISION = 'regularization_decision';
 
+    public const TYPE_WFH_SUBMITTED = 'wfh_submitted';
+
+    public const TYPE_WFH_DECISION = 'wfh_decision';
+
+    public const TYPE_ASSET_REQUEST_SUBMITTED = 'asset_request_submitted';
+
+    public const TYPE_ASSET_REQUEST_DECISION = 'asset_request_decision';
+
+    public const TYPE_RESIGNATION_SUBMITTED = 'resignation_submitted';
+
+    public const TYPE_RESIGNATION_DECISION = 'resignation_decision';
+
+    public const TYPE_OFFBOARDING_COMPLETED = 'offboarding_completed';
+
     public const TYPE_MOMENT_NEW = 'moment_new';
+
+    public const TYPE_HELPDESK_SUBMITTED = 'helpdesk_submitted';
+
+    public const TYPE_HELPDESK_UPDATE = 'helpdesk_update';
+
+    public const TYPE_DOCUMENT_SIGNATURE_REQUIRED = 'document_signature_required';
 
     public const TYPE_PROFILE_PHOTO_SUBMITTED = 'profile_photo_submitted';
 

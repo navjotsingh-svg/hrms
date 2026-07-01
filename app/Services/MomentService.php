@@ -552,7 +552,7 @@ class MomentService
         $body = $moment->content
             ?: ($authorName ? "{$authorName} shared a moment." : 'A new moment was added to the company feed.');
 
-        $actionUrl = '/home/moments';
+        $actionUrl = '/employee-experience/social-wall';
 
         User::query()
             ->where('company_id', $moment->company_id)

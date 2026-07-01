@@ -250,7 +250,7 @@ class EmployeeService
             }
 
             if ($employee->status === 'inactive' && $employee->user_id) {
-                $this->revokePortalAccess($employee, $actor);
+                $this->blockPortalLogin($employee);
             }
         });
 
@@ -582,17 +582,7 @@ class EmployeeService
         }
 
         DB::transaction(function () use ($employee, $actor, $logChange) {
-            $user = $employee->user;
-
-            $employee->update([
-                'user_id' => null,
-                'portal_access_date' => null,
-            ]);
-
-            if ($user) {
-                $user->tokens()->delete();
-                $user->delete();
-            }
+            $this->blockPortalLogin($employee, unlinkUser: true);
 
             if ($logChange && $actor) {
                 $this->activityLogService->logChange(
@@ -610,6 +600,25 @@ class EmployeeService
         });
 
         return $employee->fresh()->load(['department', 'departments', 'role', 'manager', 'shift', 'company']);
+    }
+
+    /**
+     * Revoke active sessions without deleting the user record.
+     * Offboarded/inactive employees keep their user link for audit history.
+     */
+    private function blockPortalLogin(Employee $employee, bool $unlinkUser = false): void
+    {
+        $employee->loadMissing('user');
+        $user = $employee->user;
+
+        if ($unlinkUser) {
+            $employee->update([
+                'user_id' => null,
+                'portal_access_date' => null,
+            ]);
+        }
+
+        $user?->tokens()->delete();
     }
 
     /** @return array{employee: Employee, message: string} */
@@ -635,10 +644,26 @@ class EmployeeService
     public function updateStatus(Employee $employee, string $status, ?User $actor = null): Employee
     {
         DB::transaction(function () use ($employee, $status, $actor) {
+            $previousStatus = $employee->status;
+
             $employee->update(['status' => $status]);
 
             if ($status === 'inactive' && $employee->user_id) {
-                $this->revokePortalAccess($employee, $actor);
+                $this->blockPortalLogin($employee);
+
+                if ($actor) {
+                    $this->activityLogService->logChange(
+                        $actor,
+                        'employees',
+                        'status.inactive',
+                        $employee,
+                        (int) $employee->id,
+                        'Employee deactivated. Portal login disabled; user account retained for records.',
+                        ['status' => $previousStatus],
+                        ['status' => 'inactive'],
+                        request(),
+                    );
+                }
             }
         });
 

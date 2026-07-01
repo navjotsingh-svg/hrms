@@ -71,6 +71,30 @@ return [
             ],
         ],
         [
+            'group' => 'Employee Experience',
+            'modules' => [
+                [
+                    'key' => 'experience',
+                    'label' => 'Employee Experience',
+                    'description' => 'Social wall, polls, announcements, and peer praise',
+                    'operations' => [
+                        ['type' => 'social_wall_view', 'label' => 'View Social Wall', 'slug' => 'home.moments.view', 'requires' => ['home.view']],
+                        ['type' => 'social_wall_post', 'label' => 'Post on Social Wall', 'slug' => 'home.moments.post', 'requires' => ['home.moments.view']],
+                        ['type' => 'social_wall_comment', 'label' => 'Comment on Social Wall', 'slug' => 'home.moments.comment', 'requires' => ['home.moments.view']],
+                    ],
+                ],
+                [
+                    'key' => 'helpdesk',
+                    'label' => 'Helpdesk',
+                    'description' => 'Employee support tickets and HR resolutions',
+                    'operations' => [
+                        ['type' => 'apply', 'label' => 'Raise Tickets', 'slug' => 'helpdesk.apply'],
+                        ['type' => 'manage', 'label' => 'Manage Tickets', 'slug' => 'helpdesk.manage', 'requires' => ['helpdesk.apply']],
+                    ],
+                ],
+            ],
+        ],
+        [
             'group' => 'People & HR',
             'modules' => [
                 [
@@ -95,10 +119,11 @@ return [
                 [
                     'key' => 'documents',
                     'label' => 'Document Types',
-                    'description' => 'Employee document type master',
+                    'description' => 'Employee document type master and issued letters',
                     'operations' => [
                         ['type' => 'view', 'label' => 'View', 'slug' => 'documents.view'],
                         ['type' => 'manage', 'label' => 'Add / Edit', 'slug' => 'documents.manage', 'requires' => ['documents.view']],
+                        ['type' => 'sign', 'label' => 'Sign Letters', 'slug' => 'documents.sign'],
                     ],
                 ],
                 [
@@ -108,6 +133,8 @@ return [
                     'operations' => [
                         ['type' => 'view', 'label' => 'View', 'slug' => 'assets.view'],
                         ['type' => 'manage', 'label' => 'Add / Edit', 'slug' => 'assets.manage', 'requires' => ['assets.view']],
+                        ['type' => 'apply', 'label' => 'Request', 'slug' => 'assets.apply'],
+                        ['type' => 'approve', 'label' => 'Approve Requests', 'slug' => 'assets.approve', 'requires' => ['assets.apply']],
                     ],
                 ],
                 [
@@ -149,6 +176,27 @@ return [
                         ['type' => 'apply', 'label' => 'Apply', 'slug' => 'leave.apply'],
                         ['type' => 'approve', 'label' => 'Approve', 'slug' => 'leave.approve', 'requires' => ['leave.apply']],
                         ['type' => 'manage', 'label' => 'Configure', 'slug' => 'leave.manage'],
+                    ],
+                ],
+                [
+                    'key' => 'wfh',
+                    'label' => 'Work From Home',
+                    'description' => 'WFH requests and approvals (separate from leave)',
+                    'operations' => [
+                        ['type' => 'apply', 'label' => 'Apply', 'slug' => 'wfh.apply'],
+                        ['type' => 'approve', 'label' => 'Approve', 'slug' => 'wfh.approve', 'requires' => ['wfh.apply']],
+                    ],
+                ],
+                [
+                    'key' => 'offboarding',
+                    'label' => 'Offboarding',
+                    'description' => 'Resignation, clearance, asset return, and F&F settlement',
+                    'operations' => [
+                        ['type' => 'apply', 'label' => 'Submit Resignation', 'slug' => 'offboarding.apply'],
+                        ['type' => 'approve', 'label' => 'Approve Resignation', 'slug' => 'offboarding.approve', 'requires' => ['offboarding.apply']],
+                        ['type' => 'manage', 'label' => 'Manage Exit Cases', 'slug' => 'offboarding.manage'],
+                        ['type' => 'clearance', 'label' => 'Review Clearance', 'slug' => 'clearance.review'],
+                        ['type' => 'fnf', 'label' => 'F&F Settlement', 'slug' => 'offboarding.fnf.manage'],
                     ],
                 ],
             ],
@@ -284,6 +332,14 @@ return [
         'home.dashboard' => ['permissions' => ['home.dashboard.view', 'home.dashboard.manage']],
         'home.moments' => ['permissions' => ['home.moments.view', 'home.moments.post', 'home.moments.comment']],
 
+        'experience.social_wall' => ['permissions' => ['home.moments.view', 'home.moments.post', 'home.moments.comment']],
+        'experience.polls' => ['permissions' => ['home.moments.view', 'home.moments.post', 'home.dashboard.view', 'home.dashboard.manage']],
+        'experience.public_praise' => ['permissions' => ['home.moments.view', 'home.moments.post', 'performance.participate']],
+        'experience.helpdesk' => ['permissions' => ['helpdesk.apply', 'helpdesk.manage']],
+
+        'core_hr.documents_letters' => ['permissions' => ['documents.view', 'documents.manage', 'documents.sign']],
+        'core_hr.org_structure' => ['permissions' => ['departments.view', 'departments.manage', 'shifts.view', 'shifts.manage', 'roles.view', 'roles.manage', 'settings.manage']],
+
         'masters.departments' => ['permissions' => ['departments.view', 'departments.manage']],
         'masters.documents' => ['permissions' => ['documents.view', 'documents.manage']],
         'masters.assets' => ['permissions' => ['assets.view', 'assets.manage']],
@@ -298,7 +354,12 @@ return [
         'people' => ['permissions' => ['employees.view', 'employees.manage'], 'feature' => 'people_menu_enabled'],
 
         'requests' => ['permissions' => [
-            'leave.apply', 'leave.approve', 'attendance.regularize', 'attendance.approve',
+            'leave.apply', 'leave.approve', 'wfh.apply', 'wfh.approve',
+            'assets.apply', 'assets.approve',
+            'offboarding.apply', 'offboarding.approve',
+            'helpdesk.apply',
+            'documents.sign',
+            'attendance.regularize', 'attendance.approve',
             'expenses.apply', 'expenses.approve', 'hiring.requisition.create', 'hiring.requisition.approve',
         ]],
         'employees' => ['permissions' => ['employees.view', 'employees.manage']],
@@ -307,6 +368,12 @@ return [
         'attendance.team' => ['permissions' => ['attendance.view_team', 'attendance.manage'], 'rule' => 'attendance_team'],
         'attendance.today' => ['permissions' => ['attendance.manage']],
         'attendance.regularize' => ['permissions' => ['attendance.regularize', 'attendance.approve', 'attendance.manage']],
+        'wfh.apply' => ['permissions' => ['wfh.apply']],
+        'wfh.management' => ['permissions' => ['wfh.apply', 'wfh.approve']],
+        'assets.apply' => ['permissions' => ['assets.apply']],
+        'assets.management' => ['permissions' => ['assets.apply', 'assets.approve']],
+        'offboarding.apply' => ['permissions' => ['offboarding.apply']],
+        'offboarding.management' => ['permissions' => ['offboarding.apply', 'offboarding.approve', 'offboarding.manage', 'clearance.review', 'offboarding.fnf.manage']],
         'leave.calendar' => ['permissions' => ['leave.manage', 'leave.approve']],
         'leave.apply' => ['permissions' => ['leave.apply']],
         'leave.balances' => ['permissions' => ['leave.apply']],
@@ -323,7 +390,16 @@ return [
         'performance.question_bank' => ['permissions' => ['performance.manage']],
         'performance.goals' => ['permissions' => ['performance.manage', 'performance.participate', 'performance.review']],
         'performance.kpi' => ['permissions' => ['performance.manage']],
+        'performance.praise' => ['permissions' => ['performance.participate', 'performance.manage', 'performance.review']],
+        'performance.continuous_feedback' => ['permissions' => ['performance.participate', 'performance.manage', 'performance.review']],
+        'performance.one_on_one' => ['permissions' => ['performance.participate', 'performance.review', 'performance.manage']],
+        'performance.reviews' => ['permissions' => ['performance.participate', 'performance.review', 'performance.manage']],
+        'performance.calibration' => ['permissions' => ['performance.manage']],
+        'performance.promotions' => ['permissions' => ['performance.manage', 'employees.manage']],
         'performance.pip' => ['permissions' => ['pip.manage', 'performance.participate']],
+        'performance.insights' => ['permissions' => ['performance.manage', 'performance.participate', 'performance.review']],
+        'performance.compensation' => ['permissions' => ['performance.manage']],
+        'performance.skills' => ['permissions' => ['performance.participate', 'performance.manage', 'performance.review']],
         'hiring' => ['permissions' => [
             'hiring.manage', 'hiring.requisition.create', 'hiring.requisition.approve',
             'hiring.interview', 'hiring.careers.publish',

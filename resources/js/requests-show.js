@@ -1,5 +1,5 @@
 import api, { getErrorMessage } from './api';
-import { bindBackButton, buildCategoryReturnUrl } from './form-utils';
+import { bindBackButton, buildCategoryReturnUrl, showAutoDismissAlert } from './form-utils';
 import { renderExpenseDetailHtml, renderExpenseGroupDetailHtml } from './expense-modals';
 import {
     bindRequestReviewHandlers,
@@ -35,9 +35,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     const showAlert = (message, type = 'success') => {
         if (!alertBox) return;
-        alertBox.className = `alert alert-${type} alert-dismissible fade show`;
-        alertBox.innerHTML = `${message}<button type="button" class="btn-close" data-bs-dismiss="alert"></button>`;
-        alertBox.classList.remove('d-none');
+        showAutoDismissAlert(alertBox, message, type);
     };
 
     bindRequestAttachmentLightbox();

@@ -9,6 +9,11 @@ use App\Models\EmployeeProfilePhoto;
 use App\Models\LeaveRequest;
 use App\Models\User;
 use App\Models\UserNotification;
+use App\Models\WfhRequest;
+use App\Models\AssetRequest;
+use App\Models\AssetRequestItem;
+use App\Models\ExitCase;
+use App\Models\ResignationRequest;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Mail;
 
@@ -59,13 +64,207 @@ class WorkflowNotificationService
         );
     }
 
+    public function notifyWfhSubmitted(WfhRequest $request, User $submittedBy): void
+    {
+        $request->loadMissing(['employee', 'appliedBy']);
+
+        $employee = $request->employee;
+
+        if (! $employee) {
+            return;
+        }
+
+        $dateSummary = $request->from_date?->equalTo($request->to_date)
+            ? $request->from_date->format('d M Y')
+            : ($request->from_date?->format('d M Y').' - '.$request->to_date?->format('d M Y'));
+
+        $body = trim(sprintf(
+            '%s applied for Work From Home (%s). Reason: %s',
+            $employee->full_name,
+            $dateSummary,
+            $request->reason ?: '—',
+        ));
+
+        $this->notifyStakeholders(
+            employee: $employee,
+            exclude: $submittedBy,
+            type: UserNotification::TYPE_WFH_SUBMITTED,
+            title: 'New WFH request',
+            body: $body,
+            actionUrl: route('web.wfh.show', $request->id),
+            relatedType: 'wfh_request',
+            relatedId: $request->id,
+            emailSubject: 'WFH request submitted – '.$employee->full_name,
+            emailIntro: 'A new Work From Home request requires your attention.',
+            emailDetails: [
+                'Employee' => $employee->full_name,
+                'Dates' => $dateSummary,
+                'Duration' => $request->total_days.' day(s)',
+                'Reason' => $request->reason ?: '—',
+            ],
+        );
+    }
+
+    public function notifyAssetRequestSubmitted(AssetRequest $request, User $submittedBy): void
+    {
+        $request->loadMissing(['employee', 'items.assetType', 'appliedBy']);
+
+        $employee = $request->employee;
+
+        if (! $employee) {
+            return;
+        }
+
+        $assetName = $request->assetNamesLabel();
+
+        $body = trim(sprintf(
+            '%s requested %s. Reason: %s',
+            $employee->full_name,
+            $assetName,
+            $request->reason ?: '—',
+        ));
+
+        $this->notifyStakeholders(
+            employee: $employee,
+            exclude: $submittedBy,
+            type: UserNotification::TYPE_ASSET_REQUEST_SUBMITTED,
+            title: 'New asset request',
+            body: $body,
+            actionUrl: route('web.asset-requests.show', $request->id),
+            relatedType: 'asset_request',
+            relatedId: $request->id,
+            emailSubject: 'Asset request submitted – '.$employee->full_name,
+            emailIntro: 'A new asset request requires your attention.',
+            emailDetails: [
+                'Employee' => $employee->full_name,
+                'Asset' => $assetName,
+                'Reason' => $request->reason ?: '—',
+            ],
+        );
+    }
+
+    public function notifyResignationSubmitted(ResignationRequest $request, User $submittedBy): void
+    {
+        $request->loadMissing(['employee', 'appliedBy']);
+        $employee = $request->employee;
+
+        if (! $employee) {
+            return;
+        }
+
+        $body = trim(sprintf(
+            '%s submitted a resignation request. Proposed LWD: %s. Reason: %s',
+            $employee->full_name,
+            $request->proposed_last_working_date?->format('d M Y') ?? '—',
+            $request->reason ?: '—',
+        ));
+
+        $this->notifyStakeholders(
+            employee: $employee,
+            exclude: $submittedBy,
+            type: UserNotification::TYPE_RESIGNATION_SUBMITTED,
+            title: 'New resignation request',
+            body: $body,
+            actionUrl: route('web.offboarding.index'),
+            relatedType: 'resignation_request',
+            relatedId: $request->id,
+            emailSubject: 'Resignation submitted – '.$employee->full_name,
+            emailIntro: 'A resignation request requires your attention.',
+            emailDetails: [
+                'Employee' => $employee->full_name,
+                'Proposed LWD' => $request->proposed_last_working_date?->format('d M Y') ?? '—',
+                'Reason' => $request->reason ?: '—',
+            ],
+        );
+    }
+
+    public function notifyResignationDecision(ResignationRequest $request, User $reviewedBy, string $decision): void
+    {
+        $request->loadMissing(['employee', 'appliedBy', 'exitCase']);
+        $employee = $request->employee;
+
+        if (! $employee) {
+            return;
+        }
+
+        $approved = $decision === 'approved';
+        $statusLabel = $approved ? 'approved' : 'rejected';
+        $body = sprintf(
+            'Your resignation request has been %s by %s.',
+            $statusLabel,
+            $reviewedBy->name,
+        );
+
+        $details = [
+            'Status' => ucfirst($statusLabel),
+            'Reviewed by' => $reviewedBy->name,
+        ];
+
+        if ($approved && $request->approved_last_working_date) {
+            $details['Last working date'] = $request->approved_last_working_date->format('d M Y');
+        }
+
+        if (filled($request->review_notes)) {
+            $details['Remarks'] = $request->review_notes;
+        }
+
+        $this->notifyApplicant(
+            applicant: $request->appliedBy ?? $employee->user,
+            companyId: (int) $employee->company_id,
+            type: UserNotification::TYPE_RESIGNATION_DECISION,
+            title: 'Resignation '.$statusLabel,
+            body: $body,
+            actionUrl: $approved && $request->exitCase
+                ? route('web.offboarding.show', $request->exitCase->id)
+                : route('web.offboarding.index'),
+            relatedType: 'resignation_request',
+            relatedId: $request->id,
+            emailSubject: 'Resignation '.$statusLabel,
+            emailIntro: 'Your resignation request has been '.$statusLabel.'.',
+            emailDetails: $details,
+        );
+    }
+
+    public function notifyOffboardingCompleted(ExitCase $exitCase, User $processedBy): void
+    {
+        $exitCase->loadMissing(['employee', 'resignationRequest']);
+        $employee = $exitCase->employee;
+
+        if (! $employee) {
+            return;
+        }
+
+        $body = sprintf(
+            'Offboarding for %s has been completed. Last working date: %s.',
+            $employee->full_name,
+            $exitCase->last_working_date?->format('d M Y') ?? '—',
+        );
+
+        $this->notifyApplicant(
+            applicant: $employee->user,
+            companyId: (int) $employee->company_id,
+            type: UserNotification::TYPE_OFFBOARDING_COMPLETED,
+            title: 'Offboarding completed',
+            body: $body,
+            actionUrl: route('web.offboarding.show', $exitCase->id),
+            relatedType: 'exit_case',
+            relatedId: $exitCase->id,
+            emailSubject: 'Offboarding completed – '.$employee->full_name,
+            emailIntro: 'Your offboarding process has been completed.',
+            emailDetails: [
+                'Last working date' => $exitCase->last_working_date?->format('d M Y') ?? '—',
+                'Processed by' => $processedBy->name,
+            ],
+        );
+    }
+
     public function notifyDocumentVerification(EmployeeDocument $document, User $submittedBy): void
     {
         if ($document->status !== 'pending') {
             return;
         }
 
-        $document->loadMissing(['employee', 'documentType']);
+        $document->loadMissing(['employee', 'documentType', 'uploadedBy']);
 
         $employee = $document->employee;
 
@@ -73,24 +272,24 @@ class WorkflowNotificationService
             return;
         }
 
-        $body = trim(sprintf(
-            '%s submitted %s for verification (%s).',
+        $body = sprintf(
+            '%s uploaded a %s document (%s) for verification.',
             $employee->full_name,
-            $document->documentType?->name ?? 'a document',
+            $document->documentType?->name ?? 'document',
             $document->original_name,
-        ));
+        );
 
         $this->notifyStakeholders(
             employee: $employee,
             exclude: $submittedBy,
             type: UserNotification::TYPE_DOCUMENT_VERIFICATION,
-            title: 'Document verification request',
+            title: 'Document verification',
             body: $body,
             actionUrl: route('web.requests.show', ['category' => 'document', 'id' => $document->id]),
             relatedType: 'employee_document',
             relatedId: $document->id,
             emailSubject: 'Document verification requested – '.$employee->full_name,
-            emailIntro: 'An employee document has been submitted for verification.',
+            emailIntro: 'An employee document requires your verification.',
             emailDetails: [
                 'Employee' => $employee->full_name,
                 'Document type' => $document->documentType?->name ?? '—',
@@ -189,6 +388,150 @@ class WorkflowNotificationService
             relatedId: $request->id,
             emailSubject: 'Leave request '.$statusLabel.' – '.$dateSummary,
             emailIntro: 'Your leave request has been '.$statusLabel.'.',
+            emailDetails: $details,
+        );
+    }
+
+    public function notifyWfhDecision(WfhRequest $request, User $reviewedBy, string $decision): void
+    {
+        $request->loadMissing(['employee', 'appliedBy']);
+
+        $employee = $request->employee;
+
+        if (! $employee) {
+            return;
+        }
+
+        $approved = $decision === 'approved';
+        $dateSummary = $request->from_date?->equalTo($request->to_date)
+            ? $request->from_date->format('d M Y')
+            : ($request->from_date?->format('d M Y').' - '.$request->to_date?->format('d M Y'));
+
+        $statusLabel = $approved ? 'approved' : 'rejected';
+        $body = sprintf(
+            'Your Work From Home request for %s has been %s by %s.',
+            $dateSummary,
+            $statusLabel,
+            $reviewedBy->name,
+        );
+
+        $details = [
+            'Dates' => $dateSummary,
+            'Duration' => $request->total_days.' day(s)',
+            'Status' => ucfirst($statusLabel),
+            'Reviewed by' => $reviewedBy->name,
+        ];
+
+        if (filled($request->review_notes)) {
+            $details['Remarks'] = $request->review_notes;
+        }
+
+        $this->notifyApplicant(
+            applicant: $this->applicantForWfh($request),
+            companyId: (int) $employee->company_id,
+            type: UserNotification::TYPE_WFH_DECISION,
+            title: 'WFH request '.$statusLabel,
+            body: $body,
+            actionUrl: route('web.wfh.show', $request->id),
+            relatedType: 'wfh_request',
+            relatedId: $request->id,
+            emailSubject: 'WFH request '.$statusLabel.' – '.$dateSummary,
+            emailIntro: 'Your Work From Home request has been '.$statusLabel.'.',
+            emailDetails: $details,
+        );
+    }
+
+    public function notifyAssetRequestDecision(AssetRequest $request, User $reviewedBy, string $decision): void
+    {
+        $request->loadMissing(['employee', 'items.assetType', 'appliedBy']);
+
+        $employee = $request->employee;
+
+        if (! $employee) {
+            return;
+        }
+
+        $approved = $decision === 'approved';
+        $assetName = $request->assetNamesLabel();
+        $statusLabel = $approved ? 'approved' : 'rejected';
+        $body = sprintf(
+            'Your request for %s has been %s by %s.',
+            $assetName,
+            $statusLabel,
+            $reviewedBy->name,
+        );
+
+        $details = [
+            'Asset' => $assetName,
+            'Status' => ucfirst($statusLabel),
+            'Reviewed by' => $reviewedBy->name,
+        ];
+
+        if (filled($request->review_notes)) {
+            $details['Remarks'] = $request->review_notes;
+        }
+
+        $this->notifyApplicant(
+            applicant: $this->applicantForAssetRequest($request),
+            companyId: (int) $employee->company_id,
+            type: UserNotification::TYPE_ASSET_REQUEST_DECISION,
+            title: 'Asset request '.$statusLabel,
+            body: $body,
+            actionUrl: route('web.asset-requests.show', $request->id),
+            relatedType: 'asset_request',
+            relatedId: $request->id,
+            emailSubject: 'Asset request '.$statusLabel.' – '.$assetName,
+            emailIntro: 'Your asset request has been '.$statusLabel.'.',
+            emailDetails: $details,
+        );
+    }
+
+    public function notifyAssetRequestItemDecision(
+        AssetRequest $request,
+        AssetRequestItem $item,
+        User $reviewedBy,
+        string $decision,
+    ): void {
+        $request->loadMissing(['employee', 'appliedBy']);
+        $item->loadMissing('assetType');
+
+        $employee = $request->employee;
+
+        if (! $employee) {
+            return;
+        }
+
+        $approved = $decision === 'approved';
+        $assetName = $item->assetType?->name ?? 'Asset';
+        $statusLabel = $approved ? 'approved' : 'rejected';
+        $body = sprintf(
+            'Your request for %s has been %s by %s.',
+            $assetName,
+            $statusLabel,
+            $reviewedBy->name,
+        );
+
+        $details = [
+            'Asset' => $assetName,
+            'Status' => ucfirst($statusLabel),
+            'Reviewed by' => $reviewedBy->name,
+        ];
+
+        if (filled($item->review_notes)) {
+            $details['Remarks'] = $item->review_notes;
+        }
+
+        $this->notifyApplicant(
+            applicant: $this->applicantForAssetRequest($request),
+            companyId: (int) $employee->company_id,
+            type: UserNotification::TYPE_ASSET_REQUEST_DECISION,
+            title: 'Asset request '.$statusLabel,
+            body: $body,
+            actionUrl: route('web.asset-requests.show', $request->id),
+            relatedType: 'asset_request',
+            relatedId: $request->id,
+            emailSubject: 'Asset request '.$statusLabel.' – '.$assetName,
+            emailIntro: 'An asset in your request has been '.$statusLabel.'.',
             emailDetails: $details,
         );
     }
@@ -418,6 +761,20 @@ class WorkflowNotificationService
     }
 
     private function applicantForLeave(LeaveRequest $request): ?User
+    {
+        $request->loadMissing(['appliedBy', 'employee.user']);
+
+        return $request->appliedBy ?? $request->employee?->user;
+    }
+
+    private function applicantForWfh(WfhRequest $request): ?User
+    {
+        $request->loadMissing(['appliedBy', 'employee.user']);
+
+        return $request->appliedBy ?? $request->employee?->user;
+    }
+
+    private function applicantForAssetRequest(AssetRequest $request): ?User
     {
         $request->loadMissing(['appliedBy', 'employee.user']);
 

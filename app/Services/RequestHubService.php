@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Models\AssetRequest;
 use App\Models\AttendanceRegularizationRequest;
 use App\Models\Employee;
 use App\Models\EmployeeComplianceField;
@@ -16,6 +17,7 @@ use App\Models\ExpenseGroup;
 use App\Models\JobRequisition;
 use App\Models\LeaveRequest;
 use App\Models\User;
+use App\Models\WfhRequest;
 use Illuminate\Support\Collection;
 use Illuminate\Validation\ValidationException;
 use Symfony\Component\HttpKernel\Exception\AccessDeniedHttpException;
@@ -25,6 +27,8 @@ class RequestHubService
 {
     public function __construct(
         private LeaveRequestService $leaveRequestService,
+        private WfhRequestService $wfhRequestService,
+        private AssetRequestService $assetRequestService,
         private AttendanceRegularizationService $regularizationService,
         private EmployeeDocumentService $employeeDocumentService,
         private EmployeePaymentMethodService $employeePaymentMethodService,
@@ -117,6 +121,8 @@ class RequestHubService
     public function canReviewAny(User $user): bool
     {
         return $user->canApproveLeave()
+            || $user->canApproveWfh()
+            || $user->canApproveAssets()
             || $user->canApproveRegularization()
             || $user->canReviewEmployeeDocuments()
             || $user->canApproveExpenses()
@@ -130,6 +136,18 @@ class RequestHubService
         if ($user->canApproveLeave()) {
             $this->leaveRequestService->pendingForReviewer($user)->each(function (LeaveRequest $request) use ($items) {
                 $items->push($this->normalizeLeave($request, true));
+            });
+        }
+
+        if ($user->canApproveWfh()) {
+            $this->wfhRequestService->pendingForReviewer($user)->each(function (WfhRequest $request) use ($items) {
+                $items->push($this->normalizeWfh($request, true));
+            });
+        }
+
+        if ($user->canApproveAssets()) {
+            $this->assetRequestService->pendingForReviewer($user)->each(function (AssetRequest $request) use ($items) {
+                $items->push($this->normalizeAssetRequest($request, true));
             });
         }
 
@@ -249,6 +267,17 @@ class RequestHubService
                 ->get()
                 ->filter(fn (EmployeePaymentMethod $method) => $this->canViewTeamPaymentMethod($user, $method))
                 ->each(fn (EmployeePaymentMethod $method) => $items->push($this->normalizePaymentMethod($method, false)));
+
+            EmployeeProfilePhoto::query()
+                ->with(['employee', 'submittedBy', 'reviewedBy'])
+                ->where('company_id', $user->company_id)
+                ->whereIn('status', $statuses)
+                ->latest('reviewed_at')
+                ->latest('updated_at')
+                ->limit(50)
+                ->get()
+                ->filter(fn (EmployeeProfilePhoto $photo) => $this->canViewTeamProfilePhoto($user, $photo))
+                ->each(fn (EmployeeProfilePhoto $photo) => $items->push($this->normalizeProfilePhoto($photo, false)));
 
             EmployeeFamilyMember::query()
                 ->with(['employee', 'submittedBy', 'reviewedBy'])
@@ -489,6 +518,15 @@ class RequestHubService
             ->get()
             ->each(fn (EmployeePaymentMethod $method) => $items->push($this->normalizePaymentMethod($method, false)));
 
+        EmployeeProfilePhoto::query()
+            ->with(['employee', 'submittedBy', 'reviewedBy'])
+            ->where('employee_id', $employeeId)
+            ->whereIn('status', $statuses)
+            ->latest()
+            ->limit(50)
+            ->get()
+            ->each(fn (EmployeeProfilePhoto $photo) => $items->push($this->normalizeProfilePhoto($photo, false)));
+
         EmployeeFamilyMember::query()
             ->with(['employee', 'submittedBy'])
             ->where('employee_id', $employeeId)
@@ -581,6 +619,25 @@ class RequestHubService
         $method->loadMissing('employee');
 
         return $this->canViewTeamEmployeeRequest($user, $method->employee);
+    }
+
+    private function canViewTeamProfilePhoto(User $user, EmployeeProfilePhoto $photo): bool
+    {
+        if ((int) $photo->company_id !== (int) $user->company_id) {
+            return false;
+        }
+
+        if ($photo->submittedBy?->isHrManager()) {
+            return $user->isCompanyAdmin();
+        }
+
+        if (! $user->canReviewEmployeeDocuments()) {
+            return false;
+        }
+
+        $photo->loadMissing('employee');
+
+        return $this->canViewTeamEmployeeRequest($user, $photo->employee);
     }
 
     private function canViewTeamFamilyMember(User $user, EmployeeFamilyMember $member): bool
@@ -731,6 +788,71 @@ class RequestHubService
             'can_cancel' => ! $forApproval && ($viewer?->canCancelLeaveRequest($request) ?? false),
             'view_url' => $this->requestShowUrl('leave', (string) $request->id),
             'review_kind' => 'leave',
+            'review_target' => (string) $request->id,
+            ...$this->reviewMeta($request),
+            ...$this->submissionMeta($request),
+        ];
+    }
+
+    private function normalizeWfh(WfhRequest $request, bool $forApproval, ?User $viewer = null): array
+    {
+        $viewer ??= request()->user();
+        $dateSummary = $request->from_date?->equalTo($request->to_date)
+            ? $request->from_date->format('d M Y')
+            : ($request->from_date?->format('d M Y').' - '.$request->to_date?->format('d M Y'));
+
+        return [
+            'key' => 'wfh:'.$request->id,
+            'category' => 'wfh',
+            'category_label' => 'Work From Home',
+            'entity_id' => $request->id,
+            'batch_id' => null,
+            'requester_name' => $request->employee?->full_name ?? 'Employee',
+            'requester_code' => $request->employee?->employee_code,
+            'employee_id' => $request->employee_id,
+            'subject' => 'Work From Home',
+            'detail' => trim(($dateSummary ?: '').($request->total_days ? ' · '.$request->total_days.' day(s)' : '')),
+            'reason' => $request->reason,
+            'status' => $request->status,
+            'status_label' => ucfirst($request->status),
+            'submitted_at_label' => $request->created_at?->format('d M Y, h:i A'),
+            'sort_at' => ($request->reviewed_at ?? $request->created_at)?->timestamp ?? 0,
+            'can_review' => $forApproval && ($viewer?->canReviewWfhRequest($request) ?? false),
+            'can_cancel' => ! $forApproval && ($viewer?->canCancelWfhRequest($request) ?? false),
+            'view_url' => $this->requestShowUrl('wfh', (string) $request->id),
+            'review_kind' => 'wfh',
+            'review_target' => (string) $request->id,
+            ...$this->reviewMeta($request),
+            ...$this->submissionMeta($request),
+        ];
+    }
+
+    private function normalizeAssetRequest(AssetRequest $request, bool $forApproval, ?User $viewer = null): array
+    {
+        $viewer ??= request()->user();
+        $request->loadMissing('items.assetType');
+        $assetName = $request->assetNamesLabel();
+
+        return [
+            'key' => 'asset:'.$request->id,
+            'category' => 'asset',
+            'category_label' => 'Asset Request',
+            'entity_id' => $request->id,
+            'batch_id' => null,
+            'requester_name' => $request->employee?->full_name ?? 'Employee',
+            'requester_code' => $request->employee?->employee_code,
+            'employee_id' => $request->employee_id,
+            'subject' => $assetName,
+            'detail' => $assetName,
+            'reason' => $request->reason,
+            'status' => $request->status,
+            'status_label' => $request->statusLabel(),
+            'submitted_at_label' => $request->created_at?->format('d M Y, h:i A'),
+            'sort_at' => ($request->reviewed_at ?? $request->created_at)?->timestamp ?? 0,
+            'can_review' => $forApproval && ($viewer?->canReviewAssetRequest($request) ?? false),
+            'can_cancel' => ! $forApproval && ($viewer?->canCancelAssetRequest($request) ?? false),
+            'view_url' => $this->requestShowUrl('asset', (string) $request->id),
+            'review_kind' => 'asset',
             'review_target' => (string) $request->id,
             ...$this->reviewMeta($request),
             ...$this->submissionMeta($request),
@@ -1252,6 +1374,14 @@ class RequestHubService
             return route('web.leave.show', (int) $id);
         }
 
+        if ($category === 'wfh') {
+            return route('web.wfh.show', (int) $id);
+        }
+
+        if ($category === 'asset') {
+            return route('web.asset-requests.show', (int) $id);
+        }
+
         return route('web.requests.show', ['category' => $category, 'id' => $id]);
     }
 
@@ -1260,6 +1390,8 @@ class RequestHubService
         if ($action === 'approve') {
             match ($kind) {
                 'leave' => $this->leaveRequestService->approve($user, LeaveRequest::query()->findOrFail((int) $target), $notes),
+                'wfh' => $this->wfhRequestService->approve($user, WfhRequest::query()->findOrFail((int) $target), $notes),
+                'asset' => $this->assetRequestService->approve($user, AssetRequest::query()->findOrFail((int) $target), $notes),
                 'regularization' => $this->regularizationService->approve($user, AttendanceRegularizationRequest::query()->findOrFail((int) $target), $notes),
                 'regularization_batch' => $this->regularizationService->approveBatch($user, $target, $notes),
                 'document' => $this->employeeDocumentService->approve($user, EmployeeDocument::query()->findOrFail((int) $target), $notes),
@@ -1279,6 +1411,8 @@ class RequestHubService
 
         match ($kind) {
             'leave' => $this->leaveRequestService->reject($user, LeaveRequest::query()->findOrFail((int) $target), (string) $notes),
+            'wfh' => $this->wfhRequestService->reject($user, WfhRequest::query()->findOrFail((int) $target), (string) $notes),
+            'asset' => $this->assetRequestService->reject($user, AssetRequest::query()->findOrFail((int) $target), (string) $notes),
             'regularization' => $this->regularizationService->reject($user, AttendanceRegularizationRequest::query()->findOrFail((int) $target), (string) $notes),
             'regularization_batch' => $this->regularizationService->rejectBatch($user, $target, (string) $notes),
             'document' => $this->employeeDocumentService->reject($user, EmployeeDocument::query()->findOrFail((int) $target), (string) $notes),

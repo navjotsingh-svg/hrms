@@ -32,6 +32,8 @@ class Employee extends Model
         'profile_photo_path',
         'profile_face_descriptor',
         'joining_date',
+        'last_working_date',
+        'exit_type',
         'portal_access_date',
         'gender',
         'date_of_birth',
@@ -68,6 +70,7 @@ class Employee extends Model
     {
         return [
             'joining_date' => 'date',
+            'last_working_date' => 'date',
             'portal_access_date' => 'date',
             'date_of_birth' => 'date',
             'probation_applicable' => 'boolean',
@@ -123,6 +126,29 @@ class Employee extends Model
         }
 
         return '/'.ltrim($this->profile_photo_path, '/');
+    }
+
+    public function initials(): string
+    {
+        $first = trim((string) $this->first_name);
+        $last = trim((string) $this->last_name);
+        $fromNames = strtoupper(substr($first, 0, 1).substr($last, 0, 1));
+
+        if ($fromNames !== '') {
+            return $fromNames;
+        }
+
+        $parts = preg_split('/\s+/', trim($this->full_name), -1, PREG_SPLIT_NO_EMPTY) ?: [];
+
+        if (count($parts) >= 2) {
+            return strtoupper(substr($parts[0], 0, 1).substr($parts[array_key_last($parts)], 0, 1));
+        }
+
+        if (count($parts) === 1) {
+            return strtoupper(substr($parts[0], 0, 2)) ?: 'EM';
+        }
+
+        return 'EM';
     }
 
     public function projects(): BelongsToMany

@@ -22,6 +22,7 @@ import {
     detectDateRangePreset,
     resolveDateRange,
     saveRequestsListState,
+    showAutoDismissAlert,
 } from './form-utils';
 
 
@@ -43,6 +44,10 @@ const statusClass = (status) => ({
 const categoryClass = (category) => ({
 
     leave: 'requests-type-pill--leave',
+
+    wfh: 'requests-type-pill--regularization',
+
+    asset: 'requests-type-pill--document',
 
     regularization: 'requests-type-pill--regularization',
 
@@ -437,15 +442,8 @@ document.addEventListener('DOMContentLoaded', async () => {
 
 
     const showAlert = (message, type = 'success') => {
-
         if (!alertBox) return;
-
-        alertBox.className = `alert alert-${type} alert-dismissible fade show`;
-
-        alertBox.innerHTML = `${message}<button type="button" class="btn-close" data-bs-dismiss="alert"></button>`;
-
-        alertBox.classList.remove('d-none');
-
+        showAutoDismissAlert(alertBox, message, type);
     };
 
 

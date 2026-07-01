@@ -200,7 +200,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         return `<td class="companies-td-actions">${buttons}</td>`;
     };
 
-    const columnCount = () => (canManage || canViewProfile || canAssignAdmin ? 8 : 7);
+    const columnCount = () => (canManage || canViewProfile || canAssignAdmin ? 7 : 6);
 
     const renderRow = (employee, index, pagination) => {
         const serial = ((pagination.current_page - 1) * pagination.per_page) + index + 1;
@@ -215,9 +215,9 @@ document.addEventListener('DOMContentLoaded', async () => {
                     <div class="companies-company-info">
                         <span class="companies-company-name">${escapeHtml(employee.full_name)}</span>
                         <span class="companies-company-meta">${escapeHtml(employee.email)}${employee.designation ? ` · ${escapeHtml(employee.designation)}` : ''}</span>
+                        <span class="companies-company-meta">${escapeHtml(employee.employee_code || '—')}</span>
                     </div>
                 </td>
-                <td>${escapeHtml(employee.employee_code || '—')}</td>
                 <td>${escapeHtml(departmentLabel(employee))}</td>
                 <td>${roleName}</td>
                 <td>${renderPortalCell(employee)}</td>
@@ -422,7 +422,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             const message = escapeHtml(getErrorMessage(error));
 
             if (currentLayout === 'table') {
-                tableBody.innerHTML = `<tr><td colspan="8" class="text-center text-danger py-5">${message}</td></tr>`;
+                tableBody.innerHTML = `<tr><td colspan="${columnCount()}" class="text-center text-danger py-5">${message}</td></tr>`;
             } else {
                 cardGrid.innerHTML = `<div class="employees-card-empty text-center text-danger py-5">${message}</div>`;
             }

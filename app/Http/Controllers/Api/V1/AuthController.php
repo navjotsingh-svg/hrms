@@ -76,6 +76,20 @@ class AuthController extends Controller
             ]);
         }
 
+        if (! $user->canSignIn()) {
+            $this->activityLogService->logAuthAttempt(
+                $user,
+                $request,
+                false,
+                'Portal access disabled.',
+                $credentials['email'],
+            );
+
+            throw ValidationException::withMessages([
+                'email' => ['Your portal access has been disabled. Contact your administrator.'],
+            ]);
+        }
+
         RateLimiter::clear($this->throttleKey($credentials['email'], $request->ip()));
 
         $deviceName = $credentials['device_name'] ?? ($request->userAgent() ?: 'api-client');

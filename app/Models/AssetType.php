@@ -31,4 +31,9 @@ class AssetType extends Model
     {
         return $this->hasMany(EmployeeAsset::class);
     }
+
+    public function assetRequests(): HasMany
+    {
+        return $this->hasMany(AssetRequest::class);
+    }
 }

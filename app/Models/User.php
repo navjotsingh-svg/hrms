@@ -401,9 +401,29 @@ class User extends Authenticatable
 
     public function canMarkAttendance(): bool
     {
-        return (bool) $this->employee
-            && ! $this->isSuperAdmin()
-            && ! $this->isCompanyAdmin();
+        if ($this->isSuperAdmin()) {
+            return false;
+        }
+
+        return app(EmployeeAccessService::class)->linkedEmployee($this) !== null;
+    }
+
+    public function profilePhotoUrl(): ?string
+    {
+        return app(EmployeeAccessService::class)->linkedEmployee($this)?->profilePhotoUrl();
+    }
+
+    public function profileInitials(): string
+    {
+        $employee = app(EmployeeAccessService::class)->linkedEmployee($this);
+
+        if ($employee) {
+            return $employee->initials();
+        }
+
+        $name = trim((string) $this->name);
+
+        return $name !== '' ? strtoupper(substr($name, 0, 1)) : 'U';
     }
 
     public function canViewAttendance(): bool
@@ -747,6 +767,465 @@ class User extends Authenticatable
         }
 
         return $this->hasPermission('leave.manage');
+    }
+
+    public function canApplyWfh(): bool
+    {
+        return (bool) $this->employee
+            && $this->hasPermission('wfh.apply');
+    }
+
+    public function canApproveWfh(): bool
+    {
+        return $this->hasPermission('wfh.approve');
+    }
+
+    public function canViewAllWfhRequests(): bool
+    {
+        return $this->hasFullAccess()
+            || $this->hasPermission('wfh.approve')
+            || $this->isHrManager();
+    }
+
+    public function canReviewWfhRequest(WfhRequest $request): bool
+    {
+        if ((int) $request->company_id !== (int) $this->company_id) {
+            return false;
+        }
+
+        if ($request->status !== WfhRequest::STATUS_PENDING) {
+            return false;
+        }
+
+        if ($this->isWfhRequestOwner($request)) {
+            return false;
+        }
+
+        $request->loadMissing(['employee.user', 'appliedBy']);
+
+        if ($request->employee?->user?->isHrManager() || $request->appliedBy?->isHrManager()) {
+            return $this->isCompanyAdmin();
+        }
+
+        if ($this->isCompanyAdmin() || $this->isHrManager()) {
+            return true;
+        }
+
+        if (! $this->hasPermission('wfh.approve')) {
+            return false;
+        }
+
+        return $this->isDirectReportingManagerOfEmployee($request->employee);
+    }
+
+    public function canViewWfhRequest(WfhRequest $request): bool
+    {
+        if ((int) $request->company_id !== (int) $this->company_id) {
+            return false;
+        }
+
+        if ($this->isWfhRequestOwner($request)) {
+            return true;
+        }
+
+        $request->loadMissing('employee');
+
+        if ($this->hasFullAccess() || $this->isHrManager()) {
+            return true;
+        }
+
+        if ($this->hasPermission('wfh.approve')) {
+            return $this->isReportingManagerInHierarchy($request->employee);
+        }
+
+        return false;
+    }
+
+    public function canCancelWfhRequest(WfhRequest $request): bool
+    {
+        if ((int) $request->company_id !== (int) $this->company_id) {
+            return false;
+        }
+
+        if (in_array($request->status, [WfhRequest::STATUS_REJECTED, WfhRequest::STATUS_CANCELLED], true)) {
+            return false;
+        }
+
+        if ($this->isWfhRequestOwner($request)) {
+            return $request->status === WfhRequest::STATUS_PENDING;
+        }
+
+        return $this->isCompanyAdmin() || $this->isHrManager();
+    }
+
+    public function canUploadWfhAttachments(WfhRequest $request): bool
+    {
+        if ((int) $request->company_id !== (int) $this->company_id) {
+            return false;
+        }
+
+        if ($request->status !== WfhRequest::STATUS_PENDING) {
+            return false;
+        }
+
+        return $this->isWfhRequestOwner($request);
+    }
+
+    public function isWfhRequestOwner(WfhRequest $request): bool
+    {
+        $employee = $this->linkedEmployee();
+
+        return $employee && (int) $employee->id === (int) $request->employee_id;
+    }
+
+    public function canApplyHelpdesk(): bool
+    {
+        return (bool) $this->employee
+            && $this->hasPermission('helpdesk.apply');
+    }
+
+    public function canManageHelpdesk(): bool
+    {
+        return $this->hasPermission('helpdesk.manage')
+            || $this->isHrManager()
+            || $this->isCompanyAdmin();
+    }
+
+    public function canViewHelpdeskTicket(HelpdeskTicket $ticket): bool
+    {
+        if ((int) $ticket->company_id !== (int) $this->company_id) {
+            return false;
+        }
+
+        if ($this->canManageHelpdesk()) {
+            return true;
+        }
+
+        return $this->isHelpdeskTicketOwner($ticket);
+    }
+
+    public function canManageHelpdeskTicket(HelpdeskTicket $ticket): bool
+    {
+        return $this->canViewHelpdeskTicket($ticket) && $this->canManageHelpdesk();
+    }
+
+    public function canCommentOnHelpdeskTicket(HelpdeskTicket $ticket): bool
+    {
+        if (! $this->canViewHelpdeskTicket($ticket)) {
+            return false;
+        }
+
+        if ($ticket->status === HelpdeskTicket::STATUS_CLOSED) {
+            return false;
+        }
+
+        return $this->canManageHelpdesk() || $this->isHelpdeskTicketOwner($ticket);
+    }
+
+    public function isHelpdeskTicketOwner(HelpdeskTicket $ticket): bool
+    {
+        $employee = $this->linkedEmployee();
+
+        return $employee && (int) $employee->id === (int) $ticket->employee_id;
+    }
+
+    public function canManageDocuments(): bool
+    {
+        return $this->hasPermission('documents.manage')
+            || $this->isHrManager()
+            || $this->isCompanyAdmin();
+    }
+
+    public function canViewDocumentLetter(DocumentLetter $letter): bool
+    {
+        if ((int) $letter->company_id !== (int) $this->company_id) {
+            return false;
+        }
+
+        if ($this->canManageDocuments() || $this->hasPermission('documents.view')) {
+            return true;
+        }
+
+        return $this->isDocumentLetterOwner($letter);
+    }
+
+    public function canSignDocumentLetter(DocumentLetter $letter): bool
+    {
+        if (! $this->isDocumentLetterOwner($letter)) {
+            return false;
+        }
+
+        return $this->hasPermission('documents.sign')
+            && $letter->status === DocumentLetter::STATUS_PENDING_SIGNATURE
+            && $letter->requires_signature;
+    }
+
+    public function isDocumentLetterOwner(DocumentLetter $letter): bool
+    {
+        $employee = $this->linkedEmployee();
+
+        return $employee && (int) $employee->id === (int) $letter->employee_id;
+    }
+
+    public function canApplyAssets(): bool
+    {
+        return (bool) $this->employee
+            && $this->hasPermission('assets.apply');
+    }
+
+    public function canApproveAssets(): bool
+    {
+        return $this->hasPermission('assets.approve');
+    }
+
+    public function canViewAllAssetRequests(): bool
+    {
+        return $this->hasFullAccess()
+            || $this->hasPermission('assets.approve')
+            || $this->isHrManager();
+    }
+
+    public function canReviewAssetRequest(AssetRequest $request): bool
+    {
+        if ((int) $request->company_id !== (int) $this->company_id) {
+            return false;
+        }
+
+        if (! in_array($request->status, [
+            AssetRequest::STATUS_PENDING,
+            AssetRequest::STATUS_PARTIALLY_REVIEWED,
+        ], true)) {
+            return false;
+        }
+
+        if (! $request->hasPendingItems()) {
+            return false;
+        }
+
+        if ($this->isAssetRequestOwner($request)) {
+            return false;
+        }
+
+        $request->loadMissing(['employee.user', 'appliedBy']);
+
+        if ($request->employee?->user?->isHrManager() || $request->appliedBy?->isHrManager()) {
+            return $this->isCompanyAdmin();
+        }
+
+        if ($this->isCompanyAdmin() || $this->isHrManager()) {
+            return true;
+        }
+
+        if (! $this->hasPermission('assets.approve')) {
+            return false;
+        }
+
+        return $this->isDirectReportingManagerOfEmployee($request->employee);
+    }
+
+    public function canReviewAssetRequestItem(AssetRequestItem $item): bool
+    {
+        $item->loadMissing('assetRequest.employee.user', 'assetRequest.appliedBy');
+
+        $request = $item->assetRequest;
+
+        if (! $request || ! $this->canReviewAssetRequest($request)) {
+            return false;
+        }
+
+        return $item->isPending();
+    }
+
+    public function canViewAssetRequest(AssetRequest $request): bool
+    {
+        if ((int) $request->company_id !== (int) $this->company_id) {
+            return false;
+        }
+
+        if ($this->isAssetRequestOwner($request)) {
+            return true;
+        }
+
+        $request->loadMissing('employee');
+
+        if ($this->hasFullAccess() || $this->isHrManager()) {
+            return true;
+        }
+
+        if ($this->hasPermission('assets.approve')) {
+            return $this->isReportingManagerInHierarchy($request->employee);
+        }
+
+        return false;
+    }
+
+    public function canCancelAssetRequest(AssetRequest $request): bool
+    {
+        if ((int) $request->company_id !== (int) $this->company_id) {
+            return false;
+        }
+
+        if (in_array($request->status, [
+            AssetRequest::STATUS_REJECTED,
+            AssetRequest::STATUS_CANCELLED,
+            AssetRequest::STATUS_APPROVED,
+        ], true)) {
+            return false;
+        }
+
+        if ($this->isAssetRequestOwner($request)) {
+            return in_array($request->status, [
+                AssetRequest::STATUS_PENDING,
+                AssetRequest::STATUS_PARTIALLY_REVIEWED,
+            ], true) && $request->hasPendingItems();
+        }
+
+        return $this->isCompanyAdmin() || $this->isHrManager();
+    }
+
+    public function isAssetRequestOwner(AssetRequest $request): bool
+    {
+        $employee = $this->linkedEmployee();
+
+        return $employee && (int) $employee->id === (int) $request->employee_id;
+    }
+
+    public function canApplyOffboarding(): bool
+    {
+        return (bool) $this->employee && $this->hasPermission('offboarding.apply');
+    }
+
+    public function canApproveOffboarding(): bool
+    {
+        return $this->hasPermission('offboarding.approve');
+    }
+
+    public function canManageOffboarding(): bool
+    {
+        return $this->hasPermission('offboarding.manage') || $this->isHrManager() || $this->hasFullAccess();
+    }
+
+    public function canReviewClearance(): bool
+    {
+        return $this->hasPermission('clearance.review') || $this->canManageOffboarding();
+    }
+
+    public function canManageFnfSettlement(): bool
+    {
+        return $this->hasPermission('offboarding.fnf.manage') || $this->isHrManager() || $this->hasFullAccess();
+    }
+
+    public function canViewAllOffboardingRequests(): bool
+    {
+        return $this->hasFullAccess()
+            || $this->hasPermission('offboarding.approve')
+            || $this->hasPermission('offboarding.manage')
+            || $this->isHrManager();
+    }
+
+    public function canReviewResignationRequest(ResignationRequest $request): bool
+    {
+        if ((int) $request->company_id !== (int) $this->company_id) {
+            return false;
+        }
+
+        if ($request->status !== ResignationRequest::STATUS_PENDING) {
+            return false;
+        }
+
+        if ($this->isResignationRequestOwner($request)) {
+            return false;
+        }
+
+        $request->loadMissing(['employee.user', 'appliedBy']);
+
+        if ($request->employee?->user?->isHrManager() || $request->appliedBy?->isHrManager()) {
+            return $this->isCompanyAdmin();
+        }
+
+        if ($this->isCompanyAdmin() || $this->isHrManager() || $this->canManageOffboarding()) {
+            return true;
+        }
+
+        if (! $this->hasPermission('offboarding.approve')) {
+            return false;
+        }
+
+        return $this->isDirectReportingManagerOfEmployee($request->employee);
+    }
+
+    public function canViewResignationRequest(ResignationRequest $request): bool
+    {
+        if ((int) $request->company_id !== (int) $this->company_id) {
+            return false;
+        }
+
+        if ($this->isResignationRequestOwner($request)) {
+            return true;
+        }
+
+        if ($this->canViewAllOffboardingRequests()) {
+            return true;
+        }
+
+        $request->loadMissing('employee');
+
+        if ($this->hasPermission('offboarding.approve')) {
+            return $this->isReportingManagerInHierarchy($request->employee);
+        }
+
+        return false;
+    }
+
+    public function canCancelResignationRequest(ResignationRequest $request): bool
+    {
+        if ((int) $request->company_id !== (int) $this->company_id) {
+            return false;
+        }
+
+        if ($request->status !== ResignationRequest::STATUS_PENDING) {
+            return false;
+        }
+
+        return $this->isResignationRequestOwner($request);
+    }
+
+    public function isResignationRequestOwner(ResignationRequest $request): bool
+    {
+        $employee = $this->linkedEmployee();
+
+        return $employee && (int) $employee->id === (int) $request->employee_id;
+    }
+
+    public function canViewExitCase(ExitCase $exitCase): bool
+    {
+        if ((int) $exitCase->company_id !== (int) $this->company_id) {
+            return false;
+        }
+
+        if ($this->isExitCaseOwner($exitCase)) {
+            return true;
+        }
+
+        return $this->canManageOffboarding() || $this->canReviewClearance() || $this->canManageFnfSettlement();
+    }
+
+    public function isExitCaseOwner(ExitCase $exitCase): bool
+    {
+        $employee = $this->linkedEmployee();
+
+        return $employee && (int) $employee->id === (int) $exitCase->employee_id;
+    }
+
+    public function canReviewClearanceItem(ExitClearanceItem $item): bool
+    {
+        $item->loadMissing('exitCase');
+
+        if (! $item->exitCase || ! $this->canReviewClearance()) {
+            return false;
+        }
+
+        return $item->isPending() && $item->exitCase->status === ExitCase::STATUS_IN_PROGRESS;
     }
 
     public function linkedEmployee(): ?Employee

@@ -2,7 +2,7 @@ import { Modal } from 'bootstrap';
 import api, { getErrorMessage } from './api';
 import { renderCancelIconButton, renderViewLink, composeActionGroup } from './action-icons';
 import { renderApproveIconButton, renderRejectIconButton } from './review-actions';
-import { setSubmitLoading } from './form-utils';
+import { setSubmitLoading, showAutoDismissAlert } from './form-utils';
 import { bindEmployeeSearchSelect } from './employee-autocomplete';
 import { formatOriginalPunchLine, formatRequestedPunchLine, renderEmployeeNameBlock } from './request-display';
 import { reviewSingleRequest } from './request-review';
@@ -23,6 +23,7 @@ const eligibleStatusClass = (status) => ({
     half_day: 'regularize-eligible-card--half-day',
     short_leave: 'regularize-eligible-card--short-leave',
     incomplete: 'regularize-eligible-card--incomplete',
+    approved_update: 'regularize-eligible-card--approved-update',
 }[status] || 'regularize-eligible-card--default');
 
 const formatTimezoneLabel = () => {
@@ -132,9 +133,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     const showAlert = (message, type = 'success') => {
         if (!alertBox) return;
-        alertBox.className = `alert alert-${type} alert-dismissible fade show`;
-        alertBox.innerHTML = `${message}<button type="button" class="btn-close" data-bs-dismiss="alert"></button>`;
-        alertBox.classList.remove('d-none');
+        showAutoDismissAlert(alertBox, message, type);
     };
 
 const formatTimes = (item) => formatRequestedPunchLine(item);
@@ -142,6 +141,17 @@ const formatTimes = (item) => formatRequestedPunchLine(item);
 const formatOriginalTimes = (item) => formatOriginalPunchLine(item);
 
 const formatOriginalTimesFromEligible = (item) => {
+    if (item.is_update_request) {
+        const parts = [];
+        if (item.punch_in_label && item.punch_in_label !== '—') parts.push(`In ${item.punch_in_label}`);
+        if (item.has_punch_out && item.punch_out_label && item.punch_out_label !== 'Not recorded') {
+            parts.push(`Out ${item.punch_out_label}`);
+        } else if (item.punch_in_label && item.punch_in_label !== '—') {
+            parts.push('Out not recorded');
+        }
+        return `Approved: ${parts.join(' · ') || '—'}`;
+    }
+
     const parts = [];
     if (item.punch_in_label && item.punch_in_label !== '—') parts.push(`In ${item.punch_in_label}`);
     if (item.has_punch_out && item.punch_out_label && item.punch_out_label !== '—') {
@@ -153,12 +163,13 @@ const formatOriginalTimesFromEligible = (item) => {
 };
 
 const formatEligiblePunchMeta = (item) => {
+    const prefix = item.is_update_request ? 'Approved login / logout' : 'Current';
     const inLabel = item.punch_in_label || '—';
     const outLabel = item.has_punch_out && item.punch_out_label
         ? item.punch_out_label
         : 'Not recorded';
 
-    return `In ${inLabel} · Out ${outLabel}`;
+    return `${prefix}: In ${inLabel} · Out ${outLabel}`;
 };
 
     const selectableEligibleDates = () => Object.values(eligibleDatesByKey).map((item) => item.date);
@@ -243,9 +254,17 @@ const formatEligiblePunchMeta = (item) => {
             return;
         }
 
+        const labelEl = document.querySelector('#regularizeOriginalTimesWrap .small.text-muted');
         const selectedItems = selectedDates
             .map((date) => eligibleDatesByKey[date])
             .filter(Boolean);
+        const hasUpdate = selectedItems.some((item) => item.is_update_request);
+
+        if (labelEl) {
+            labelEl.textContent = hasUpdate
+                ? 'Previously approved login / logout'
+                : 'Current login / logout on record';
+        }
 
         if (!selectedItems.length) {
             regularizeOriginalTimes.textContent = '—';
@@ -275,7 +294,9 @@ const formatEligiblePunchMeta = (item) => {
                 const item = eligibleDatesByKey[date];
                 const label = item?.date_short_label || item?.date_label || date;
                 const meta = item
-                    ? `Current: ${formatOriginalTimesFromEligible(item)}`
+                    ? (item.is_update_request
+                        ? `Approved: ${formatOriginalTimesFromEligible(item).replace(/^Approved: /, '')}`
+                        : `Current: ${formatOriginalTimesFromEligible(item)}`)
                     : '';
 
                 return `
@@ -425,23 +446,31 @@ const formatEligiblePunchMeta = (item) => {
     const renderEligibleDates = (payload, showSubmitGrid = true) => {
         if (!eligibleDatesContainer) {
             renderMyPendingRequests(payload.pending_requests || []);
+            (payload.dates || []).forEach((item) => {
+                eligibleDatesByKey[item.date] = item;
+            });
             return;
         }
 
         renderMyPendingRequests(payload.pending_requests || []);
 
+        const dates = payload.dates || [];
+        dates.forEach((item) => {
+            eligibleDatesByKey[item.date] = item;
+        });
+
         if (!showSubmitGrid) {
             return;
         }
-
-        const dates = payload.dates || [];
-        eligibleDatesByKey = Object.fromEntries(dates.map((item) => [item.date, item]));
         selectedEligibleDates = new Set(
             [...selectedEligibleDates].filter((date) => eligibleDatesByKey[date]),
         );
 
         if (!dates.length) {
-            eligibleDatesContainer.innerHTML = '<div class="text-muted py-3">This date is not eligible for regularization.</div>';
+            const monthHint = filterMonth?.value
+                ? ` for ${new Date(`${filterMonth.value}-01`).toLocaleString('en-IN', { month: 'long', year: 'numeric' })}`
+                : '';
+            eligibleDatesContainer.innerHTML = `<div class="text-muted py-3">No eligible days${monthHint}. Try another month or check attendance for absent, incomplete, or half-day records.</div>`;
             updateEligibleSelectionUi();
             return;
         }
@@ -461,7 +490,9 @@ const formatEligiblePunchMeta = (item) => {
                     <div class="regularize-eligible-card-meta">
                         ${formatEligiblePunchMeta(item)}
                     </div>
-                    <div class="regularize-eligible-card-meta">Worked ${item.worked_hours_label} / ${item.required_hours_label}</div>
+                    ${item.is_update_request
+                        ? '<div class="regularize-eligible-card-meta">Select to request a time change</div>'
+                        : `<div class="regularize-eligible-card-meta">Worked ${item.worked_hours_label} / ${item.required_hours_label}</div>`}
                 </div>
             `;
         }).join('');
@@ -472,16 +503,18 @@ const formatEligiblePunchMeta = (item) => {
     const loadEligibleDates = async (date = null) => {
         if (!eligibleDatesContainer) return;
 
-        eligibleDatesContainer.innerHTML = '<div class="text-muted py-3">Loading...</div>';
+        eligibleDatesContainer.innerHTML = '<div class="text-muted py-3">Loading eligible days...</div>';
 
         try {
             const params = {};
             if (date) {
                 params.date = date;
+            } else if (filterMonth?.value) {
+                params.month = filterMonth.value;
             }
 
             const { data } = await api.get('/attendance-regularizations/eligible-dates', { params });
-            renderEligibleDates(data.data || {}, Boolean(date));
+            renderEligibleDates(data.data || {}, !date);
         } catch (error) {
             eligibleDatesContainer.innerHTML = `<div class="text-danger py-3">${getErrorMessage(error)}</div>`;
         }
@@ -580,6 +613,9 @@ const formatEligiblePunchMeta = (item) => {
         const cancelAction = item.can_cancel && item.status === 'pending'
             ? renderCancelIconButton('data-cancel-regularize', item.id, 'Cancel request')
             : '';
+        const updateAction = item.can_request_update
+            ? `<button type="button" class="btn btn-sm btn-outline-primary" data-update-regularize="${item.attendance_date}">Update time</button>`
+            : '';
 
         return `<tr>
             <td>${serial}</td>
@@ -587,12 +623,16 @@ const formatEligiblePunchMeta = (item) => {
             <td>
                 ${item.attendance_date_label || '—'}
                 ${item.batch_id ? '<div class="small text-muted mt-1">Part of a multi-day request</div>' : ''}
+                ${item.is_update_request ? '<div class="small text-muted mt-1">Update request</div>' : ''}
             </td>
-            <td>${formatOriginalTimes(item)}</td>
+            <td>
+                ${item.is_update_request ? '<div class="small text-muted">Previously approved</div>' : ''}
+                ${formatOriginalTimes(item)}
+            </td>
             <td>${formatTimes(item)}</td>
             <td class="text-truncate" style="max-width:220px">${item.reason}</td>
             <td><span class="company-status-pill ${statusClass(item.status)}">${item.status_label}</span></td>
-            <td>${composeActionGroup({ view: viewLink, cancel: cancelAction })}</td>
+            <td>${composeActionGroup({ view: viewLink, cancel: cancelAction })}${updateAction}</td>
         </tr>`;
     };
 
@@ -771,8 +811,8 @@ const formatEligiblePunchMeta = (item) => {
 
         if (activeTab === 'my-requests') {
             await loadMyRequests(page);
-            if (urlDate && eligibleDatesContainer) {
-                await loadEligibleDates(urlDate);
+            if (eligibleDatesContainer) {
+                await loadEligibleDates(urlDate || null);
             }
             return;
         }
@@ -827,7 +867,7 @@ const formatEligiblePunchMeta = (item) => {
             loadRequests(page),
             loadPending(),
             loadMyPending(),
-            urlDate ? loadEligibleDates(urlDate) : Promise.resolve(),
+            eligibleDatesContainer ? loadEligibleDates(urlDate || null) : Promise.resolve(),
         ]);
     };
 
@@ -878,6 +918,30 @@ const formatEligiblePunchMeta = (item) => {
             await api.patch(`/attendance-regularizations/${id}/cancel`);
             showAlert('Regularization request cancelled.');
             await reloadDashboard(currentPage);
+        } catch (error) {
+            showAlert(getErrorMessage(error), 'danger');
+        }
+    };
+
+    const handleUpdateRequest = async (date) => {
+        if (!date) return;
+
+        try {
+            const { data } = await api.get('/attendance-regularizations/eligible-dates', { params: { date } });
+            renderEligibleDates(data.data || {}, false);
+
+            if (!eligibleDatesByKey[date]) {
+                showAlert('This date is not available for update right now.', 'warning');
+                return;
+            }
+
+            if (eligibleDatesContainer) {
+                clearEligibleSelection();
+                selectedEligibleDates.add(date);
+                updateEligibleSelectionUi();
+            }
+
+            openRegularizeModal([date]);
         } catch (error) {
             showAlert(getErrorMessage(error), 'danger');
         }
@@ -956,7 +1020,9 @@ const formatEligiblePunchMeta = (item) => {
 
     myRequestsTableBody?.addEventListener('click', (event) => {
         const cancel = event.target.closest('[data-cancel-regularize]');
+        const update = event.target.closest('[data-update-regularize]');
         if (cancel) handleCancel(cancel.dataset.cancelRegularize);
+        if (update) handleUpdateRequest(update.dataset.updateRegularize);
     });
 
     pendingContainer?.addEventListener('click', (event) => {
@@ -973,7 +1039,9 @@ const formatEligiblePunchMeta = (item) => {
 
     tableBody?.addEventListener('click', (event) => {
         const cancel = event.target.closest('[data-cancel-regularize]');
+        const update = event.target.closest('[data-update-regularize]');
         if (cancel) handleCancel(cancel.dataset.cancelRegularize);
+        if (update) handleUpdateRequest(update.dataset.updateRegularize);
     });
 
     regularizeForm?.addEventListener('submit', async (event) => {
@@ -1025,7 +1093,13 @@ const formatEligiblePunchMeta = (item) => {
         await reloadDashboard();
     }
 
-    filterMonth?.addEventListener('change', () => reloadDashboard(1));
+    filterMonth?.addEventListener('change', () => {
+        reloadDashboard(1);
+        if (eligibleDatesContainer) {
+            clearEligibleSelection();
+            loadEligibleDates(urlDate || null).catch((error) => showAlert(getErrorMessage(error), 'danger'));
+        }
+    });
     filterStatus?.addEventListener('change', () => {
         if (isHrView && activeTab !== 'history') {
             return;
@@ -1047,7 +1121,7 @@ const formatEligiblePunchMeta = (item) => {
     if (urlDate && eligibleDatesByKey[urlDate]) {
         setEligibleSelection([urlDate]);
         openRegularizeModal([urlDate]);
-    } else {
+    } else if (eligibleDatesContainer) {
         updateEligibleSelectionUi();
     }
 });

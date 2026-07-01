@@ -277,12 +277,19 @@ class AttendanceRegularizationService
 
         $this->assertCanRequestForDate($user, $employee, $date);
 
-        $originalPunches = $this->originalPunchesForDate($employee->id, $date);
+        $approvedRequest = $this->latestApprovedForDate((int) $employee->id, $date);
+        $originalPunches = $approvedRequest
+            ? [
+                'punch_in' => $approvedRequest->requested_punch_in,
+                'punch_out' => $approvedRequest->requested_punch_out,
+            ]
+            : $this->originalPunchesForDate($employee->id, $date);
 
         $request = AttendanceRegularizationRequest::create([
             'company_id' => $employee->company_id,
             'employee_id' => $employee->id,
             'batch_id' => $data['batch_id'] ?? null,
+            'supersedes_request_id' => $approvedRequest?->id,
             'attendance_date' => $date,
             'requested_punch_in' => $punchIn,
             'requested_punch_out' => $punchOut,
@@ -502,14 +509,20 @@ class AttendanceRegularizationService
         }
     }
 
-    public function eligibleDatesForUser(User $user, ?int $employeeId = null, ?string $onlyDate = null): array
-    {
+    public function eligibleDatesForUser(
+        User $user,
+        ?int $employeeId = null,
+        ?string $onlyDate = null,
+        ?string $month = null,
+    ): array {
         if ($user->canViewAllAttendance()) {
             if (! $user->employee) {
                 return [
                     'employee' => null,
                     'dates' => [],
                     'pending_requests' => [],
+                    'month' => $month,
+                    'month_label' => $this->formatMonthLabel($month),
                 ];
             }
 
@@ -524,8 +537,10 @@ class AttendanceRegularizationService
         if (! $onlyDate) {
             return [
                 'employee' => $this->formatEmployeeSummary($employee),
-                'dates' => [],
+                'dates' => $this->collectEligibleDatesForEmployee($user, $employee, $month),
                 'pending_requests' => $pendingRequests,
+                'month' => $month ?: now()->format('Y-m'),
+                'month_label' => $this->formatMonthLabel($month ?: now()->format('Y-m')),
             ];
         }
 
@@ -549,9 +564,12 @@ class AttendanceRegularizationService
         $date = Carbon::parse($onlyDate);
         $dateString = $date->toDateString();
         $dayMeta = $this->attendanceService->dayStatusForEmployee($employee, $dateString);
+        $approvedRequest = $this->latestApprovedForDate((int) $employee->id, $dateString);
 
-        if (! $this->pendingForEmployeeDate($employee, $dateString)
-            && ! $this->hasApprovedRegularizationForDate($employee->id, $dateString)
+        if ($approvedRequest && ! $this->pendingForEmployeeDate($employee, $dateString)) {
+            $dates[] = $this->formatUpdatableApprovedDate($employee, $approvedRequest);
+        } elseif (! $this->pendingForEmployeeDate($employee, $dateString)
+            && ! $this->hasApprovedRegularizationForDate((int) $employee->id, $dateString)
             && in_array($dayMeta['status'], self::REGULARIZABLE_STATUSES, true)
             && $this->canRequestForDate($user, $employee, $dateString)) {
             $dates[] = $this->formatEligibleDate($dateString, $date, $dayMeta, $employee);
@@ -614,11 +632,133 @@ class AttendanceRegularizationService
 
     private function hasApprovedRegularizationForDate(int $employeeId, string $date): bool
     {
+        return $this->latestApprovedForDate($employeeId, $date) !== null;
+    }
+
+    public function latestApprovedForDate(int $employeeId, string $date): ?AttendanceRegularizationRequest
+    {
         return AttendanceRegularizationRequest::query()
             ->where('employee_id', $employeeId)
             ->whereDate('attendance_date', $date)
             ->where('status', AttendanceRegularizationRequest::STATUS_APPROVED)
-            ->exists();
+            ->orderByDesc('reviewed_at')
+            ->orderByDesc('id')
+            ->first();
+    }
+
+    public function canRequestUpdateForDate(User $user, Employee $employee, string $date): bool
+    {
+        try {
+            $this->assertCanRequestForDate($user, $employee, $date);
+
+            return $this->latestApprovedForDate((int) $employee->id, $date) !== null;
+        } catch (\Throwable) {
+            return false;
+        }
+    }
+
+    /** @return array<int, array<string, mixed>> */
+    private function collectEligibleDatesForEmployee(User $user, Employee $employee, ?string $month = null): array
+    {
+        $month = $month && preg_match('/^\d{4}-\d{2}$/', $month) ? $month : now()->format('Y-m');
+        $rangeStart = Carbon::createFromFormat('Y-m', $month)->startOfMonth();
+        $rangeEnd = Carbon::createFromFormat('Y-m', $month)->endOfMonth();
+        $today = now()->startOfDay();
+
+        if ($rangeEnd->gt($today)) {
+            $rangeEnd = $today->copy();
+        }
+
+        $trackingStart = $this->portalStartService->attendanceTrackingStartDate($employee);
+        if ($trackingStart) {
+            $trackingCarbon = Carbon::parse($trackingStart)->startOfDay();
+            if ($trackingCarbon->gt($rangeStart)) {
+                $rangeStart = $trackingCarbon->copy();
+            }
+        }
+
+        if ($employee->joining_date) {
+            $joiningStart = $employee->joining_date->copy()->startOfDay();
+            if ($joiningStart->gt($rangeStart)) {
+                $rangeStart = $joiningStart->copy();
+            }
+        }
+
+        if ($rangeStart->gt($rangeEnd)) {
+            return [];
+        }
+
+        $eligible = [];
+        $current = $rangeStart->copy();
+
+        while ($current->lte($rangeEnd)) {
+            $dateString = $current->toDateString();
+
+            if (! $this->pendingForEmployeeDate($employee, $dateString)) {
+                $approvedRequest = $this->latestApprovedForDate((int) $employee->id, $dateString);
+
+                if ($approvedRequest && $this->canRequestForDate($user, $employee, $dateString)) {
+                    $eligible[$dateString] = $this->formatUpdatableApprovedDate($employee, $approvedRequest);
+                } elseif (! $this->hasApprovedRegularizationForDate((int) $employee->id, $dateString)) {
+                    $dayMeta = $this->attendanceService->dayStatusForEmployee($employee, $dateString);
+
+                    if (in_array($dayMeta['status'], self::REGULARIZABLE_STATUSES, true)
+                        && $this->canRequestForDate($user, $employee, $dateString)) {
+                        $eligible[$dateString] = $this->formatEligibleDate(
+                            $dateString,
+                            $current->copy(),
+                            $dayMeta,
+                            $employee,
+                        );
+                    }
+                }
+            }
+
+            $current->addDay();
+        }
+
+        return collect($eligible)->sortByDesc('date')->values()->all();
+    }
+
+    private function formatMonthLabel(?string $month): ?string
+    {
+        if (! $month || ! preg_match('/^\d{4}-\d{2}$/', $month)) {
+            return null;
+        }
+
+        return Carbon::createFromFormat('Y-m', $month)->format('F Y');
+    }
+
+    private function formatUpdatableApprovedDate(
+        Employee $employee,
+        AttendanceRegularizationRequest $request,
+    ): array {
+        $timezone = $this->timezoneForEmployee((int) $employee->id);
+        $dateString = $request->attendance_date->toDateString();
+        $date = $request->attendance_date->copy();
+        $hasPunchOut = $request->requested_punch_out !== null;
+
+        return [
+            'date' => $dateString,
+            'date_label' => $date->format('l, d M Y'),
+            'date_short_label' => $date->format('D, d M'),
+            'status' => 'approved_update',
+            'status_label' => 'Approved · Update',
+            'is_update_request' => true,
+            'approved_request_id' => $request->id,
+            'punch_in_label' => $this->formatPunchTime($request->requested_punch_in, $timezone, 'h:i A') ?? '—',
+            'punch_out_label' => $hasPunchOut
+                ? $this->formatPunchTime($request->requested_punch_out, $timezone, 'h:i A')
+                : 'Not recorded',
+            'has_punch_out' => $hasPunchOut,
+            'worked_hours_label' => '—',
+            'required_hours_label' => '—',
+            'suggested_punch_in' => $this->formatPunchTime($request->requested_punch_in, $timezone, 'H:i')
+                ?? $this->shiftTime($employee, 'start'),
+            'suggested_punch_out' => $hasPunchOut
+                ? $this->formatPunchTime($request->requested_punch_out, $timezone, 'H:i')
+                : null,
+        ];
     }
 
     private function formatEligibleDate(
@@ -627,17 +767,11 @@ class AttendanceRegularizationService
         array $dayMeta,
         Employee $employee,
     ): array {
-        $punches = AttendancePunch::query()
-            ->where('employee_id', $employee->id)
-            ->whereDate('punched_at', $dateString)
-            ->orderBy('punched_at')
-            ->get();
-
-        $firstIn = $punches->firstWhere('punch_type', AttendancePunch::TYPE_IN);
-        $lastOut = $punches->where('punch_type', AttendancePunch::TYPE_OUT)->last();
+        $timezone = $this->timezoneForEmployee((int) $employee->id);
+        $originals = $this->originalPunchesForDate((int) $employee->id, $dateString);
         $workedMinutes = (int) ($dayMeta['worked_minutes'] ?? 0);
         $requiredMinutes = (int) ($dayMeta['required_minutes'] ?? 0);
-        $hasPunchOut = $lastOut !== null;
+        $hasPunchOut = $originals['punch_out'] !== null;
 
         return [
             'date' => $dateString,
@@ -645,16 +779,18 @@ class AttendanceRegularizationService
             'date_short_label' => $date->format('D, d M'),
             'status' => $dayMeta['status'],
             'status_label' => $this->statusLabel($dayMeta['status']),
-            'punch_in_label' => $dayMeta['punch_in_label'],
-            'punch_out_label' => $hasPunchOut ? $dayMeta['punch_out_label'] : null,
+            'punch_in_label' => $this->formatPunchTime($originals['punch_in'], $timezone, 'h:i A'),
+            'punch_out_label' => $hasPunchOut
+                ? $this->formatPunchTime($originals['punch_out'], $timezone, 'h:i A')
+                : null,
             'has_punch_out' => $hasPunchOut,
             'worked_hours_label' => $this->formatMinutes($workedMinutes),
             'required_hours_label' => $this->formatMinutes($requiredMinutes),
-            'suggested_punch_in' => $firstIn
-                ? $firstIn->punched_at->format('H:i')
+            'suggested_punch_in' => $originals['punch_in']
+                ? $this->formatPunchTime($originals['punch_in'], $timezone, 'H:i')
                 : $this->shiftTime($employee, 'start'),
             'suggested_punch_out' => $hasPunchOut
-                ? $lastOut->punched_at->format('H:i')
+                ? $this->formatPunchTime($originals['punch_out'], $timezone, 'H:i')
                 : null,
         ];
     }
@@ -756,13 +892,25 @@ class AttendanceRegularizationService
             ]);
         }
 
+        $approvedRequest = $this->latestApprovedForDate((int) $employee->id, $date);
+        $isUpdateRequest = $approvedRequest !== null;
+        $dayMeta = $this->attendanceService->dayStatusForEmployee($employee, $date);
+
+        if ($isUpdateRequest) {
+            if ($dayMeta['status'] === 'on_leave') {
+                throw ValidationException::withMessages([
+                    'attendance_date' => 'Approved leave days cannot be regularized.',
+                ]);
+            }
+
+            return;
+        }
+
         if ($this->hasApprovedRegularizationForDate((int) $employee->id, $date)) {
             throw ValidationException::withMessages([
                 'attendance_date' => 'This date already has an approved regularization request.',
             ]);
         }
-
-        $dayMeta = $this->attendanceService->dayStatusForEmployee($employee, $date);
 
         if ($dayMeta['status'] === 'on_leave') {
             throw ValidationException::withMessages([
@@ -877,21 +1025,25 @@ class AttendanceRegularizationService
 
     public function formatOriginalPunchFields(AttendanceRegularizationRequest $request): array
     {
-        $punchIn = $request->original_punch_in;
-        $punchOut = $request->original_punch_out;
+        $timezone = $this->timezoneForEmployee((int) $request->employee_id);
+        $live = $this->originalPunchesForDate(
+            (int) $request->employee_id,
+            $request->attendance_date->toDateString(),
+        );
 
-        if (! $punchIn || ! $punchOut) {
-            $original = $this->originalPunchesForDate(
-                (int) $request->employee_id,
-                $request->attendance_date->toDateString(),
-            );
-            $punchIn = $punchIn ?? $original['punch_in'];
-            $punchOut = $punchOut ?? $original['punch_out'];
+        if ($request->status === AttendanceRegularizationRequest::STATUS_PENDING && $request->supersedes_request_id) {
+            $punchIn = $request->original_punch_in;
+            $punchOut = $request->original_punch_out;
+        } elseif ($request->status === AttendanceRegularizationRequest::STATUS_PENDING) {
+            $punchIn = $live['punch_in'];
+            $punchOut = $live['punch_out'];
+        } else {
+            $punchIn = $request->original_punch_in ?? $live['punch_in'];
+            $punchOut = $request->original_punch_out ?? $live['punch_out'];
         }
 
-        $timezone = $this->timezoneForEmployee((int) $request->employee_id);
-
         return [
+            'has_original_punch_out' => $punchOut !== null,
             'original_punch_in' => $this->formatPunchTime($punchIn, $timezone, 'H:i'),
             'original_punch_out' => $this->formatPunchTime($punchOut, $timezone, 'H:i'),
             'original_punch_in_label' => $this->formatPunchTime($punchIn, $timezone, 'h:i A'),
@@ -986,7 +1138,27 @@ class AttendanceRegularizationService
             ->orderBy('punched_at')
             ->get();
 
+        return $this->resolveEffectivePunchTimes($punches);
+    }
+
+    /**
+     * Match attendance day display: when the last punch is still IN, the day has no recorded punch out.
+     *
+     * @return array{punch_in: ?Carbon, punch_out: ?Carbon}
+     */
+    private function resolveEffectivePunchTimes(Collection $punches): array
+    {
         $firstIn = $punches->firstWhere('punch_type', AttendancePunch::TYPE_IN);
+        $hasUnclosedSession = $punches->isNotEmpty()
+            && $punches->last()->punch_type === AttendancePunch::TYPE_IN;
+
+        if ($hasUnclosedSession) {
+            return [
+                'punch_in' => $firstIn?->punched_at,
+                'punch_out' => null,
+            ];
+        }
+
         $lastOut = $punches->where('punch_type', AttendancePunch::TYPE_OUT)->last();
 
         return [

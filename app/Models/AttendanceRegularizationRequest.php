@@ -20,6 +20,7 @@ class AttendanceRegularizationRequest extends Model
         'company_id',
         'employee_id',
         'batch_id',
+        'supersedes_request_id',
         'attendance_date',
         'requested_punch_in',
         'requested_punch_out',
@@ -63,6 +64,11 @@ class AttendanceRegularizationRequest extends Model
     public function reviewedBy(): BelongsTo
     {
         return $this->belongsTo(User::class, 'reviewed_by_user_id');
+    }
+
+    public function supersedesRequest(): BelongsTo
+    {
+        return $this->belongsTo(self::class, 'supersedes_request_id');
     }
 
     public function punches(): HasMany

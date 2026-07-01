@@ -31,9 +31,42 @@ Route::redirect('/register', '/');
         Route::get('/dashboard', [\App\Http\Controllers\HomeController::class, 'dashboard'])
             ->middleware('company.permission:home.dashboard.view,home.dashboard.manage')
             ->name('dashboard');
-        Route::get('/moments', [\App\Http\Controllers\HomeController::class, 'moments'])
+        Route::get('/moments', fn () => redirect()->route('web.employee-experience.social-wall'))
             ->middleware('company.permission:home.moments.view,home.moments.post')
             ->name('moments');
+    });
+
+    Route::middleware('company.member')->prefix('employee-experience')->name('employee-experience.')->group(function () {
+        Route::get('/social-wall', [\App\Http\Controllers\EmployeeExperienceController::class, 'socialWall'])
+            ->middleware('company.permission:home.moments.view,home.moments.post,home.moments.comment')
+            ->name('social-wall');
+        Route::get('/polls-announcements', [\App\Http\Controllers\EmployeeExperienceController::class, 'pollsAnnouncements'])
+            ->middleware('company.permission:home.moments.view,home.dashboard.view,home.dashboard.manage')
+            ->name('polls-announcements');
+        Route::get('/public-praise', [\App\Http\Controllers\EmployeeExperienceController::class, 'publicPraise'])
+            ->middleware('company.permission:home.moments.view,home.moments.post,performance.participate')
+            ->name('public-praise');
+    });
+
+    Route::middleware('company.member')->prefix('helpdesk')->name('helpdesk.')->group(function () {
+        Route::middleware('company.permission:helpdesk.apply')->group(function () {
+            Route::get('/create', [\App\Http\Controllers\HelpdeskController::class, 'create'])->name('create');
+        });
+        Route::middleware('company.permission:helpdesk.apply,helpdesk.manage')->group(function () {
+            Route::get('/', [\App\Http\Controllers\HelpdeskController::class, 'index'])->name('index');
+            Route::get('/{ticket}', [\App\Http\Controllers\HelpdeskController::class, 'show'])
+                ->whereNumber('ticket')
+                ->name('show');
+        });
+    });
+
+    Route::middleware('company.member')->prefix('documents-letters')->name('documents-letters.')->group(function () {
+        Route::middleware('company.permission:documents.view,documents.manage,documents.sign')->group(function () {
+            Route::get('/', [\App\Http\Controllers\DocumentLettersController::class, 'index'])->name('index');
+            Route::get('/{letter}', [\App\Http\Controllers\DocumentLettersController::class, 'show'])
+                ->whereNumber('letter')
+                ->name('show');
+        });
     });
 
     Route::get('/profile', fn () => view('profile.edit'))->name('profile');
@@ -109,6 +142,42 @@ Route::redirect('/register', '/');
     Route::middleware(['company.member', 'company.permission:attendance.view'])->group(function () {
         Route::get('/attendance/regularize', [\App\Http\Controllers\AttendanceRegularizationController::class, 'index'])
             ->name('attendance.regularize.index');
+    });
+
+    Route::middleware('company.member')->prefix('wfh')->name('wfh.')->group(function () {
+        Route::middleware('company.permission:wfh.apply')->group(function () {
+            Route::get('/apply', [\App\Http\Controllers\WfhController::class, 'create'])->name('apply');
+        });
+        Route::middleware('company.permission:wfh.apply,wfh.approve')->group(function () {
+            Route::get('/', [\App\Http\Controllers\WfhController::class, 'index'])->name('index');
+            Route::get('/{wfh}', [\App\Http\Controllers\WfhController::class, 'show'])
+                ->whereNumber('wfh')
+                ->name('show');
+        });
+    });
+
+    Route::middleware('company.member')->prefix('asset-requests')->name('asset-requests.')->group(function () {
+        Route::middleware('company.permission:assets.apply')->group(function () {
+            Route::get('/apply', [\App\Http\Controllers\AssetRequestController::class, 'create'])->name('apply');
+        });
+        Route::middleware('company.permission:assets.apply,assets.approve')->group(function () {
+            Route::get('/', [\App\Http\Controllers\AssetRequestController::class, 'index'])->name('index');
+            Route::get('/{assetRequest}', [\App\Http\Controllers\AssetRequestController::class, 'show'])
+                ->whereNumber('assetRequest')
+                ->name('show');
+        });
+    });
+
+    Route::middleware('company.member')->prefix('offboarding')->name('offboarding.')->group(function () {
+        Route::middleware('company.permission:offboarding.apply')->group(function () {
+            Route::get('/apply', [\App\Http\Controllers\OffboardingController::class, 'apply'])->name('apply');
+        });
+        Route::middleware('company.permission:offboarding.apply,offboarding.approve,offboarding.manage,clearance.review,offboarding.fnf.manage')->group(function () {
+            Route::get('/', [\App\Http\Controllers\OffboardingController::class, 'index'])->name('index');
+            Route::get('/cases/{exitCase}', [\App\Http\Controllers\OffboardingController::class, 'show'])
+                ->whereNumber('exitCase')
+                ->name('show');
+        });
     });
 
     Route::middleware('company.member')->prefix('leave')->name('leave.')->group(function () {
@@ -191,6 +260,15 @@ Route::redirect('/register', '/');
 
     Route::middleware(['company.member', 'company.permission:performance.participate'])->prefix('performance')->name('performance.')->group(function () {
         Route::get('/', [\App\Http\Controllers\PerformanceController::class, 'overview'])->name('overview');
+        Route::get('/praise-recognition', [\App\Http\Controllers\PerformanceController::class, 'praiseRecognition'])->name('praise-recognition');
+        Route::get('/continuous-feedback', [\App\Http\Controllers\PerformanceController::class, 'continuousFeedback'])->name('continuous-feedback');
+        Route::get('/one-on-one', [\App\Http\Controllers\PerformanceController::class, 'oneOnOne'])->name('one-on-one');
+        Route::get('/reviews', [\App\Http\Controllers\PerformanceController::class, 'reviews'])->name('reviews');
+        Route::get('/calibration', [\App\Http\Controllers\PerformanceController::class, 'calibration'])->name('calibration');
+        Route::get('/promotions', [\App\Http\Controllers\PerformanceController::class, 'promotions'])->name('promotions');
+        Route::get('/insights', [\App\Http\Controllers\PerformanceController::class, 'insights'])->name('insights');
+        Route::get('/compensation', [\App\Http\Controllers\PerformanceController::class, 'compensation'])->name('compensation');
+        Route::get('/skills', [\App\Http\Controllers\PerformanceController::class, 'skills'])->name('skills');
         Route::get('/review-cycles', [\App\Http\Controllers\PerformanceController::class, 'reviewCycles'])->name('review-cycles');
         Route::get('/feedback-forms', [\App\Http\Controllers\PerformanceController::class, 'feedbackForms'])->name('feedback-forms');
         Route::get('/question-bank', [\App\Http\Controllers\PerformanceController::class, 'questionBank'])->name('question-bank');

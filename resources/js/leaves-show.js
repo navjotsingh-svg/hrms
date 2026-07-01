@@ -1,6 +1,6 @@
 import api, { getErrorMessage } from './api';
 import { compressImageFiles } from './image-compress';
-import { bindBackButton, buildCategoryReturnUrl } from './form-utils';
+import { bindBackButton, buildCategoryReturnUrl, showAutoDismissAlert } from './form-utils';
 import {
     bindRequestReviewHandlers,
     mountRequestShowActions,
@@ -18,9 +18,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     bindBackButton('leaveShowBackBtn', buildCategoryReturnUrl('leave'));
 
     const showAlert = (message, type = 'success') => {
-        alertBox.className = `alert alert-${type} alert-dismissible fade show`;
-        alertBox.innerHTML = `${message}<button type="button" class="btn-close" data-bs-dismiss="alert"></button>`;
-        alertBox.classList.remove('d-none');
+        showAutoDismissAlert(alertBox, message, type);
     };
 
     const bindUploadForm = () => {

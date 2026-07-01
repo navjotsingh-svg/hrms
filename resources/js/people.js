@@ -1,16 +1,7 @@
 import api, { getErrorMessage } from './api';
+import { renderAvatarHtml } from './avatar';
 
-const AVATAR_COLORS = ['#8b5a3c', '#6b4c35', '#2f6b4f', '#7c5c8a', '#3b6f8f', '#8b4f5c'];
-
-const avatarColor = (seed = '') => {
-    let hash = 0;
-
-    for (let i = 0; i < seed.length; i += 1) {
-        hash = seed.charCodeAt(i) + ((hash << 5) - hash);
-    }
-
-    return AVATAR_COLORS[Math.abs(hash) % AVATAR_COLORS.length];
-};
+const PEOPLE_AVATAR_COLORS = ['#8b5a3c', '#6b4c35', '#2f6b4f', '#7c5c8a', '#3b6f8f', '#8b4f5c'];
 
 let currentPage = 1;
 let searchTimeout = null;
@@ -34,7 +25,13 @@ const renderSummaryRow = (employee) => `
     <tr>
         <td>
             <a href="${employee.profile_url}" class="people-summary-name text-decoration-none">
-                <span class="people-summary-avatar" style="background:${avatarColor(employee.name)}">${employee.initials}</span>
+                ${renderAvatarHtml({
+                    name: employee.name,
+                    photoUrl: employee.profile_photo_url,
+                    initials: employee.initials,
+                    className: 'people-summary-avatar',
+                    palette: PEOPLE_AVATAR_COLORS,
+                })}
                 <span>${employee.name}</span>
             </a>
         </td>
@@ -144,7 +141,13 @@ const renderOrgEmployeeCard = (node) => {
         <div class="org-chart-node-wrap" data-org-node="${node.id}">
             <div class="org-chart-card">
                 <div class="org-chart-card-head">
-                    <span class="org-chart-avatar" style="background:${avatarColor(node.name)}">${node.initials}</span>
+                    ${renderAvatarHtml({
+                        name: node.name,
+                        photoUrl: node.profile_photo_url,
+                        initials: node.initials,
+                        className: 'org-chart-avatar',
+                        palette: PEOPLE_AVATAR_COLORS,
+                    })}
                     <div class="org-chart-card-title">${node.name} (${node.employee_code})</div>
                 </div>
                 <div class="org-chart-card-field">

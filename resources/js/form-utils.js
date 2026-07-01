@@ -316,6 +316,8 @@ export const REQUEST_CATEGORY_RETURN_FALLBACKS = {
     regularization: '/attendance/regularize',
     'regularization-batch': '/attendance/regularize',
     leave: '/leave',
+    wfh: '/wfh',
+    asset: '/asset-requests',
     expense: '/expenses',
     expense_group: '/expenses',
 };
@@ -537,4 +539,63 @@ export const consumePageFlashMessage = () => {
         message: decodeURIComponent(legacyMessage),
         type: flashMessageType(legacyMessage),
     };
+};
+
+const alertDismissTimers = new WeakMap();
+
+const shouldAutoDismissAlert = (type) => type !== 'danger';
+
+const scheduleAlertDismiss = (element, timeoutMs) => {
+    const existing = alertDismissTimers.get(element);
+
+    if (existing) {
+        window.clearTimeout(existing);
+    }
+
+    const timer = window.setTimeout(() => {
+        element.classList.remove('show');
+
+        window.setTimeout(() => {
+            element.classList.add('d-none');
+            element.innerHTML = '';
+            alertDismissTimers.delete(element);
+        }, 150);
+    }, timeoutMs);
+
+    alertDismissTimers.set(element, timer);
+};
+
+export const showAutoDismissAlert = (element, message, type = 'success', timeoutMs = 5000) => {
+    if (!element) {
+        return;
+    }
+
+    element.className = `alert alert-${type} alert-dismissible fade show`;
+    element.innerHTML = `${message}<button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>`;
+    element.classList.remove('d-none');
+
+    if (shouldAutoDismissAlert(type)) {
+        scheduleAlertDismiss(element, timeoutMs);
+    }
+};
+
+export const prependAutoDismissAlert = (container, message, type = 'success', {
+    timeoutMs = 5000,
+    className = '',
+} = {}) => {
+    if (!container) {
+        return;
+    }
+
+    container.querySelectorAll('[data-auto-dismiss-alert]').forEach((node) => node.remove());
+
+    const alert = document.createElement('div');
+    alert.dataset.autoDismissAlert = 'true';
+    alert.className = `alert alert-${type} alert-dismissible fade show ${className}`.trim();
+    alert.innerHTML = `${message}<button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>`;
+    container.prepend(alert);
+
+    if (shouldAutoDismissAlert(type)) {
+        window.setTimeout(() => alert.remove(), timeoutMs);
+    }
 };

@@ -32,7 +32,7 @@ trait ValidatesCompanyFields
             'state' => ['nullable', 'string', 'max:100'],
             'country' => ['nullable', 'string', 'max:100'],
             'postal_code' => ['nullable', 'digits:6'],
-            'timezone' => ['nullable', 'timezone'],
+            'timezone' => ['nullable', 'timezone:all'],
             'status' => ['required', Rule::in(['active', 'inactive'])],
             'description' => ['nullable', 'string', 'max:10000'],
         ];

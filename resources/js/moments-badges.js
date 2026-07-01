@@ -8,8 +8,9 @@ export const applyMomentsUnreadBadges = (unread = {}) => {
 
     const sidebarBadge = document.getElementById('sidebarMomentsBadge');
     const homeTabBadge = document.getElementById('homeTabMomentsBadge');
+    const experienceTabBadge = document.getElementById('experienceTabSocialWallBadge');
 
-    [sidebarBadge, homeTabBadge].forEach((el) => {
+    [sidebarBadge, homeTabBadge, experienceTabBadge].forEach((el) => {
         if (!el) return;
 
         if (total > 0) {
@@ -61,7 +62,9 @@ export const markMomentsFeedSeen = async () => {
 let pollTimer = null;
 
 export const initMomentsBadges = () => {
-    if (!document.getElementById('sidebarMomentsBadge') && !document.getElementById('homeTabMomentsBadge')) {
+    if (!document.getElementById('sidebarMomentsBadge')
+        && !document.getElementById('homeTabMomentsBadge')
+        && !document.getElementById('experienceTabSocialWallBadge')) {
         return;
     }
 

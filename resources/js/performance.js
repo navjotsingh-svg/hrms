@@ -119,7 +119,7 @@ const bindReviewModal = () => {
             });
             reviewModal.hide();
             showAlert('Review submitted.');
-            if (page === 'overview') await initOverview();
+            if (page === 'overview' || page === 'reviews') await initOverview();
         } catch (error) {
             showAlert(getErrorMessage(error), 'danger');
         }
@@ -1050,11 +1050,44 @@ const initPip = async () => {
     }
 };
 
+const initInsights = async () => {
+    const body = document.getElementById('insightsReviewsBody');
+    if (!body) return;
+
+    try {
+        const { data } = await api.get('/performance/overview');
+        const overview = data.data.overview;
+
+        document.getElementById('insightsActiveCycles').textContent = overview.active_cycles;
+        document.getElementById('insightsPendingReviews').textContent = overview.pending_reviews;
+        document.getElementById('insightsActiveGoals').textContent = overview.active_goals;
+        document.getElementById('insightsActivePips').textContent = overview.active_pips;
+
+        if (!overview.my_reviews?.length) {
+            body.innerHTML = '<tr><td colspan="3" class="text-center text-muted py-4">No review data yet.</td></tr>';
+            return;
+        }
+
+        body.innerHTML = overview.my_reviews.map((review) => `
+            <tr>
+                <td>${escapeHtml(review.cycle_name)}</td>
+                <td>${escapeHtml(review.reviewee_name)}</td>
+                <td>${statusPill(review.status)}</td>
+            </tr>
+        `).join('');
+    } catch (error) {
+        showAlert(getErrorMessage(error), 'danger');
+    }
+};
+
 document.addEventListener('DOMContentLoaded', () => {
     const inits = {
         overview: initOverview,
+        reviews: initOverview,
+        insights: initInsights,
         'review-cycles': initReviewCycles,
         'feedback-forms': initFeedbackForms,
+        'continuous-feedback': initFeedbackForms,
         'question-bank': initQuestionBank,
         goals: initGoals,
         kpi: initKpi,

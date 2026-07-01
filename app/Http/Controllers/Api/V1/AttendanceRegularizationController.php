@@ -76,6 +76,7 @@ class AttendanceRegularizationController extends Controller
     {
         $validated = $request->validate([
             'date' => ['nullable', 'date', 'before_or_equal:today'],
+            'month' => ['nullable', 'date_format:Y-m'],
         ]);
 
         return $this->success(
@@ -83,6 +84,7 @@ class AttendanceRegularizationController extends Controller
                 $request->user(),
                 null,
                 $validated['date'] ?? null,
+                $validated['month'] ?? null,
             ),
         );
     }

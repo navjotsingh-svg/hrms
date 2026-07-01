@@ -115,12 +115,12 @@
         </div>
 
         <div id="regularizeTabMyRequests" class="regularize-tab-panel">
-            @if ($canSubmitRegularization && request()->query('date'))
+            @if ($canSubmitRegularization)
             <div class="content-card mb-4" id="regularizeSubmitCard">
                 <div class="content-card-header border-bottom d-flex flex-wrap align-items-center justify-content-between gap-2">
                     <div>
                         <h2 class="content-card-title mb-0">Request Regularization</h2>
-                        <p class="small text-muted mb-0">Submit a correction for the selected attendance date.</p>
+                        <p class="small text-muted mb-0">Select one or more eligible days for the chosen month, then submit with a shared reason.</p>
                     </div>
                     <div class="d-flex flex-wrap align-items-center gap-2">
                         <button type="button" class="btn btn-outline-secondary btn-sm" id="selectAllEligibleBtn">Select all</button>
@@ -132,13 +132,6 @@
                     <div id="eligibleDatesContainer" class="regularize-eligible-list">
                         <div class="text-muted py-3">Loading...</div>
                     </div>
-                </div>
-            </div>
-            @elseif ($canSubmitRegularization)
-            <div class="content-card mb-4">
-                <div class="content-card-body py-4">
-                    <p class="text-muted mb-2">No regularization request in progress.</p>
-                    <p class="mb-0">To request a correction, open <a href="{{ route('web.attendance.index') }}">Attendance</a>, click an absent or incomplete date, then choose <strong>Request Regularization</strong>.</p>
                 </div>
             </div>
             @endif
@@ -249,12 +242,11 @@
             </div>
         </div>
 
-        @if (request()->query('date'))
         <div class="content-card mb-4" id="regularizeSubmitCard">
             <div class="content-card-header border-bottom d-flex flex-wrap align-items-center justify-content-between gap-2">
                 <div>
                     <h2 class="content-card-title mb-0">Request Regularization</h2>
-                    <p class="small text-muted mb-0">Submit a correction for the selected attendance date.</p>
+                    <p class="small text-muted mb-0">Select one or more eligible days for the chosen month, then submit with a shared reason.</p>
                 </div>
                 <div class="d-flex flex-wrap align-items-center gap-2">
                     <button type="button" class="btn btn-outline-secondary btn-sm" id="selectAllEligibleBtn">Select all</button>
@@ -268,14 +260,6 @@
                 </div>
             </div>
         </div>
-        @else
-        <div class="content-card mb-4">
-            <div class="content-card-body py-4">
-                <p class="text-muted mb-2">No regularization request in progress.</p>
-                <p class="mb-0">To request a correction, open <a href="{{ route('web.attendance.index') }}">Attendance</a>, click an absent or incomplete date, then choose <strong>Request Regularization</strong>.</p>
-            </div>
-        </div>
-        @endif
         @endif
 
         <div class="content-card companies-list-card">

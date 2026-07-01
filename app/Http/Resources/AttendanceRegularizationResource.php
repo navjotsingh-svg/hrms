@@ -2,6 +2,7 @@
 
 namespace App\Http\Resources;
 
+use App\Models\AttendanceRegularizationRequest;
 use App\Services\AttendanceRegularizationService;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
@@ -41,6 +42,16 @@ class AttendanceRegularizationResource extends JsonResource
             ]),
             'can_review' => $request->user()?->canReviewRegularizationRequest($this->resource) ?? false,
             'can_cancel' => $request->user()?->canCancelRegularizationRequest($this->resource) ?? false,
+            'can_request_update' => $this->status === AttendanceRegularizationRequest::STATUS_APPROVED
+                && ($request->user()?->canRegularizeAttendance() ?? false)
+                && (int) ($request->user()?->employee?->id ?? 0) === (int) $this->employee_id
+                && ! AttendanceRegularizationRequest::query()
+                    ->where('employee_id', $this->employee_id)
+                    ->whereDate('attendance_date', $this->attendance_date)
+                    ->where('status', AttendanceRegularizationRequest::STATUS_PENDING)
+                    ->exists(),
+            'supersedes_request_id' => $this->supersedes_request_id,
+            'is_update_request' => $this->supersedes_request_id !== null,
         ];
     }
 }

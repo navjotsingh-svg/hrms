@@ -9,9 +9,6 @@
     if ($user->canSeeMenu('home.dashboard')) {
         $tabs[] = ['key' => 'dashboard', 'label' => 'Dashboard', 'href' => route('web.home.dashboard')];
     }
-    if ($user->canSeeMenu('home.moments')) {
-        $tabs[] = ['key' => 'moments', 'label' => 'Moments', 'href' => route('web.home.moments')];
-    }
 @endphp
 
 @if (count($tabs) > 1)

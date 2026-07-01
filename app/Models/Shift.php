@@ -15,6 +15,7 @@ class Shift extends Model
         'code',
         'start_time',
         'end_time',
+        'timezone',
         'break_duration_minutes',
         'is_overnight',
         'description',
@@ -54,6 +55,10 @@ class Shift extends Model
 
         if ($this->is_overnight) {
             $summary .= ' · Overnight';
+        }
+
+        if ($this->timezone) {
+            $summary .= ' · '.$this->timezone;
         }
 
         return $summary;

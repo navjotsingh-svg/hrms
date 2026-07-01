@@ -168,19 +168,10 @@
     </div>
 
     <div class="col-md-6">
-        <label for="timezone" class="form-label">Timezone</label>
-        <select name="timezone" id="timezone" class="form-select @error('timezone') is-invalid @enderror">
-            @php
-                $timezones = array_values(array_filter(
-                    \DateTimeZone::listIdentifiers(),
-                    fn ($tz) => str_starts_with($tz, 'Asia/') || $tz === 'UTC'
-                ));
-            @endphp
-            @foreach ($timezones as $tz)
-                <option value="{{ $tz }}" {{ old('timezone', $company?->timezone ?? 'Asia/Kolkata') == $tz ? 'selected' : '' }}>{{ $tz }}</option>
-            @endforeach
-        </select>
-        @error('timezone')<div class="invalid-feedback d-block">{{ $message }}</div>@enderror
+        @include('partials.timezone-select', [
+            'selected' => old('timezone', $company?->timezone ?? 'Asia/Kolkata'),
+            'helpText' => 'Company default timezone. All IANA timezones are available.',
+        ])
     </div>
 
     @include('partials.status-toggle', [

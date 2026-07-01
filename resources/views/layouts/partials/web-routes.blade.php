@@ -80,6 +80,34 @@
 
         leaveShow: @json(url('/leave')),
 
+        wfhIndex: @json(route('web.wfh.index')),
+
+        wfhApply: @json(route('web.wfh.apply')),
+
+        wfhShow: @json(url('/wfh')),
+
+        assetRequestsIndex: @json(route('web.asset-requests.index')),
+
+        assetRequestsApply: @json(route('web.asset-requests.apply')),
+
+        assetRequestsShow: @json(url('/asset-requests')),
+
+        offboardingIndex: @json(route('web.offboarding.index')),
+
+        offboardingApply: @json(route('web.offboarding.apply')),
+
+        offboardingShow: @json(url('/offboarding/cases')),
+
+        helpdeskIndex: @json(route('web.helpdesk.index')),
+
+        helpdeskCreate: @json(route('web.helpdesk.create')),
+
+        helpdeskShow: @json(url('/helpdesk')),
+
+        documentsLettersIndex: @json(route('web.documents-letters.index')),
+
+        documentsLettersShow: @json(url('/documents-letters')),
+
         requestsIndex: @json(route('web.requests.index')),
 
         projectsIndex: @json(route('web.projects.index')),

@@ -17,7 +17,7 @@
 
     <div class="content-card">
         <div class="content-card-body">
-            <form id="shiftForm" class="row g-4" data-shift-id="{{ $shiftId }}">
+            <form id="shiftForm" class="row g-4" data-shift-id="{{ $shiftId }}" data-default-timezone="{{ $defaultTimezone ?? 'UTC' }}">
                 @include('shifts.partials.form')
                 <div class="col-12 d-flex gap-2">
                     <button type="submit" class="btn btn-primary" id="shiftSubmitBtn">Update Shift</button>

@@ -17,6 +17,8 @@ class ShiftResource extends JsonResource
             'code' => $this->code,
             'start_time' => $this->formatTimeForInput($this->start_time),
             'end_time' => $this->formatTimeForInput($this->end_time),
+            'timezone' => $this->timezone,
+            'timezone_label' => $this->timezone ? \App\Support\TimezoneOptions::label($this->timezone) : null,
             'break_duration_minutes' => (int) $this->break_duration_minutes,
             'is_overnight' => (bool) $this->is_overnight,
             'description' => $this->description,

@@ -76,6 +76,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                     <span class="fw-semibold">${shift.time_range || '—'}</span>
                     ${shift.is_overnight ? '<span class="badge text-bg-info ms-1">Overnight</span>' : ''}
                 </td>
+                <td><span class="small">${shift.timezone_label || shift.timezone || '—'}</span></td>
                 <td>${shift.break_duration_minutes ? `${shift.break_duration_minutes} min` : '—'}</td>
                 <td>${renderStatusToggle(shift)}</td>
                 <td class="companies-td-actions">
@@ -137,14 +138,14 @@ document.addEventListener('DOMContentLoaded', async () => {
             const pagination = data.data.pagination;
 
             if (shifts.length === 0) {
-                tableBody.innerHTML = '<tr><td colspan="6" class="text-center text-muted py-5">No shifts found.</td></tr>';
+                tableBody.innerHTML = '<tr><td colspan="7" class="text-center text-muted py-5">No shifts found.</td></tr>';
             } else {
                 tableBody.innerHTML = shifts.map((shift, index) => renderRow(shift, index, pagination)).join('');
             }
 
             renderPagination(pagination);
         } catch (error) {
-            tableBody.innerHTML = `<tr><td colspan="6" class="text-center text-danger py-5">${getErrorMessage(error)}</td></tr>`;
+            tableBody.innerHTML = `<tr><td colspan="7" class="text-center text-danger py-5">${getErrorMessage(error)}</td></tr>`;
         }
     };
 

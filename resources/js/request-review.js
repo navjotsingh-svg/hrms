@@ -8,6 +8,14 @@ export const reviewEndpoints = {
         approve: `/leave-requests/${id}/approve`,
         reject: `/leave-requests/${id}/reject`,
     }),
+    wfh: (id) => ({
+        approve: `/wfh-requests/${id}/approve`,
+        reject: `/wfh-requests/${id}/reject`,
+    }),
+    asset: (id) => ({
+        approve: `/asset-requests/${id}/approve`,
+        reject: `/asset-requests/${id}/reject`,
+    }),
     regularization: (id) => ({
         approve: `/attendance-regularizations/${id}/approve`,
         reject: `/attendance-regularizations/${id}/reject`,
@@ -56,6 +64,8 @@ export const reviewEndpoints = {
 
 export const cancelEndpoints = {
     leave: (id) => `/leave-requests/${id}/cancel`,
+    wfh: (id) => `/wfh-requests/${id}/cancel`,
+    asset: (id) => `/asset-requests/${id}/cancel`,
     regularization: (id) => `/attendance-regularizations/${id}/cancel`,
     expense: (id) => `/expenses/${id}/cancel`,
     expense_group: (id) => `/expense-groups/${id}/cancel`,

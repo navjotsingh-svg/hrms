@@ -53,6 +53,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         code: form.querySelector('#code')?.value.trim() || null,
         start_time: form.querySelector('#start_time')?.value || '',
         end_time: form.querySelector('#end_time')?.value || '',
+        timezone: form.querySelector('#timezone')?.value || '',
         break_duration_minutes: Number(form.querySelector('#break_duration_minutes')?.value || 0),
         is_overnight: form.querySelector('#is_overnight')?.checked ?? false,
         description: form.querySelector('#description')?.value.trim() || null,
@@ -87,6 +88,11 @@ document.addEventListener('DOMContentLoaded', async () => {
             return false;
         }
 
+        if (!form.querySelector('#timezone')?.value) {
+            setFieldError(form, 'timezone', 'Timezone is required.');
+            return false;
+        }
+
         return true;
     };
 
@@ -105,6 +111,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             form.querySelector('#code').value = shift.code || '';
             form.querySelector('#start_time').value = shift.start_time || '';
             form.querySelector('#end_time').value = shift.end_time || '';
+            form.querySelector('#timezone').value = shift.timezone || form.dataset.defaultTimezone || 'UTC';
             form.querySelector('#break_duration_minutes').value = shift.break_duration_minutes ?? 0;
             form.querySelector('#is_overnight').checked = Boolean(shift.is_overnight);
             form.querySelector('#description').value = shift.description || '';
@@ -115,6 +122,10 @@ document.addEventListener('DOMContentLoaded', async () => {
     } else {
         form.querySelector('#start_time').value = '09:00';
         form.querySelector('#end_time').value = '18:00';
+        const timezoneSelect = form.querySelector('#timezone');
+        if (timezoneSelect && form.dataset.defaultTimezone) {
+            timezoneSelect.value = form.dataset.defaultTimezone;
+        }
     }
 
     form.addEventListener('submit', async (event) => {

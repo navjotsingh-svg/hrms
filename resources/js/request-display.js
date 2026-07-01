@@ -1,3 +1,5 @@
+import { isPublicAttachmentUrl, normalizePublicAssetUrl } from './request-attachments';
+
 export const renderEmployeeNameBlock = (name, code) => {
     const displayName = name || 'Employee';
 
@@ -36,7 +38,9 @@ export const formatRequestedPunchLine = (item) => formatPunchPair(
 
 export const renderRegularizationPunchCompare = (item, { compact = false } = {}) => {
     const oldIn = item?.original_punch_in_label || '—';
-    const oldOut = item?.original_punch_out_label || (item?.original_punch_in_label ? 'Not recorded' : '—');
+    const oldOut = item?.has_original_punch_out === false || (!item?.original_punch_out_label && item?.original_punch_in_label)
+        ? (item?.original_punch_in_label ? 'Not recorded' : '—')
+        : (item?.original_punch_out_label || '—');
     const newIn = item?.requested_punch_in_label || '—';
     const newOut = item?.requested_punch_out_label || '—';
 
@@ -97,26 +101,92 @@ const escapeAttr = (value = '') => String(value)
     .replace(/"/g, '&quot;')
     .replace(/</g, '&lt;');
 
+const isImageAttachment = (file) => {
+    const mime = String(file.mime_type || '').toLowerCase();
+
+    if (mime.startsWith('image/')) {
+        return true;
+    }
+
+    const name = String(file.original_name || file.label || '').toLowerCase();
+
+    return /\.(jpe?g|png|webp|gif)$/.test(name);
+};
+
+const renderAttachmentLink = (file) => {
+    const label = file.label || file.original_name || 'Attachment';
+    const downloadUrl = file.download_url || file.file_url || file.url || '';
+
+    return `
+        <li class="mb-1">
+            <button
+                type="button"
+                class="btn btn-link btn-sm p-0 align-baseline request-attachment-link"
+                data-request-attachment="${escapeAttr(downloadUrl)}"
+                data-request-attachment-label="${escapeAttr(label)}"
+            >${label}</button>
+        </li>
+    `;
+};
+
+export const renderRequestAttachmentGallery = (attachments = [], { emptyLabel = 'No attachments' } = {}) => {
+    if (!attachments.length) {
+        return `
+            <div class="col-12">
+                <span class="text-muted">Attachments</span>
+                <div class="text-muted small mt-1">${emptyLabel}</div>
+            </div>
+        `;
+    }
+
+    const images = attachments.filter(isImageAttachment);
+    const others = attachments.filter((file) => !isImageAttachment(file));
+
+    const imageGrid = images.map((file) => {
+        const label = file.original_name || file.label || 'Attachment';
+        const rawUrl = file.download_url || file.file_url || file.url || '';
+        const downloadUrl = isPublicAttachmentUrl(rawUrl)
+            ? normalizePublicAssetUrl(rawUrl)
+            : rawUrl;
+        const srcAttr = isPublicAttachmentUrl(rawUrl)
+            ? ` src="${escapeAttr(downloadUrl)}"`
+            : '';
+
+        return `
+            <button
+                type="button"
+                class="request-attachment-image-preview"
+                data-request-attachment="${escapeAttr(downloadUrl)}"
+                data-request-attachment-label="${escapeAttr(label)}"
+                title="${escapeAttr(label)}"
+            >
+                <img
+                    class="request-attachment-image-thumb"
+                    data-request-attachment-preview="${escapeAttr(downloadUrl)}"
+                    alt="${escapeAttr(label)}"
+                    loading="lazy"${srcAttr}
+                >
+            </button>
+        `;
+    }).join('');
+
+    const otherList = others.map(renderAttachmentLink).join('');
+
+    return `
+        <div class="col-12">
+            <span class="text-muted">Attachments</span>
+            ${images.length ? `<div class="request-attachment-image-grid mt-2">${imageGrid}</div>` : ''}
+            ${others.length ? `<ul class="mb-0 ps-3${images.length ? ' mt-2' : ' mt-1'}">${otherList}</ul>` : ''}
+        </div>
+    `;
+};
+
 export const renderRequestAttachments = (attachments = []) => {
     if (!attachments.length) {
         return '';
     }
 
-    const items = attachments.map((file) => {
-        const label = file.label || file.original_name || 'Attachment';
-        const downloadUrl = file.download_url || file.file_url || file.url || '';
-
-        return `
-            <li class="mb-1">
-                <button
-                    type="button"
-                    class="btn btn-link btn-sm p-0 align-baseline request-attachment-link"
-                    data-request-attachment="${escapeAttr(downloadUrl)}"
-                    data-request-attachment-label="${escapeAttr(label)}"
-                >${label}</button>
-            </li>
-        `;
-    }).join('');
+    const items = attachments.map((file) => renderAttachmentLink(file).trim()).join('');
 
     return `
         <div class="col-12">

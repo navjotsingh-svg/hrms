@@ -107,6 +107,7 @@ class PeopleDirectoryService
             'id' => $employee->id,
             'name' => $employee->full_name,
             'initials' => $this->initials($employee),
+            'profile_photo_url' => $employee->profilePhotoUrl(),
             'employee_code' => $employee->employee_code,
             'department' => $this->departmentName($employee),
             'designation' => $employee->designation,
@@ -130,6 +131,7 @@ class PeopleDirectoryService
             'id' => $employee->id,
             'name' => $employee->full_name,
             'initials' => $this->initials($employee),
+            'profile_photo_url' => $employee->profilePhotoUrl(),
             'employee_code' => $employee->employee_code,
             'designation' => $employee->designation ?: '—',
             'department' => $this->departmentName($employee),
@@ -199,10 +201,6 @@ class PeopleDirectoryService
 
     private function initials(Employee $employee): string
     {
-        $first = trim((string) $employee->first_name);
-        $last = trim((string) $employee->last_name);
-        $initials = strtoupper(substr($first, 0, 1).substr($last, 0, 1));
-
-        return $initials !== '' ? $initials : '—';
+        return $employee->initials();
     }
 }

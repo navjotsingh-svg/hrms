@@ -276,6 +276,7 @@ class DashboardService
             'id' => $employee->id,
             'name' => $employee->full_name,
             'initials' => $initials,
+            'profile_photo_url' => $employee->profilePhotoUrl(),
             'employee_code' => $employee->employee_code,
             'date_label' => $dateLabel,
             'occasion_date' => $occasionDate,

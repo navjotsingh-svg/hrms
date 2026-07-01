@@ -574,6 +574,96 @@ Route::prefix('v1')->name('api.')->group(function () {
                     ->whereNumber('leave_request');
             });
 
+            Route::middleware('company.permission:wfh.apply')->group(function () {
+                Route::post('wfh-requests/preview', [\App\Http\Controllers\Api\V1\WfhController::class, 'preview'])
+                    ->name('wfh-requests.preview');
+                Route::post('wfh-requests', [\App\Http\Controllers\Api\V1\WfhController::class, 'store'])
+                    ->name('wfh-requests.store');
+                Route::post('wfh-requests/{wfh_request}/attachments', [\App\Http\Controllers\Api\V1\WfhController::class, 'uploadAttachments'])
+                    ->name('wfh-requests.attachments')
+                    ->whereNumber('wfh_request');
+            });
+
+            Route::middleware('company.permission:helpdesk.apply')->group(function () {
+                Route::post('helpdesk-tickets', [\App\Http\Controllers\Api\V1\HelpdeskTicketController::class, 'store'])
+                    ->name('helpdesk-tickets.store');
+            });
+
+            Route::middleware('company.permission:helpdesk.apply,helpdesk.manage')->group(function () {
+                Route::get('helpdesk-tickets/meta', [\App\Http\Controllers\Api\V1\HelpdeskTicketController::class, 'meta'])
+                    ->name('helpdesk-tickets.meta');
+                Route::get('helpdesk-tickets/summary', [\App\Http\Controllers\Api\V1\HelpdeskTicketController::class, 'summary'])
+                    ->name('helpdesk-tickets.summary');
+                Route::get('helpdesk-tickets', [\App\Http\Controllers\Api\V1\HelpdeskTicketController::class, 'index'])
+                    ->name('helpdesk-tickets.index');
+                Route::get('helpdesk-tickets/{helpdesk_ticket}', [\App\Http\Controllers\Api\V1\HelpdeskTicketController::class, 'show'])
+                    ->name('helpdesk-tickets.show')
+                    ->whereNumber('helpdesk_ticket');
+                Route::post('helpdesk-tickets/{helpdesk_ticket}/comments', [\App\Http\Controllers\Api\V1\HelpdeskTicketController::class, 'addComment'])
+                    ->name('helpdesk-tickets.comments.store')
+                    ->whereNumber('helpdesk_ticket');
+            });
+
+            Route::middleware('company.permission:helpdesk.manage')->group(function () {
+                Route::post('helpdesk-categories', [\App\Http\Controllers\Api\V1\HelpdeskCategoryController::class, 'store'])
+                    ->name('helpdesk-categories.store');
+                Route::patch('helpdesk-tickets/{helpdesk_ticket}/status', [\App\Http\Controllers\Api\V1\HelpdeskTicketController::class, 'updateStatus'])
+                    ->name('helpdesk-tickets.status')
+                    ->whereNumber('helpdesk_ticket');
+            });
+
+            Route::middleware('company.permission:documents.manage')->group(function () {
+                Route::get('document-letter-templates/meta', [\App\Http\Controllers\Api\V1\DocumentLetterTemplateController::class, 'meta'])
+                    ->name('document-letter-templates.meta');
+                Route::get('document-letter-templates', [\App\Http\Controllers\Api\V1\DocumentLetterTemplateController::class, 'index'])
+                    ->name('document-letter-templates.index');
+                Route::post('document-letter-templates', [\App\Http\Controllers\Api\V1\DocumentLetterTemplateController::class, 'store'])
+                    ->name('document-letter-templates.store');
+                Route::put('document-letter-templates/{document_letter_template}', [\App\Http\Controllers\Api\V1\DocumentLetterTemplateController::class, 'update'])
+                    ->name('document-letter-templates.update')
+                    ->whereNumber('document_letter_template');
+                Route::get('document-letter-templates/{document_letter_template}', [\App\Http\Controllers\Api\V1\DocumentLetterTemplateController::class, 'show'])
+                    ->name('document-letter-templates.show')
+                    ->whereNumber('document_letter_template');
+                Route::post('document-letter-templates/{document_letter_template}/preview', [\App\Http\Controllers\Api\V1\DocumentLetterTemplateController::class, 'preview'])
+                    ->name('document-letter-templates.preview')
+                    ->whereNumber('document_letter_template');
+                Route::post('document-letters', [\App\Http\Controllers\Api\V1\DocumentLetterController::class, 'store'])
+                    ->name('document-letters.store');
+                Route::patch('document-letters/{document_letter}/issue', [\App\Http\Controllers\Api\V1\DocumentLetterController::class, 'issue'])
+                    ->name('document-letters.issue')
+                    ->whereNumber('document_letter');
+                Route::patch('document-letters/{document_letter}/cancel', [\App\Http\Controllers\Api\V1\DocumentLetterController::class, 'cancel'])
+                    ->name('document-letters.cancel')
+                    ->whereNumber('document_letter');
+            });
+
+            Route::middleware('company.permission:documents.view,documents.manage,documents.sign')->group(function () {
+                Route::get('document-letters/summary', [\App\Http\Controllers\Api\V1\DocumentLetterController::class, 'summary'])
+                    ->name('document-letters.summary');
+                Route::get('document-letters', [\App\Http\Controllers\Api\V1\DocumentLetterController::class, 'index'])
+                    ->name('document-letters.index');
+                Route::get('document-letters/{document_letter}', [\App\Http\Controllers\Api\V1\DocumentLetterController::class, 'show'])
+                    ->name('document-letters.show')
+                    ->whereNumber('document_letter');
+            });
+
+            Route::middleware('company.permission:documents.sign')->group(function () {
+                Route::post('document-letters/{document_letter}/sign', [\App\Http\Controllers\Api\V1\DocumentLetterController::class, 'sign'])
+                    ->name('document-letters.sign')
+                    ->whereNumber('document_letter');
+                Route::patch('document-letters/{document_letter}/decline', [\App\Http\Controllers\Api\V1\DocumentLetterController::class, 'decline'])
+                    ->name('document-letters.decline')
+                    ->whereNumber('document_letter');
+            });
+
+            Route::middleware('company.permission:assets.apply')->group(function () {
+                Route::get('asset-types/options', [\App\Http\Controllers\Api\V1\AssetRequestController::class, 'options'])
+                    ->name('asset-types.options');
+                Route::post('asset-requests', [\App\Http\Controllers\Api\V1\AssetRequestController::class, 'store'])
+                    ->name('asset-requests.store');
+            });
+
             Route::middleware('company.permission:leave.approve')->group(function () {
                 Route::get('leave-requests/pending', [\App\Http\Controllers\Api\V1\LeaveRequestController::class, 'pending'])
                     ->name('leave-requests.pending');
@@ -585,6 +675,85 @@ Route::prefix('v1')->name('api.')->group(function () {
                     ->whereNumber('leave_request');
             });
 
+            Route::middleware('company.permission:wfh.approve')->group(function () {
+                Route::get('wfh-requests/pending', [\App\Http\Controllers\Api\V1\WfhController::class, 'pending'])
+                    ->name('wfh-requests.pending');
+                Route::patch('wfh-requests/{wfh_request}/approve', [\App\Http\Controllers\Api\V1\WfhController::class, 'approve'])
+                    ->name('wfh-requests.approve')
+                    ->whereNumber('wfh_request');
+                Route::patch('wfh-requests/{wfh_request}/reject', [\App\Http\Controllers\Api\V1\WfhController::class, 'reject'])
+                    ->name('wfh-requests.reject')
+                    ->whereNumber('wfh_request');
+            });
+
+            Route::middleware('company.permission:assets.approve')->group(function () {
+                Route::get('asset-requests/pending', [\App\Http\Controllers\Api\V1\AssetRequestController::class, 'pending'])
+                    ->name('asset-requests.pending');
+                Route::patch('asset-requests/{asset_request}/approve', [\App\Http\Controllers\Api\V1\AssetRequestController::class, 'approve'])
+                    ->name('asset-requests.approve')
+                    ->whereNumber('asset_request');
+                Route::patch('asset-requests/{asset_request}/reject', [\App\Http\Controllers\Api\V1\AssetRequestController::class, 'reject'])
+                    ->name('asset-requests.reject')
+                    ->whereNumber('asset_request');
+                Route::post('asset-requests/{asset_request}/items/review', [\App\Http\Controllers\Api\V1\AssetRequestController::class, 'reviewItems'])
+                    ->name('asset-requests.items.review')
+                    ->whereNumber('asset_request');
+                Route::patch('asset-requests/{asset_request}/items/{item}/approve', [\App\Http\Controllers\Api\V1\AssetRequestController::class, 'approveItem'])
+                    ->name('asset-requests.items.approve')
+                    ->whereNumber(['asset_request', 'item']);
+                Route::patch('asset-requests/{asset_request}/items/{item}/reject', [\App\Http\Controllers\Api\V1\AssetRequestController::class, 'rejectItem'])
+                    ->name('asset-requests.items.reject')
+                    ->whereNumber(['asset_request', 'item']);
+            });
+
+            Route::middleware('company.permission:offboarding.apply')->group(function () {
+                Route::post('resignation-requests', [\App\Http\Controllers\Api\V1\ResignationController::class, 'store'])
+                    ->name('resignation-requests.store');
+            });
+
+            Route::middleware('company.permission:offboarding.approve,offboarding.manage,clearance.review,offboarding.fnf.manage')->group(function () {
+                Route::get('resignation-requests/pending', [\App\Http\Controllers\Api\V1\ResignationController::class, 'pending'])
+                    ->name('resignation-requests.pending');
+                Route::patch('resignation-requests/{resignation_request}/approve', [\App\Http\Controllers\Api\V1\ResignationController::class, 'approve'])
+                    ->name('resignation-requests.approve')
+                    ->whereNumber('resignation_request');
+                Route::patch('resignation-requests/{resignation_request}/reject', [\App\Http\Controllers\Api\V1\ResignationController::class, 'reject'])
+                    ->name('resignation-requests.reject')
+                    ->whereNumber('resignation_request');
+                Route::post('exit-cases/{exit_case}/clearance/review', [\App\Http\Controllers\Api\V1\ExitCaseController::class, 'reviewClearance'])
+                    ->name('exit-cases.clearance.review')
+                    ->whereNumber('exit_case');
+                Route::patch('exit-cases/{exit_case}/clearance-items/{item}', [\App\Http\Controllers\Api\V1\ExitCaseController::class, 'reviewClearanceItem'])
+                    ->name('exit-cases.clearance-items.review')
+                    ->whereNumber(['exit_case', 'item']);
+                Route::post('exit-cases/{exit_case}/assets/review', [\App\Http\Controllers\Api\V1\ExitCaseController::class, 'reviewAssets'])
+                    ->name('exit-cases.assets.review')
+                    ->whereNumber('exit_case');
+                Route::patch('exit-cases/{exit_case}/asset-items/{item}', [\App\Http\Controllers\Api\V1\ExitCaseController::class, 'reviewAssetItem'])
+                    ->name('exit-cases.asset-items.review')
+                    ->whereNumber(['exit_case', 'item']);
+                Route::patch('exit-cases/{exit_case}/settlement', [\App\Http\Controllers\Api\V1\ExitCaseController::class, 'saveSettlement'])
+                    ->name('exit-cases.settlement.save')
+                    ->whereNumber('exit_case');
+                Route::patch('exit-cases/{exit_case}/settlement/approve', [\App\Http\Controllers\Api\V1\ExitCaseController::class, 'approveSettlement'])
+                    ->name('exit-cases.settlement.approve')
+                    ->whereNumber('exit_case');
+                Route::patch('exit-cases/{exit_case}/settlement/paid', [\App\Http\Controllers\Api\V1\ExitCaseController::class, 'markSettlementPaid'])
+                    ->name('exit-cases.settlement.paid')
+                    ->whereNumber('exit_case');
+                Route::get('exit-survey-questions/meta', [\App\Http\Controllers\Api\V1\ExitSurveyQuestionController::class, 'meta'])
+                    ->name('exit-survey-questions.meta');
+                Route::get('exit-survey-questions', [\App\Http\Controllers\Api\V1\ExitSurveyQuestionController::class, 'index'])
+                    ->name('exit-survey-questions.index');
+                Route::post('exit-survey-questions', [\App\Http\Controllers\Api\V1\ExitSurveyQuestionController::class, 'store'])
+                    ->name('exit-survey-questions.store');
+                Route::put('exit-survey-questions/{exit_survey_question}', [\App\Http\Controllers\Api\V1\ExitSurveyQuestionController::class, 'update'])
+                    ->name('exit-survey-questions.update')
+                    ->whereNumber('exit_survey_question');
+                Route::post('exit-survey-questions/reseed', [\App\Http\Controllers\Api\V1\ExitSurveyQuestionController::class, 'reseed'])
+                    ->name('exit-survey-questions.reseed');
+            });
+
             Route::middleware('company.member')->group(function () {
                 Route::get('leave-requests', [\App\Http\Controllers\Api\V1\LeaveRequestController::class, 'index'])
                     ->name('leave-requests.index');
@@ -594,6 +763,38 @@ Route::prefix('v1')->name('api.')->group(function () {
                 Route::patch('leave-requests/{leave_request}/cancel', [\App\Http\Controllers\Api\V1\LeaveRequestController::class, 'cancel'])
                     ->name('leave-requests.cancel')
                     ->whereNumber('leave_request');
+                Route::get('wfh-requests', [\App\Http\Controllers\Api\V1\WfhController::class, 'index'])
+                    ->name('wfh-requests.index');
+                Route::get('wfh-requests/{wfh_request}', [\App\Http\Controllers\Api\V1\WfhController::class, 'show'])
+                    ->name('wfh-requests.show')
+                    ->whereNumber('wfh_request');
+                Route::patch('wfh-requests/{wfh_request}/cancel', [\App\Http\Controllers\Api\V1\WfhController::class, 'cancel'])
+                    ->name('wfh-requests.cancel')
+                    ->whereNumber('wfh_request');
+                Route::get('asset-requests', [\App\Http\Controllers\Api\V1\AssetRequestController::class, 'index'])
+                    ->name('asset-requests.index');
+                Route::get('asset-requests/{asset_request}', [\App\Http\Controllers\Api\V1\AssetRequestController::class, 'show'])
+                    ->name('asset-requests.show')
+                    ->whereNumber('asset_request');
+                Route::patch('asset-requests/{asset_request}/cancel', [\App\Http\Controllers\Api\V1\AssetRequestController::class, 'cancel'])
+                    ->name('asset-requests.cancel')
+                    ->whereNumber('asset_request');
+                Route::get('resignation-requests', [\App\Http\Controllers\Api\V1\ResignationController::class, 'index'])
+                    ->name('resignation-requests.index');
+                Route::get('resignation-requests/{resignation_request}', [\App\Http\Controllers\Api\V1\ResignationController::class, 'show'])
+                    ->name('resignation-requests.show')
+                    ->whereNumber('resignation_request');
+                Route::patch('resignation-requests/{resignation_request}/cancel', [\App\Http\Controllers\Api\V1\ResignationController::class, 'cancel'])
+                    ->name('resignation-requests.cancel')
+                    ->whereNumber('resignation_request');
+                Route::get('exit-cases', [\App\Http\Controllers\Api\V1\ExitCaseController::class, 'index'])
+                    ->name('exit-cases.index');
+                Route::get('exit-cases/{exit_case}', [\App\Http\Controllers\Api\V1\ExitCaseController::class, 'show'])
+                    ->name('exit-cases.show')
+                    ->whereNumber('exit_case');
+                Route::post('exit-cases/{exit_case}/survey', [\App\Http\Controllers\Api\V1\ExitCaseController::class, 'submitSurvey'])
+                    ->name('exit-cases.survey.submit')
+                    ->whereNumber('exit_case');
             });
 
             Route::middleware('company.permission:attendance.manage,employees.manage')->group(function () {

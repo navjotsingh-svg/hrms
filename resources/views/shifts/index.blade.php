@@ -45,6 +45,7 @@
                         <th class="companies-th-serial">#</th>
                         <th>Shift</th>
                         <th>Timings</th>
+                        <th>Timezone</th>
                         <th>Break</th>
                         <th>Status</th>
                         <th class="companies-th-actions">Actions</th>
@@ -52,7 +53,7 @@
                 </thead>
                 <tbody id="shiftsTableBody">
                     <tr>
-                        <td colspan="6" class="text-center text-muted py-5">Loading shifts...</td>
+                        <td colspan="7" class="text-center text-muted py-5">Loading shifts...</td>
                     </tr>
                 </tbody>
             </table>

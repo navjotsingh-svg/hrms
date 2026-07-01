@@ -1,15 +1,49 @@
 import api from './api';
 
 let previewBlobUrl = null;
+let previewSourceUrl = null;
 let previewFallbackName = 'attachment';
 
 const lightbox = () => document.getElementById('viewDocumentLightbox');
+
+const isPublicAssetUrl = (url) => {
+    const value = String(url || '').trim();
+
+    return value.startsWith('/images/')
+        || value.startsWith('/storage/')
+        || value.startsWith('images/')
+        || value.startsWith('storage/');
+};
+
+export const normalizePublicAssetUrl = (url) => {
+    const value = String(url || '').trim();
+
+    if (! value) {
+        return '';
+    }
+
+    if (value.startsWith('images/') || value.startsWith('storage/')) {
+        return `/${value}`;
+    }
+
+    return value;
+};
+
+export const isPublicAttachmentUrl = isPublicAssetUrl;
+
+const imageExtension = (url) => {
+    const match = String(url || '').toLowerCase().match(/\.([a-z0-9]+)(?:\?|$)/);
+
+    return match?.[1] || '';
+};
 
 const clearPreview = () => {
     if (previewBlobUrl) {
         URL.revokeObjectURL(previewBlobUrl);
         previewBlobUrl = null;
     }
+
+    previewSourceUrl = null;
 
     const frame = document.getElementById('viewDocumentFrame');
     const image = document.getElementById('viewDocumentImage');
@@ -59,18 +93,41 @@ export const previewRequestAttachment = async (url, title = 'Attachment') => {
     clearPreview();
     openLightbox(title);
 
-    const response = await api.get(normalizeApiPath(url), { responseType: 'blob' });
+    const value = String(url || '').trim();
+    const frame = document.getElementById('viewDocumentFrame');
+    const image = document.getElementById('viewDocumentImage');
+    const unsupported = document.getElementById('viewDocumentUnsupported');
+
+    previewFallbackName = title.replace(/\s+/g, '-').toLowerCase() || 'attachment';
+
+    if (isPublicAssetUrl(value)) {
+        previewSourceUrl = normalizePublicAssetUrl(value);
+        const extension = imageExtension(previewSourceUrl);
+
+        if (['jpg', 'jpeg', 'png', 'webp', 'gif'].includes(extension)) {
+            image.src = previewSourceUrl;
+            image.classList.remove('d-none');
+            return;
+        }
+
+        if (extension === 'pdf') {
+            frame.src = previewSourceUrl;
+            frame.classList.remove('d-none');
+            return;
+        }
+
+        unsupported?.classList.remove('d-none');
+        return;
+    }
+
+    const response = await api.get(normalizeApiPath(value), { responseType: 'blob' });
     const blob = response.data;
     const contentType = blob.type || response.headers['content-type'] || '';
     const disposition = response.headers['content-disposition'];
     const match = disposition?.match(/filename="?([^"]+)"?/);
 
-    previewFallbackName = match?.[1] || title.replace(/\s+/g, '-').toLowerCase() || 'attachment';
+    previewFallbackName = match?.[1] || previewFallbackName;
     previewBlobUrl = URL.createObjectURL(blob);
-
-    const frame = document.getElementById('viewDocumentFrame');
-    const image = document.getElementById('viewDocumentImage');
-    const unsupported = document.getElementById('viewDocumentUnsupported');
 
     if (contentType.startsWith('image/')) {
         image.src = previewBlobUrl;
@@ -102,11 +159,13 @@ export const bindRequestAttachmentLightbox = () => {
     });
 
     document.getElementById('viewDocumentOpenTab')?.addEventListener('click', () => {
-        if (!previewBlobUrl) {
+        const targetUrl = previewBlobUrl || previewSourceUrl;
+
+        if (!targetUrl) {
             return;
         }
 
-        window.open(previewBlobUrl, '_blank', 'noopener,noreferrer');
+        window.open(targetUrl, '_blank', 'noopener,noreferrer');
     });
 
     lightbox()?.addEventListener('click', (event) => {
@@ -149,20 +208,37 @@ export const bindRequestAttachmentHandlers = (root, { onError } = {}) => {
 };
 
 export const loadProfilePhotoPreviews = async (root, { onError } = {}) => {
+    await loadAttachmentImagePreviews(root, '[data-profile-photo-preview]', { onError });
+};
+
+export const loadAttachmentImagePreviews = async (root, selector = '[data-request-attachment-preview]', { onError } = {}) => {
     if (!root) {
         return;
     }
 
-    const images = root.querySelectorAll('[data-profile-photo-preview]');
+    const images = root.querySelectorAll(selector);
 
     await Promise.all(Array.from(images).map(async (image) => {
-        const url = image.dataset.profilePhotoPreview;
+        const url = image.dataset.profilePhotoPreview || image.dataset.requestAttachmentPreview;
 
         if (!url || image.dataset.loaded === 'true') {
             return;
         }
 
         try {
+            if (image.getAttribute('src')) {
+                image.dataset.loaded = 'true';
+                return;
+            }
+
+            const normalizedUrl = normalizePublicAssetUrl(url);
+
+            if (isPublicAssetUrl(url)) {
+                image.src = normalizedUrl;
+                image.dataset.loaded = 'true';
+                return;
+            }
+
             const response = await api.get(normalizeApiPath(url), { responseType: 'blob' });
             const blob = response.data;
 

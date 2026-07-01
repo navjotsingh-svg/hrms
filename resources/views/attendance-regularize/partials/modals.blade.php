@@ -41,8 +41,8 @@
                         </div>
                     </div>
                     <div class="mb-0">
-                        <label for="reason" class="form-label">Reason</label>
-                        <textarea class="form-control" id="reason" name="reason" rows="3" minlength="10" required placeholder="Explain why attendance was missed or needs correction"></textarea>
+                        <label for="reason" class="form-label">Reason (shared for all selected days)</label>
+                        <textarea class="form-control" id="reason" name="reason" rows="3" minlength="10" required placeholder="Explain why attendance was missed or needs correction for the selected days"></textarea>
                     </div>
                 </div>
                 <div class="modal-footer border-0 pt-0">

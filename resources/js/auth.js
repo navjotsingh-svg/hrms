@@ -71,6 +71,8 @@ const initLogin = async () => {
 
     const passwordInput = form.querySelector('#password');
     const togglePasswordBtn = document.getElementById('togglePasswordBtn');
+    const showPasswordIcon = togglePasswordBtn?.querySelector('.auth-password-toggle-icon--show');
+    const hidePasswordIcon = togglePasswordBtn?.querySelector('.auth-password-toggle-icon--hide');
 
     togglePasswordBtn?.addEventListener('click', () => {
         if (!passwordInput) {
@@ -79,7 +81,8 @@ const initLogin = async () => {
 
         const showing = passwordInput.type === 'text';
         passwordInput.type = showing ? 'password' : 'text';
-        togglePasswordBtn.textContent = showing ? 'Show' : 'Hide';
+        showPasswordIcon?.classList.toggle('d-none', !showing);
+        hidePasswordIcon?.classList.toggle('d-none', showing);
         togglePasswordBtn.setAttribute('aria-label', showing ? 'Show password' : 'Hide password');
         togglePasswordBtn.setAttribute('aria-pressed', showing ? 'false' : 'true');
     });

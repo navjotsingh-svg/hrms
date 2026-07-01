@@ -66,4 +66,26 @@ class EmployeeAssetService
 
         return $this->assignmentsForEmployee($employee);
     }
+
+    public function assignAssetType(Employee $employee, int $assetTypeId, ?string $description = null): void
+    {
+        $belongsToCompany = $this->assetTypeService
+            ->activeForCompany($employee->company_id)
+            ->contains(fn ($type) => (int) $type->id === $assetTypeId);
+
+        if (! $belongsToCompany) {
+            return;
+        }
+
+        EmployeeAsset::query()->updateOrCreate(
+            [
+                'employee_id' => $employee->id,
+                'asset_type_id' => $assetTypeId,
+            ],
+            [
+                'is_assigned' => true,
+                'description' => $description,
+            ],
+        );
+    }
 }

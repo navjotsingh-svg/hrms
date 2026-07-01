@@ -62,7 +62,14 @@
 
         <div class="dropdown">
             <a class="topbar-user dropdown-toggle text-decoration-none" href="#" role="button" data-bs-toggle="dropdown" aria-expanded="false">
-                <div class="topbar-avatar">{{ strtoupper(substr(Auth::user()->name, 0, 1)) }}</div>
+                @php($profilePhotoUrl = Auth::user()->profilePhotoUrl())
+                <div class="topbar-avatar{{ $profilePhotoUrl ? ' topbar-avatar--photo' : '' }}">
+                    @if ($profilePhotoUrl)
+                        <img src="{{ $profilePhotoUrl }}" alt="" class="hrms-avatar-img">
+                    @else
+                        {{ Auth::user()->profileInitials() }}
+                    @endif
+                </div>
                 <div class="topbar-user-info d-none d-md-block">
                     <span class="topbar-user-name">{{ Auth::user()->name }}</span>
                     <span class="topbar-user-role">{{ Auth::user()->role?->name ?? 'User' }}</span>

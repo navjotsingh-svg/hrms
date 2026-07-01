@@ -23,6 +23,12 @@
     <div class="invalid-feedback d-block" data-error="end_time"></div>
 </div>
 
+@include('partials.timezone-select', [
+    'selected' => $defaultTimezone ?? 'UTC',
+    'wrapperClass' => 'col-md-4',
+    'helpText' => 'Shift timings are interpreted in this timezone (e.g. America/New_York, Europe/London, Asia/Kolkata).',
+])
+
 <div class="col-md-4">
     <label for="break_duration_minutes" class="form-label">Break Duration (minutes)</label>
     <input type="number" class="form-control" id="break_duration_minutes" name="break_duration_minutes" min="0" max="480" step="1" value="60">
