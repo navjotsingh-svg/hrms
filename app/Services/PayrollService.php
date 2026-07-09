@@ -4,10 +4,13 @@ namespace App\Services;
 
 use App\Models\Employee;
 use App\Models\EmployeePaymentMethod;
+use App\Models\ExitCase;
+use App\Models\FullAndFinalSettlement;
 use App\Models\PayrollPeriod;
 use App\Models\Payslip;
 use App\Models\User;
 use Illuminate\Database\Eloquent\Collection;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Symfony\Component\HttpKernel\Exception\AccessDeniedHttpException;
 use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
@@ -18,17 +21,141 @@ class PayrollService
     public function __construct(
         private AttendanceService $attendanceService,
         private PortalStartService $portalStartService,
+        private EmployeeService $employeeService,
     ) {}
 
     public function listPeriods(int $companyId): Collection
     {
         return PayrollPeriod::query()
             ->where('company_id', $companyId)
-            ->with(['processedBy', 'paidBy'])
+            ->with(['processedBy', 'paidBy', 'employee'])
             ->withCount('payslips')
             ->orderByDesc('year')
             ->orderByDesc('month')
+            ->orderByDesc('id')
             ->get();
+    }
+
+    /** @return Collection<int, array<string, mixed>> */
+    public function listEligibleOffboardEmployees(int $companyId): Collection
+    {
+        $blockedExitCaseIds = PayrollPeriod::query()
+            ->where('company_id', $companyId)
+            ->where('type', PayrollPeriod::TYPE_OFFBOARD)
+            ->whereNotNull('exit_case_id')
+            ->pluck('exit_case_id');
+
+        return ExitCase::query()
+            ->with(['employee', 'fullAndFinalSettlement'])
+            ->where('company_id', $companyId)
+            ->whereIn('status', [ExitCase::STATUS_IN_PROGRESS, ExitCase::STATUS_COMPLETED])
+            ->whereNotNull('last_working_date')
+            ->whereNotIn('id', $blockedExitCaseIds)
+            ->whereHas('employee', function ($query) {
+                $query->where('is_paid_employee', true)->whereHas('salary');
+            })
+            ->where(function ($query) {
+                $query->whereDoesntHave('fullAndFinalSettlement')
+                    ->orWhereHas('fullAndFinalSettlement', fn ($settlement) => $settlement->where('status', '!=', FullAndFinalSettlement::STATUS_PAID));
+            })
+            ->orderByDesc('last_working_date')
+            ->get()
+            ->map(fn (ExitCase $exitCase) => [
+                'exit_case_id' => $exitCase->id,
+                'employee_id' => $exitCase->employee_id,
+                'employee_name' => $exitCase->employee?->full_name,
+                'employee_code' => $exitCase->employee?->employee_code,
+                'last_working_date' => $exitCase->last_working_date?->toDateString(),
+                'last_working_date_label' => $exitCase->last_working_date?->format('d M Y'),
+                'fnf_status' => $exitCase->fullAndFinalSettlement?->status,
+                'net_payable' => $exitCase->fullAndFinalSettlement
+                    ? (float) $exitCase->fullAndFinalSettlement->net_payable
+                    : null,
+            ])
+            ->values();
+    }
+
+    public function generateOffboard(int $companyId, int $employeeId, User $user): PayrollPeriod
+    {
+        $employee = Employee::query()
+            ->where('company_id', $companyId)
+            ->where('id', $employeeId)
+            ->with(['salary', 'department', 'departments', 'company'])
+            ->first();
+
+        if (! $employee) {
+            throw new NotFoundHttpException('Employee not found.');
+        }
+
+        if (! $employee->is_paid_employee || ! $employee->salary) {
+            throw new UnprocessableEntityHttpException('This employee does not have salary details configured for payroll.');
+        }
+
+        if (! $employee->last_working_date) {
+            throw new UnprocessableEntityHttpException('This employee does not have a last working date from offboarding.');
+        }
+
+        $exitCase = ExitCase::query()
+            ->with('fullAndFinalSettlement')
+            ->where('company_id', $companyId)
+            ->where('employee_id', $employeeId)
+            ->whereIn('status', [ExitCase::STATUS_IN_PROGRESS, ExitCase::STATUS_COMPLETED])
+            ->whereNotNull('last_working_date')
+            ->latest('id')
+            ->first();
+
+        if (! $exitCase) {
+            throw new UnprocessableEntityHttpException('No active offboarding record found for this employee.');
+        }
+
+        if ($exitCase->fullAndFinalSettlement?->status === FullAndFinalSettlement::STATUS_PAID) {
+            throw new UnprocessableEntityHttpException('Final settlement for this employee has already been marked as paid.');
+        }
+
+        $existing = PayrollPeriod::query()
+            ->where('company_id', $companyId)
+            ->where('exit_case_id', $exitCase->id)
+            ->where('type', PayrollPeriod::TYPE_OFFBOARD)
+            ->first();
+
+        if ($existing) {
+            throw new UnprocessableEntityHttpException('Offboard payroll has already been generated for this employee.');
+        }
+
+        $lastWorkingDate = Carbon::parse($employee->last_working_date);
+        $year = (int) $lastWorkingDate->year;
+        $month = (int) $lastWorkingDate->month;
+
+        $this->assertPeriodWithinPortalStart($companyId, $year, $month);
+
+        return DB::transaction(function () use ($companyId, $year, $month, $user, $employee, $exitCase) {
+            $period = PayrollPeriod::create([
+                'company_id' => $companyId,
+                'year' => $year,
+                'month' => $month,
+                'type' => PayrollPeriod::TYPE_OFFBOARD,
+                'employee_id' => $employee->id,
+                'exit_case_id' => $exitCase->id,
+                'status' => PayrollPeriod::STATUS_PROCESSED,
+                'processed_by_user_id' => $user->id,
+                'processed_at' => now(),
+            ]);
+
+            $payload = $this->buildOffboardPayslipPayload($employee, $exitCase, $year, $month);
+
+            Payslip::create([
+                'payroll_period_id' => $period->id,
+                ...$payload,
+            ]);
+
+            if ($exitCase->fullAndFinalSettlement) {
+                $exitCase->fullAndFinalSettlement->update([
+                    'payroll_period_id' => $period->id,
+                ]);
+            }
+
+            return $period->load(['processedBy', 'employee'])->loadCount('payslips');
+        });
     }
 
     public function listPayslipsForPeriod(PayrollPeriod $period, ?int $employeeId = null): Collection
@@ -110,6 +237,10 @@ class PayrollService
             ->where('status', 'active')
             ->where('is_paid_employee', true)
             ->whereHas('salary')
+            ->where(function ($query) use ($year, $month) {
+                $query->whereNull('last_working_date')
+                    ->orWhereRaw('NOT (YEAR(last_working_date) = ? AND MONTH(last_working_date) = ?)', [$year, $month]);
+            })
             ->with(['salary', 'department', 'departments', 'company'])
             ->orderedByName()
             ->get();
@@ -218,7 +349,91 @@ class PayrollService
             'paid_at' => now(),
         ]);
 
-        return $period->fresh()->load(['processedBy', 'paidBy'])->loadCount('payslips');
+        if ($period->type === PayrollPeriod::TYPE_OFFBOARD) {
+            $this->finalizeOffboardPayroll($user, $period);
+        }
+
+        return $period->fresh()->load(['processedBy', 'paidBy', 'employee'])->loadCount('payslips');
+    }
+
+    private function buildOffboardPayslipPayload(Employee $employee, ExitCase $exitCase, int $year, int $month): array
+    {
+        $payload = $this->buildPayslipPayload($employee, $year, $month);
+        $settlement = $exitCase->fullAndFinalSettlement;
+
+        if (! $settlement) {
+            return $payload;
+        }
+
+        $earnings = $payload['earnings'] ?? [];
+        $deductions = $payload['deductions'] ?? [];
+
+        if ((float) $settlement->leave_encashment > 0) {
+            $earnings[] = [
+                'label' => 'Leave Encashment',
+                'amount' => round((float) $settlement->leave_encashment, 2),
+            ];
+        }
+
+        if ((float) $settlement->pending_dues > 0) {
+            $earnings[] = [
+                'label' => 'Pending Dues',
+                'amount' => round((float) $settlement->pending_dues, 2),
+            ];
+        }
+
+        if ((float) $settlement->deductions > 0) {
+            $deductions[] = [
+                'label' => 'Settlement Deductions',
+                'amount' => round((float) $settlement->deductions, 2),
+            ];
+        }
+
+        $totalEarnings = round(array_sum(array_column($earnings, 'amount')), 2);
+        $totalDeductions = round(array_sum(array_column($deductions, 'amount')), 2);
+
+        $payload['earnings'] = $earnings;
+        $payload['deductions'] = $deductions;
+        $payload['total_earnings'] = $totalEarnings;
+        $payload['total_deductions'] = $totalDeductions;
+        $payload['net_pay'] = round($totalEarnings - $totalDeductions, 2);
+
+        return $payload;
+    }
+
+    private function finalizeOffboardPayroll(User $user, PayrollPeriod $period): void
+    {
+        $period->loadMissing(['exitCase.fullAndFinalSettlement', 'employee']);
+        $exitCase = $period->exitCase;
+
+        if (! $exitCase) {
+            return;
+        }
+
+        DB::transaction(function () use ($user, $exitCase, $period) {
+            $settlement = $exitCase->fullAndFinalSettlement;
+
+            if ($settlement && $settlement->status !== FullAndFinalSettlement::STATUS_PAID) {
+                $settlement->update([
+                    'status' => FullAndFinalSettlement::STATUS_PAID,
+                    'payroll_period_id' => $period->id,
+                    'processed_by_user_id' => $user->id,
+                    'processed_at' => now(),
+                ]);
+            }
+
+            if ($exitCase->status !== ExitCase::STATUS_COMPLETED) {
+                $exitCase->update([
+                    'stage' => ExitCase::STAGE_COMPLETED,
+                    'status' => ExitCase::STATUS_COMPLETED,
+                    'completed_at' => now(),
+                ]);
+            }
+        });
+
+        if ($period->employee && $period->employee->status === 'active') {
+            $this->employeeService->updateStatus($period->employee, 'inactive', $user);
+        }
     }
 
     private function buildPayslipPayload(Employee $employee, int $year, int $month): array

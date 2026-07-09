@@ -1,3 +1,5 @@
+import { renderDateTimeStack } from './datetime-utils';
+
 const escapeHtml = (value) => String(value ?? '')
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
@@ -86,7 +88,7 @@ export const renderAttendancePunchVerification = (punch, { compact = false, thre
 };
 
 export const renderAttendancePunchCard = (punch, {
-    formatDateTime = (value) => value || '—',
+    formatDateTime = (value) => renderDateTimeStack(value),
     includeSelfie = true,
     threshold = 80,
 } = {}) => {
@@ -108,7 +110,7 @@ export const renderAttendancePunchCard = (punch, {
                     <span class="badge ${punch.punch_type === 'in' ? 'text-bg-success' : 'text-bg-warning'}">${escapeHtml(punch.punch_label)}</span>
                     ${punch.is_regularized ? '<span class="badge text-bg-info ms-1">Regularized</span>' : ''}
                     ${faceMatchBadge}
-                    <span class="ms-2 fw-semibold">${escapeHtml(formatDateTime(punch.punched_at))}</span>
+                    <span class="ms-2 fw-semibold">${formatDateTime(punch.punched_at)}</span>
                 </div>
                 ${selfieBlock}
             </div>

@@ -15,7 +15,7 @@
         'review-cycles' => 'Review Cycles',
         'feedback-forms' => 'Feedback Forms',
         'question-bank' => 'Question Bank',
-        'goals' => 'Goals and OKRs',
+        'goals' => 'Department & Individual Goals',
         'kpi' => 'KPI',
         'pip' => 'Performance Improvement Plan',
     ];
@@ -33,7 +33,7 @@
         'review-cycles' => 'Configure review periods, questions, reviewer pairs, and track completion.',
         'feedback-forms' => 'Create reusable feedback form templates from your question bank.',
         'question-bank' => 'Maintain a library of rating and text questions for reviews and forms.',
-        'goals' => 'Set goals and key results for yourself or your team.',
+        'goals' => 'Cascade company goals into department and employee objectives. Track progress at every level.',
         'kpi' => 'Track employee KPIs with targets, current values, and progress.',
         'pip' => 'Manage performance improvement plans with milestones and outcomes.',
     ];

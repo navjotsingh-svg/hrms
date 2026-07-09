@@ -8,6 +8,10 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class PayrollPeriod extends Model
 {
+    public const TYPE_REGULAR = 'regular';
+
+    public const TYPE_OFFBOARD = 'offboard';
+
     public const STATUS_PROCESSED = 'processed';
 
     public const STATUS_PAID = 'paid';
@@ -17,6 +21,8 @@ class PayrollPeriod extends Model
         'year',
         'month',
         'type',
+        'employee_id',
+        'exit_case_id',
         'status',
         'processed_by_user_id',
         'processed_at',
@@ -49,6 +55,16 @@ class PayrollPeriod extends Model
         return $this->belongsTo(User::class, 'paid_by_user_id');
     }
 
+    public function employee(): BelongsTo
+    {
+        return $this->belongsTo(Employee::class);
+    }
+
+    public function exitCase(): BelongsTo
+    {
+        return $this->belongsTo(ExitCase::class);
+    }
+
     public function isPaid(): bool
     {
         return $this->status === self::STATUS_PAID;
@@ -71,6 +87,22 @@ class PayrollPeriod extends Model
     {
         $date = \Carbon\Carbon::create($this->year, $this->month, 1);
 
+        if ($this->type === self::TYPE_OFFBOARD) {
+            $employeeName = $this->relationLoaded('employee')
+                ? $this->employee?->full_name
+                : null;
+
+            return $date->format('M Y').' · Offboard'.($employeeName ? ' · '.$employeeName : '');
+        }
+
         return $date->format('M Y');
+    }
+
+    public function typeLabel(): string
+    {
+        return match ($this->type) {
+            self::TYPE_OFFBOARD => 'Offboard',
+            default => 'Regular',
+        };
     }
 }

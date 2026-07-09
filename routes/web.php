@@ -31,7 +31,7 @@ Route::redirect('/register', '/');
         Route::get('/dashboard', [\App\Http\Controllers\HomeController::class, 'dashboard'])
             ->middleware('company.permission:home.dashboard.view,home.dashboard.manage')
             ->name('dashboard');
-        Route::get('/moments', fn () => redirect()->route('web.employee-experience.social-wall'))
+        Route::get('/moments', [\App\Http\Controllers\HomeController::class, 'moments'])
             ->middleware('company.permission:home.moments.view,home.moments.post')
             ->name('moments');
     });

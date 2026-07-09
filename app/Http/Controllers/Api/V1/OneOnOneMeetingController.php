@@ -163,7 +163,7 @@ class OneOnOneMeetingController extends Controller
             'id' => $meeting->id,
             'title' => $meeting->title,
             'scheduled_at' => $meeting->scheduled_at?->toIso8601String(),
-            'scheduled_at_label' => $scheduledLocal?->format('d M Y, h:i A') ?: '—',
+            'scheduled_at_label' => $scheduledLocal?->labelStack() ?: '—',
             'duration_minutes' => $meeting->duration_minutes,
             'status' => $meeting->status,
             'status_label' => ucfirst($meeting->status),

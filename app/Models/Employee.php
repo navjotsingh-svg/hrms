@@ -116,6 +116,11 @@ class Employee extends Model
         return $this->hasMany(Employee::class, 'manager_id');
     }
 
+    public function exitCases(): HasMany
+    {
+        return $this->hasMany(ExitCase::class);
+    }
+
     public function profilePhotoSubmission(): HasOne
     {
         return $this->hasOne(EmployeeProfilePhoto::class);

@@ -17,6 +17,7 @@ class PerformanceController extends Controller
 
         return view('performance.praise-recognition', array_merge($this->pageData('praise-recognition'), [
             'canPostPraise' => $user->hasPermission('home.moments.post') || $user->hasPermission('performance.participate'),
+            'canManagePraise' => $user->canManagePerformance(),
         ]));
     }
 
@@ -41,20 +42,14 @@ class PerformanceController extends Controller
 
     public function calibration(): View
     {
-        return $this->placeholder(
-            'calibration',
-            'Performance Calibration',
-            'Align ratings across teams, compare review outcomes, and finalize performance scores before compensation cycles.',
-        );
+        return view('performance.calibration', $this->pageData('calibration'));
     }
 
     public function promotions(): View
     {
-        return $this->placeholder(
-            'promotions',
-            'Promotions',
-            'Manage promotion nominations, approvals, and role changes tied to performance outcomes.',
-        );
+        return view('performance.promotions', array_merge($this->pageData('promotions'), [
+            'canNominate' => auth()->user()->canManagePerformance() || auth()->user()->canReviewPerformance(),
+        ]));
     }
 
     public function insights(): View
@@ -64,20 +59,12 @@ class PerformanceController extends Controller
 
     public function compensation(): View
     {
-        return $this->placeholder(
-            'compensation',
-            'Basic Compensation Plans',
-            'Define salary bands, merit increase guidelines, and link compensation planning to review results.',
-        );
+        return view('performance.compensation', $this->pageData('compensation'));
     }
 
     public function skills(): View
     {
-        return $this->placeholder(
-            'skills',
-            'Skills and Competencies',
-            'Map role competencies, track employee skill profiles, and identify development gaps.',
-        );
+        return view('performance.skills', $this->pageData('skills'));
     }
 
     public function reviewCycles(): View

@@ -290,7 +290,7 @@ class WfhRequestService
         return [
             'wfh_request_id' => $request?->id,
             'wfh_approved_by_name' => $request?->reviewedBy?->name,
-            'wfh_approved_at_label' => $request?->reviewed_at?->format('d M Y, h:i A'),
+            'wfh_approved_at_label' => $request?->reviewed_at?->labelStack(),
         ];
     }
 

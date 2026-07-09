@@ -33,7 +33,7 @@ class EmployeeController extends Controller
 
         $employees = $this->employeeService->listForCompany(
             $user->company_id,
-            $request->only(['search', 'department_id', 'status', 'per_page']),
+            $request->only(['search', 'department_id', 'status', 'employee_id', 'per_page', 'page']),
             $this->employeeAccessService->visibleEmployeeIds($user),
         );
 

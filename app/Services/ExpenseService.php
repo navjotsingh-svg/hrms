@@ -198,6 +198,34 @@ class ExpenseService
         return $fresh;
     }
 
+    public function markAsPaid(User $user, Expense $expense): Expense
+    {
+        if (! $user->canMarkExpensePaid($expense)) {
+            throw new AccessDeniedHttpException('You are not allowed to mark this expense as paid.');
+        }
+
+        $expense->update([
+            'payout_status' => Expense::PAYOUT_PAID,
+            'paid_at' => now(),
+        ]);
+
+        $fresh = $expense->fresh(['employee', 'expenseType', 'expenseGroup', 'attachments', 'reviewedBy']);
+
+        $this->activityLogService->logWorkflowRequest(
+            $user,
+            'expense',
+            $fresh,
+            (int) $fresh->employee_id,
+            'paid',
+            'Expense reimbursement marked as paid.',
+            null,
+            request(),
+            ['amount' => $fresh->amount],
+        );
+
+        return $fresh;
+    }
+
     public function cancel(User $user, Expense $expense): Expense
     {
         $this->assertOwnIndependentExpense($user, $expense);

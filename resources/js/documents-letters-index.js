@@ -5,6 +5,7 @@ import { bindEmployeeSearchSelect } from './employee-autocomplete';
 import { composeActionGroup, renderEditIconButton, renderViewIconButton, renderViewLink } from './action-icons';
 import { initRichTextEditor, isEmptyEditorContent } from './rich-text-editor';
 import { bindPagination, bindPerPageSelect, readPerPage, renderListPagination } from './pagination';
+import { renderDateTimeStackFromLabel } from './datetime-utils';
 
 const statusClass = (status) => ({
     draft: 'company-status-pill--inactive',
@@ -237,7 +238,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                     <td>${item.category_label}</td>
                     <td><span class="company-status-pill ${statusClass(item.status)}">${item.status_label}</span></td>
                     ${employeeCell}
-                    <td>${item.issued_at_label || '—'}</td>
+                    <td>${renderDateTimeStackFromLabel(item.issued_at_label)}</td>
                     <td>${composeActionGroup({
                         view: renderViewLink(`${showUrl}/${item.id}`, 'View document'),
                     })}</td>
@@ -282,7 +283,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                 <td>${item.category_label}</td>
                 <td>${item.requires_signature ? 'Required' : 'Not required'}</td>
                 <td><span class="company-status-pill ${item.status === 'active' ? 'company-status-pill--active' : 'company-status-pill--inactive'}">${item.status === 'active' ? 'Active' : 'Inactive'}</span></td>
-                <td>${item.updated_at_label || '—'}</td>
+                <td>${renderDateTimeStackFromLabel(item.updated_at_label)}</td>
                 <td>${composeActionGroup({
                     view: renderViewIconButton('data-pdf-template', item.id, 'Preview PDF'),
                     edit: renderEditIconButton('data-edit-template', item.id, 'Edit template'),

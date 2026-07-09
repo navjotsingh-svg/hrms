@@ -1,5 +1,6 @@
 import api, { getErrorMessage } from './api';
 import { renderAttendancePunchCard } from './attendance-punch-display';
+import { renderDateTimeStackFromLabel, renderDateTimeStack } from './datetime-utils';
 import { debounce } from './form-utils';
 import { bindPagination, bindPerPageSelect, readPerPage, renderListPagination } from './pagination';
 import { Modal } from 'bootstrap';
@@ -262,7 +263,9 @@ document.addEventListener('DOMContentLoaded', async () => {
             : '';
 
         const punches = (payload.punches || []).map((punch) => renderAttendancePunchCard(punch, {
-            formatDateTime: () => escapeHtml(punch.punched_at_label || punch.punched_at || '—'),
+            formatDateTime: () => (punch.punched_at_label
+                ? renderDateTimeStackFromLabel(punch.punched_at_label)
+                : renderDateTimeStack(punch.punched_at)),
             includeSelfie: false,
             threshold: Number(payload.face_match_threshold) || 80,
         })).join('') || '<div class="text-muted small">No punch records.</div>';

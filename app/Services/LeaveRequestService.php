@@ -291,7 +291,7 @@ class LeaveRequestService
 
         return [
             'leave_approved_by_name' => $request?->reviewedBy?->name,
-            'leave_approved_at_label' => $request?->reviewed_at?->format('d M Y, h:i A'),
+            'leave_approved_at_label' => $request?->reviewed_at?->labelStack(),
         ];
     }
 

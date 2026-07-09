@@ -7,6 +7,7 @@
             </div>
             <div class="modal-body" id="expenseRequestDetailBody"></div>
             <div class="modal-footer">
+                <div id="expenseRequestDetailActions" class="d-none me-auto"></div>
                 <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Close</button>
             </div>
         </div>

@@ -367,7 +367,7 @@ class OneOnOneMeetingService
         }
 
         $organizerName = $meeting->organizer?->employee?->full_name ?: $meeting->organizer?->name ?: 'Your manager';
-        $when = $meeting->scheduled_at?->timezone($meeting->company?->timezone ?: config('app.timezone'))->format('d M Y, h:i A') ?: '—';
+        $when = $meeting->scheduled_at?->timezone($meeting->company?->timezone ?: config('app.timezone'))->labelStack() ?: '—';
 
         UserNotification::query()->create([
             'company_id' => $meeting->company_id,

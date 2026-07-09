@@ -57,16 +57,25 @@ export const renderCancelIconButton = (attrName, id, label = 'Cancel request (wi
 `;
 
 const ACTION_BUTTON_ORDER = [
+    'table-action-btn--cancel',
     'table-action-btn--view',
     'table-action-btn--approve',
     'table-action-btn--reject',
     'table-action-btn--edit',
     'table-action-btn--delete',
-    'table-action-btn--cancel',
     'table-action-btn--mail',
+    'table-action-btn--mark-paid',
 ];
 
+export const renderActionPlaceholder = () => (
+    '<span class="table-action-btn table-action-btn--placeholder" aria-hidden="true"></span>'
+);
+
 const actionButtonSortKey = (html) => {
+    if (html.includes('table-action-btn--placeholder')) {
+        return 0;
+    }
+
     const index = ACTION_BUTTON_ORDER.findIndex((className) => html.includes(className));
 
     return index === -1 ? ACTION_BUTTON_ORDER.length : index;
@@ -77,7 +86,7 @@ export const sortActionButtons = (html = '') => {
         return html;
     }
 
-    const buttons = html.match(/<(a|button)\b[^>]*table-action-btn[^>]*>[\s\S]*?<\/\1>/gi);
+    const buttons = html.match(/<(a|button|span)\b[^>]*table-action-btn[^>]*>[\s\S]*?<\/\1>/gi);
 
     if (!buttons || buttons.length <= 1) {
         return html;
@@ -92,9 +101,12 @@ export const renderActionGroup = (items) => `
     <div class="table-action-group">${sortActionButtons(items)}</div>
 `;
 
-export const composeActionGroup = (parts) => {
-    const html = ['view', 'approve', 'reject', 'edit', 'submit', 'add', 'delete', 'cancel']
-        .map((key) => parts[key] || '')
+export const composeActionGroup = (parts, { reserveCancelSlot = false } = {}) => {
+    const cancel = parts.cancel
+        || (reserveCancelSlot && parts.view ? renderActionPlaceholder() : '');
+
+    const html = ['cancel', 'view', 'approve', 'reject', 'markPaid', 'edit', 'submit', 'add', 'delete']
+        .map((key) => (key === 'cancel' ? cancel : (parts[key] || '')))
         .filter(Boolean)
         .join('');
 

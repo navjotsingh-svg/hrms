@@ -1,4 +1,5 @@
 import { isPublicAttachmentUrl, normalizePublicAssetUrl } from './request-attachments';
+import { renderDateTimeStackFromLabel } from './datetime-utils';
 
 export const renderEmployeeNameBlock = (name, code) => {
     const displayName = name || 'Employee';
@@ -251,10 +252,10 @@ export const renderHubRequestDetailHtml = (item) => {
                     <span class="text-muted">Requested By</span>
                     ${renderEmployeeNameBlock(item.requester_name, item.requester_code)}
                 </div>
-                <div class="col-md-6"><span class="text-muted">Submitted On</span><div>${item.submitted_at_label || '—'}</div></div>
+                <div class="col-md-6"><span class="text-muted">Submitted On</span><div>${renderDateTimeStackFromLabel(item.submitted_at_label)}</div></div>
                 <div class="col-md-6"><span class="text-muted">Status</span><div class="fw-semibold text-capitalize">${item.status_label || item.status}</div></div>
                 ${item.reason ? `<div class="col-12"><span class="text-muted">Reason / Notes</span><div>${item.reason}</div></div>` : ''}
-                ${item.reviewed_at_label ? `<div class="col-12"><span class="text-muted">Reviewed</span><div>${item.reviewed_at_label}${item.reviewed_by_name ? ` by ${item.reviewed_by_name}` : ''}</div></div>` : ''}
+                ${item.reviewed_at_label ? `<div class="col-12"><span class="text-muted">Reviewed</span><div>${renderDateTimeStackFromLabel(item.reviewed_at_label)}${item.reviewed_by_name ? ` by ${item.reviewed_by_name}` : ''}</div></div>` : ''}
                 ${renderProfilePhotoPreview(item.attachments || [])}
             </div>
         `;
@@ -270,13 +271,13 @@ export const renderHubRequestDetailHtml = (item) => {
             <span class="text-muted">Requested By</span>
             ${renderEmployeeNameBlock(item.requester_name, item.requester_code)}
         </div>
-        <div class="col-md-6"><span class="text-muted">Submitted On</span><div>${item.submitted_at_label || '—'}</div></div>
+        <div class="col-md-6"><span class="text-muted">Submitted On</span><div>${renderDateTimeStackFromLabel(item.submitted_at_label)}</div></div>
         <div class="col-md-6"><span class="text-muted">Status</span><div class="fw-semibold text-capitalize">${item.status_label || item.status}</div></div>
         ${renderRequestFields(item.fields || [])}
         ${item.detail && !(item.fields || []).length ? `<div class="col-12"><span class="text-muted">Details</span><div>${item.detail}</div></div>` : ''}
         ${item.subject && item.subject !== item.category_label ? `<div class="col-12"><span class="text-muted">Subject</span><div>${item.subject}</div></div>` : ''}
         ${item.reason ? `<div class="col-12"><span class="text-muted">Reason / Notes</span><div>${item.reason}</div></div>` : ''}
-        ${item.reviewed_at_label ? `<div class="col-12"><span class="text-muted">Reviewed</span><div>${item.reviewed_at_label}${item.reviewed_by_name ? ` by ${item.reviewed_by_name}` : ''}</div></div>` : ''}
+        ${item.reviewed_at_label ? `<div class="col-12"><span class="text-muted">Reviewed</span><div>${renderDateTimeStackFromLabel(item.reviewed_at_label)}${item.reviewed_by_name ? ` by ${item.reviewed_by_name}` : ''}</div></div>` : ''}
         ${renderRequestAttachments(item.attachments || [])}
     </div>
 `;

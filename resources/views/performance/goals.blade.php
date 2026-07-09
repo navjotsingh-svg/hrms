@@ -5,6 +5,15 @@
         <div class="content-card-body companies-filter-bar border-bottom">
             <div class="row g-3 align-items-end">
                 <div class="col-md-2">
+                    <label for="goalLevelFilter" class="form-label">Level</label>
+                    <select class="form-select" id="goalLevelFilter">
+                        <option value="">All levels</option>
+                        <option value="company">Company</option>
+                        <option value="department">Department</option>
+                        <option value="individual">Individual</option>
+                    </select>
+                </div>
+                <div class="col-md-2">
                     <label for="goalStatusFilter" class="form-label">Status</label>
                     <select class="form-select" id="goalStatusFilter">
                         <option value="">All</option>
@@ -15,7 +24,7 @@
                 </div>
                 <div class="col-md-4">
                     <label for="goalSearchFilter" class="form-label">Search</label>
-                    <input type="search" class="form-control" id="goalSearchFilter" placeholder="Search goals">
+                    <input type="search" class="form-control" id="goalSearchFilter" placeholder="Search goals, employees, or departments">
                 </div>
             </div>
         </div>
@@ -25,7 +34,9 @@
                 <thead>
                     <tr>
                         <th>Title</th>
-                        <th>Employee</th>
+                        <th>Level</th>
+                        <th>Owner</th>
+                        <th>Parent Goal</th>
                         <th>Period</th>
                         <th>Progress</th>
                         <th>Status</th>
@@ -33,7 +44,7 @@
                     </tr>
                 </thead>
                 <tbody id="goalsTableBody">
-                    <tr><td colspan="6" class="text-center text-muted py-4">Loading…</td></tr>
+                    <tr><td colspan="8" class="text-center text-muted py-4">Loading…</td></tr>
                 </tbody>
             </table>
         </div>
@@ -56,9 +67,28 @@
                 <form id="goalForm" class="modal-body">
                     <input type="hidden" id="goalEditingId">
                     <div class="row g-3">
+                        <div class="col-md-4" id="goalLevelFieldWrap">
+                            <label class="form-label" for="goalLevel">Goal Level *</label>
+                            <select class="form-select" id="goalLevel">
+                                <option value="individual">Individual</option>
+                                <option value="department">Department</option>
+                                <option value="company">Company</option>
+                            </select>
+                        </div>
                         <div class="col-md-8">
                             <label class="form-label" for="goalTitle">Title *</label>
                             <input type="text" class="form-control" id="goalTitle" required>
+                        </div>
+                        <div class="col-md-6 d-none" id="goalDepartmentWrap">
+                            <label class="form-label" for="goalDepartmentId">Department *</label>
+                            <select class="form-select" id="goalDepartmentId">
+                                <option value="">Select department</option>
+                            </select>
+                        </div>
+                        <div class="col-md-6 d-none" id="goalEmployeeWrap">
+                            <label class="form-label" for="goalEmployeeSearch">Employee</label>
+                            <input type="text" class="form-control" id="goalEmployeeSearch" placeholder="Search employee">
+                            <input type="hidden" id="goalEmployeeId">
                         </div>
                         <div class="col-md-4">
                             <label class="form-label" for="goalStatus">Status</label>

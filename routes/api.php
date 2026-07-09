@@ -323,6 +323,9 @@ Route::prefix('v1')->name('api.')->group(function () {
                 Route::patch('expense-groups/{expenseGroup}/reject', [\App\Http\Controllers\Api\V1\ExpenseGroupController::class, 'reject'])
                     ->name('expense-groups.reject')
                     ->whereNumber('expenseGroup');
+                Route::patch('expenses/{expense}/mark-paid', [\App\Http\Controllers\Api\V1\ExpenseController::class, 'markPaid'])
+                    ->name('expenses.mark-paid')
+                    ->whereNumber('expense');
             });
 
             Route::middleware('company.member')->group(function () {
@@ -910,6 +913,10 @@ Route::prefix('v1')->name('api.')->group(function () {
                     ->name('payroll-periods.generate');
                 Route::post('payroll-periods/regenerate', [\App\Http\Controllers\Api\V1\PayrollController::class, 'regenerate'])
                     ->name('payroll-periods.regenerate');
+                Route::get('payroll-periods/offboard/eligible', [\App\Http\Controllers\Api\V1\PayrollController::class, 'eligibleOffboardEmployees'])
+                    ->name('payroll-periods.offboard.eligible');
+                Route::post('payroll-periods/offboard/generate', [\App\Http\Controllers\Api\V1\PayrollController::class, 'generateOffboard'])
+                    ->name('payroll-periods.offboard.generate');
                 Route::post('payroll-periods/{payrollPeriod}/mark-paid', [\App\Http\Controllers\Api\V1\PayrollController::class, 'markPaid'])
                     ->name('payroll-periods.mark-paid')
                     ->whereNumber('payrollPeriod');
@@ -1001,6 +1008,42 @@ Route::prefix('v1')->name('api.')->group(function () {
                 Route::post('performance-review-cycles/{performanceReviewCycle}/reminders', [\App\Http\Controllers\Api\V1\PerformanceReviewCycleController::class, 'sendReminders'])
                     ->name('performance-review-cycles.reminders')
                     ->whereNumber('performanceReviewCycle');
+
+                Route::delete('performance/praise/{moment}', [\App\Http\Controllers\Api\V1\PerformancePraiseController::class, 'destroy'])
+                    ->name('performance.praise.destroy')
+                    ->whereNumber('moment');
+
+                Route::get('performance-calibration', [\App\Http\Controllers\Api\V1\PerformanceCalibrationController::class, 'index'])
+                    ->name('performance-calibration.index');
+                Route::post('performance-calibration', [\App\Http\Controllers\Api\V1\PerformanceCalibrationController::class, 'store'])
+                    ->name('performance-calibration.store');
+                Route::get('performance-calibration/{calibrationSession}', [\App\Http\Controllers\Api\V1\PerformanceCalibrationController::class, 'show'])
+                    ->name('performance-calibration.show')
+                    ->whereNumber('calibrationSession');
+                Route::patch('performance-calibration/{calibrationSession}/entries/{entry}', [\App\Http\Controllers\Api\V1\PerformanceCalibrationController::class, 'updateEntry'])
+                    ->name('performance-calibration.entries.update')
+                    ->whereNumber(['calibrationSession', 'entry']);
+                Route::patch('performance-calibration/{calibrationSession}/finalize', [\App\Http\Controllers\Api\V1\PerformanceCalibrationController::class, 'finalize'])
+                    ->name('performance-calibration.finalize')
+                    ->whereNumber('calibrationSession');
+
+                Route::get('compensation-bands', [\App\Http\Controllers\Api\V1\CompensationController::class, 'indexBands'])
+                    ->name('compensation-bands.index');
+                Route::post('compensation-bands', [\App\Http\Controllers\Api\V1\CompensationController::class, 'storeBand'])
+                    ->name('compensation-bands.store');
+                Route::put('compensation-bands/{compensationBand}', [\App\Http\Controllers\Api\V1\CompensationController::class, 'updateBand'])
+                    ->name('compensation-bands.update')
+                    ->whereNumber('compensationBand');
+                Route::get('compensation-recommendations', [\App\Http\Controllers\Api\V1\CompensationController::class, 'indexRecommendations'])
+                    ->name('compensation-recommendations.index');
+                Route::post('compensation-recommendations', [\App\Http\Controllers\Api\V1\CompensationController::class, 'storeRecommendation'])
+                    ->name('compensation-recommendations.store');
+                Route::put('compensation-recommendations/{compensationRecommendation}', [\App\Http\Controllers\Api\V1\CompensationController::class, 'updateRecommendation'])
+                    ->name('compensation-recommendations.update')
+                    ->whereNumber('compensationRecommendation');
+                Route::patch('compensation-recommendations/{compensationRecommendation}/status', [\App\Http\Controllers\Api\V1\CompensationController::class, 'updateRecommendationStatus'])
+                    ->name('compensation-recommendations.status')
+                    ->whereNumber('compensationRecommendation');
             });
 
             Route::middleware('company.permission:performance.review')->group(function () {
@@ -1056,9 +1099,41 @@ Route::prefix('v1')->name('api.')->group(function () {
                 Route::patch('goals/{goal}/key-results/{goalKeyResult}', [\App\Http\Controllers\Api\V1\GoalController::class, 'updateKeyResult'])
                     ->name('goals.key-results.update')
                     ->whereNumber(['goal', 'goalKeyResult']);
+                Route::post('goals/{goal}/cascade', [\App\Http\Controllers\Api\V1\GoalController::class, 'cascade'])
+                    ->name('goals.cascade')
+                    ->whereNumber('goal');
                 Route::delete('goals/{goal}/key-results/{goalKeyResult}', [\App\Http\Controllers\Api\V1\GoalController::class, 'deleteKeyResult'])
                     ->name('goals.key-results.destroy')
                     ->whereNumber(['goal', 'goalKeyResult']);
+
+                Route::get('promotions', [\App\Http\Controllers\Api\V1\PromotionController::class, 'index'])
+                    ->name('promotions.index');
+                Route::post('promotions', [\App\Http\Controllers\Api\V1\PromotionController::class, 'store'])
+                    ->name('promotions.store');
+                Route::get('promotions/{promotionNomination}', [\App\Http\Controllers\Api\V1\PromotionController::class, 'show'])
+                    ->name('promotions.show')
+                    ->whereNumber('promotionNomination');
+                Route::put('promotions/{promotionNomination}', [\App\Http\Controllers\Api\V1\PromotionController::class, 'update'])
+                    ->name('promotions.update')
+                    ->whereNumber('promotionNomination');
+                Route::patch('promotions/{promotionNomination}/status', [\App\Http\Controllers\Api\V1\PromotionController::class, 'updateStatus'])
+                    ->name('promotions.status')
+                    ->whereNumber('promotionNomination');
+
+                Route::get('competencies', [\App\Http\Controllers\Api\V1\CompetencyController::class, 'indexCompetencies'])
+                    ->name('competencies.index');
+                Route::post('competencies', [\App\Http\Controllers\Api\V1\CompetencyController::class, 'storeCompetency'])
+                    ->name('competencies.store');
+                Route::put('competencies/{competency}', [\App\Http\Controllers\Api\V1\CompetencyController::class, 'updateCompetency'])
+                    ->name('competencies.update')
+                    ->whereNumber('competency');
+                Route::get('employee-competencies', [\App\Http\Controllers\Api\V1\CompetencyController::class, 'indexEmployeeCompetencies'])
+                    ->name('employee-competencies.index');
+                Route::post('employee-competencies', [\App\Http\Controllers\Api\V1\CompetencyController::class, 'storeEmployeeCompetency'])
+                    ->name('employee-competencies.store');
+                Route::put('employee-competencies/{employeeCompetency}', [\App\Http\Controllers\Api\V1\CompetencyController::class, 'updateEmployeeCompetency'])
+                    ->name('employee-competencies.update')
+                    ->whereNumber('employeeCompetency');
             });
 
             Route::middleware('company.permission:pip.manage')->group(function () {

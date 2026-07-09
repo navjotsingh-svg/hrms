@@ -56,13 +56,13 @@ class HelpdeskTicketResource extends JsonResource
 
             'status_label' => $statuses[$this->status] ?? ucfirst(str_replace('_', ' ', $this->status)),
 
-            'created_at_label' => $this->created_at?->format('d M Y, h:i A'),
+            'created_at_label' => $this->created_at?->labelStack(),
 
-            'updated_at_label' => $this->updated_at?->format('d M Y, h:i A'),
+            'updated_at_label' => $this->updated_at?->labelStack(),
 
-            'resolved_at_label' => $this->resolved_at?->format('d M Y, h:i A'),
+            'resolved_at_label' => $this->resolved_at?->labelStack(),
 
-            'closed_at_label' => $this->closed_at?->format('d M Y, h:i A'),
+            'closed_at_label' => $this->closed_at?->labelStack(),
 
             'employee' => $this->when($this->relationLoaded('employee'), fn () => [
 
@@ -120,7 +120,7 @@ class HelpdeskTicketResource extends JsonResource
 
                 'is_internal' => $comment->is_internal,
 
-                'created_at_label' => $comment->created_at?->format('d M Y, h:i A'),
+                'created_at_label' => $comment->created_at?->labelStack(),
 
                 'user' => $comment->user ? [
 

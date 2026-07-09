@@ -199,6 +199,30 @@ class ActivityLogService
         ];
     }
 
+    /**
+     * @return array{preset: string, from_date: string, to_date: string, from: Carbon, to: Carbon}
+     */
+    public function resolveViewerDateRange(array $filters = []): array
+    {
+        if (! empty($filters['date']) && empty($filters['range']) && empty($filters['from_date'])) {
+            $date = Carbon::parse($filters['date']);
+
+            return [
+                'preset' => DateRangePresetService::PRESET_CUSTOM,
+                'from_date' => $date->toDateString(),
+                'to_date' => $date->toDateString(),
+                'from' => $date->copy()->startOfDay(),
+                'to' => $date->copy()->endOfDay(),
+            ];
+        }
+
+        return app(DateRangePresetService::class)->resolve([
+            'range' => $filters['range'] ?? DateRangePresetService::PRESET_TODAY,
+            'from_date' => $filters['from_date'] ?? null,
+            'to_date' => $filters['to_date'] ?? null,
+        ]);
+    }
+
     /** @return array<int, array<string, mixed>> */
     public function timelineForEmployee(User $viewer, int $employeeId, array $filters = []): array
     {
@@ -264,11 +288,11 @@ class ActivityLogService
     private function viewerQuery(User $viewer, array $filters): \Illuminate\Database\Eloquent\Builder
     {
         $companyId = $this->resolveViewerCompanyId($viewer, $filters['company_id'] ?? null);
-        $date = $filters['date'] ?? now()->toDateString();
+        $range = $this->resolveViewerDateRange($filters);
 
         $query = ActivityLog::query()
             ->when($companyId, fn ($builder) => $builder->where('company_id', $companyId))
-            ->whereDate('logged_at', $date)
+            ->whereBetween('logged_at', [$range['from'], $range['to']])
             ->orderByDesc('logged_at');
 
         if ($module = $filters['module'] ?? null) {

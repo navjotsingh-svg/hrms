@@ -1,6 +1,7 @@
 import { Modal } from 'bootstrap';
 import api, { getErrorMessage } from './api';
 import { renderAttendancePunchCard } from './attendance-punch-display';
+import { renderDateTimeStack } from './datetime-utils';
 import {
     bindEmployeeSearchSelect,
     formatEmployeeLabel,
@@ -12,19 +13,7 @@ const pad = (value) => String(value).padStart(2, '0');
 
 const currentMonthKey = (date = new Date()) => `${date.getFullYear()}-${pad(date.getMonth() + 1)}`;
 
-const formatDateTime = (value) => {
-    if (!value) {
-        return '—';
-    }
-
-    return new Date(value).toLocaleString('en-IN', {
-        day: '2-digit',
-        month: 'short',
-        year: 'numeric',
-        hour: '2-digit',
-        minute: '2-digit',
-    });
-};
+const formatDateTime = (value) => renderDateTimeStack(value);
 
 const statusClass = (status, awaitingPunchOut = false) => {
     if (awaitingPunchOut) {

@@ -1,3 +1,5 @@
+import { renderDateTimeStack } from './datetime-utils';
+
 const escapeHtml = (value) => String(value ?? '')
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
@@ -22,19 +24,7 @@ const formatDate = (value) => {
     });
 };
 
-const formatDateTime = (value) => {
-    if (!value) {
-        return '—';
-    }
-
-    return new Date(value).toLocaleString('en-IN', {
-        day: '2-digit',
-        month: 'short',
-        year: 'numeric',
-        hour: '2-digit',
-        minute: '2-digit',
-    });
-};
+const formatDateTime = (value) => renderDateTimeStack(value);
 
 const formatBool = (value) => (value ? 'Yes' : 'No');
 

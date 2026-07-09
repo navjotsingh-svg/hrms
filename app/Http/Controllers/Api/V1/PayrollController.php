@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api\V1;
 use App\Exports\PayrollPeriodExport;
 use App\Http\Controllers\Controller;
 use App\Http\Concerns\ApiResponse;
+use App\Http\Requests\GenerateOffboardPayrollRequest;
 use App\Http\Requests\GeneratePayrollRequest;
 use App\Http\Resources\PayrollPeriodResource;
 use App\Http\Resources\PayslipResource;
@@ -96,6 +97,36 @@ class PayrollController extends Controller
         return $this->success(
             ['period' => new PayrollPeriodResource($period)],
             'Payroll regenerated successfully with updated attendance and leave data.'
+        );
+    }
+
+    public function eligibleOffboardEmployees(Request $request): JsonResponse
+    {
+        if (! $request->user()->canManagePayroll()) {
+            abort(403);
+        }
+
+        return $this->success([
+            'employees' => $this->payrollService->listEligibleOffboardEmployees($request->user()->company_id),
+        ]);
+    }
+
+    public function generateOffboard(GenerateOffboardPayrollRequest $request): JsonResponse
+    {
+        if (! $request->user()->canManagePayroll()) {
+            abort(403);
+        }
+
+        $period = $this->payrollService->generateOffboard(
+            $request->user()->company_id,
+            (int) $request->validated('employee_id'),
+            $request->user(),
+        );
+
+        return $this->success(
+            ['period' => new PayrollPeriodResource($period)],
+            'Offboard payroll generated successfully.',
+            201,
         );
     }
 

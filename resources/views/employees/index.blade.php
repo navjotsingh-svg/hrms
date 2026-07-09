@@ -107,5 +107,8 @@
             'infoText' => 'Loading pagination...',
         ])
     </div>
-    @vite(['resources/js/employees-index.js'])
 @endsection
+
+@push('scripts')
+    @vite(['resources/js/employees-index.js'])
+@endpush

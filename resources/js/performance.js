@@ -4,8 +4,10 @@ import { aiSuggestReview } from './ai-tools';
 import { bindEmployeeSearchSelect, formatEmployeeLabel } from './employee-autocomplete';
 import {
     renderActionGroup,
+    renderAddIconButton,
     renderDeleteButton,
     renderEditIconButton,
+    renderViewIconButton,
 } from './action-icons';
 import {
     bindPagination,
@@ -36,6 +38,15 @@ const statusPill = (status) => {
         completed: 'success',
         cancelled: 'secondary',
         failed: 'danger',
+        nominated: 'primary',
+        approved: 'success',
+        rejected: 'danger',
+        finalized: 'dark',
+        proposed: 'info',
+        pending: 'secondary',
+        adjusted: 'warning',
+        confirmed: 'success',
+        applied: 'success',
     };
 
     return `<span class="badge bg-${map[status] || 'secondary'}">${escapeHtml(status?.replace(/_/g, ' '))}</span>`;
@@ -727,6 +738,55 @@ const initGoals = async () => {
     const modalEl = document.getElementById('goalModal');
     const modal = modalEl ? Modal.getOrCreateInstance(modalEl) : null;
     let currentPage = 1;
+    let departments = [];
+
+    const levelLabel = (level) => ({
+        company: 'Company',
+        department: 'Department',
+        individual: 'Individual',
+    }[level] || level || '—');
+
+    const ownerLabel = (goal) => {
+        if (goal.level === 'company') return 'Company-wide';
+        if (goal.level === 'department') return goal.department?.name || '—';
+        return goal.employee?.full_name || '—';
+    };
+
+    const syncGoalLevelFields = () => {
+        const level = document.getElementById('goalLevel')?.value || 'individual';
+        const departmentWrap = document.getElementById('goalDepartmentWrap');
+        const employeeWrap = document.getElementById('goalEmployeeWrap');
+        const visibility = document.getElementById('goalVisibility');
+
+        departmentWrap?.classList.toggle('d-none', level !== 'department');
+        employeeWrap?.classList.toggle('d-none', level !== 'individual');
+
+        if (level === 'company' && visibility) {
+            visibility.value = 'company';
+        }
+    };
+
+    const loadDepartments = async () => {
+        if (!cfg.canManage || departments.length) return;
+
+        try {
+            const { data } = await api.get('/departments', { params: { per_page: 100, status: 'active' } });
+            departments = data.data?.departments || data.data || [];
+            const select = document.getElementById('goalDepartmentId');
+            if (!select) return;
+
+            select.innerHTML = '<option value="">Select department</option>' + departments.map((department) => (
+                `<option value="${department.id}">${escapeHtml(department.name)}</option>`
+            )).join('');
+        } catch (error) {
+            showAlert(getErrorMessage(error), 'danger');
+        }
+    };
+
+    const goalEmployeeSearch = bindEmployeeSearchSelect({
+        inputId: 'goalEmployeeSearch',
+        hiddenId: 'goalEmployeeId',
+    });
 
     const renderKrRows = (container, items = []) => {
         container.innerHTML = items.map((kr, i) => `
@@ -755,40 +815,71 @@ const initGoals = async () => {
             page: pageNum,
             per_page: readPerPage(document.getElementById('goalsPerPage')),
             status: document.getElementById('goalStatusFilter')?.value || undefined,
+            level: document.getElementById('goalLevelFilter')?.value || undefined,
             search: document.getElementById('goalSearchFilter')?.value || undefined,
+            scope: cfg.canManage ? 'all' : undefined,
         };
         const { data } = await api.get('/goals', { params });
         const goals = data.data.goals || [];
 
         if (!goals.length) {
-            body.innerHTML = '<tr><td colspan="6" class="text-center text-muted py-4">No goals found.</td></tr>';
+            body.innerHTML = '<tr><td colspan="8" class="text-center text-muted py-4">No goals found.</td></tr>';
             renderPagination('goals', data.data.pagination, load);
             return;
         }
 
-        body.innerHTML = goals.map((goal) => `
+        body.innerHTML = goals.map((goal) => {
+            const actions = [renderEditIconButton('data-edit-goal', goal.id)];
+            if (cfg.canManage && goal.can_cascade) {
+                actions.push(renderAddIconButton(
+                    'data-cascade-goal',
+                    goal.id,
+                    goal.level === 'company' ? 'Cascade to departments' : 'Cascade to employees'
+                ));
+            }
+
+            return `
             <tr>
                 <td>${escapeHtml(goal.title)}</td>
-                <td>${escapeHtml(goal.employee?.full_name || '—')}</td>
+                <td>${escapeHtml(levelLabel(goal.level))}</td>
+                <td>${escapeHtml(ownerLabel(goal))}</td>
+                <td>${escapeHtml(goal.parent?.title || '—')}</td>
                 <td>${escapeHtml(goal.period_start || '—')} – ${escapeHtml(goal.period_end || '—')}</td>
                 <td>${goal.progress ?? 0}%</td>
                 <td>${statusPill(goal.status)}</td>
-                <td class="text-end">${renderActionGroup([renderEditIconButton('data-edit-goal', goal.id)])}</td>
+                <td class="text-end">${renderActionGroup(actions)}</td>
             </tr>
-        `).join('');
+        `;
+        }).join('');
 
         renderPagination('goals', data.data.pagination, load);
     };
 
-    setHeaderAction('<button type="button" class="btn btn-primary" id="openGoalModalBtn">+ Create Goal</button>');
-
-    document.getElementById('openGoalModalBtn')?.addEventListener('click', () => {
+    const resetGoalForm = () => {
         document.getElementById('goalEditingId').value = '';
-        document.getElementById('goalModalLabel').textContent = 'Create Goal';
         document.getElementById('goalForm').reset();
+        document.getElementById('goalLevel').value = cfg.canManage ? 'company' : 'individual';
+        goalEmployeeSearch?.clearSelection?.();
+        syncGoalLevelFields();
         renderKrRows(document.getElementById('keyResultsList'), [{ title: '', target_value: 100, current_value: 0 }]);
+    };
+
+    if (cfg.canManage) {
+        setHeaderAction('<button type="button" class="btn btn-primary" id="openGoalModalBtn">+ Create Goal</button>');
+        document.getElementById('goalLevelFieldWrap')?.classList.remove('d-none');
+    } else {
+        document.getElementById('goalLevelFieldWrap')?.classList.add('d-none');
+        setHeaderAction('<button type="button" class="btn btn-primary" id="openGoalModalBtn">+ Create Goal</button>');
+    }
+
+    document.getElementById('openGoalModalBtn')?.addEventListener('click', async () => {
+        document.getElementById('goalModalLabel').textContent = 'Create Goal';
+        resetGoalForm();
+        await loadDepartments();
         modal?.show();
     });
+
+    document.getElementById('goalLevel')?.addEventListener('change', syncGoalLevelFields);
 
     document.getElementById('addKeyResultBtn')?.addEventListener('click', () => {
         const list = document.getElementById('keyResultsList');
@@ -809,6 +900,7 @@ const initGoals = async () => {
     document.getElementById('goalForm')?.addEventListener('submit', async (e) => {
         e.preventDefault();
         const id = document.getElementById('goalEditingId').value;
+        const level = document.getElementById('goalLevel')?.value || 'individual';
         const payload = {
             title: document.getElementById('goalTitle').value,
             description: document.getElementById('goalDescription').value,
@@ -818,6 +910,16 @@ const initGoals = async () => {
             visibility: document.getElementById('goalVisibility').value,
             key_results: collectKr(document.getElementById('keyResultsList')),
         };
+
+        if (!id) {
+            payload.level = level;
+            if (level === 'department') {
+                payload.department_id = Number(document.getElementById('goalDepartmentId')?.value || 0) || null;
+            }
+            if (level === 'individual') {
+                payload.employee_id = Number(document.getElementById('goalEmployeeId')?.value || 0) || null;
+            }
+        }
 
         try {
             if (id) await api.put(`/goals/${id}`, payload);
@@ -832,27 +934,57 @@ const initGoals = async () => {
 
     body.addEventListener('click', async (e) => {
         const editBtn = e.target.closest('[data-edit-goal]');
-        if (!editBtn) return;
+        if (editBtn) {
+            try {
+                const { data } = await api.get(`/goals/${editBtn.dataset.editGoal}`);
+                const goal = data.data.goal;
+                await loadDepartments();
+                document.getElementById('goalEditingId').value = goal.id;
+                document.getElementById('goalModalLabel').textContent = 'Edit Goal';
+                document.getElementById('goalTitle').value = goal.title;
+                document.getElementById('goalDescription').value = goal.description || '';
+                document.getElementById('goalPeriodStart').value = goal.period_start || '';
+                document.getElementById('goalPeriodEnd').value = goal.period_end || '';
+                document.getElementById('goalStatus').value = goal.status;
+                document.getElementById('goalVisibility').value = goal.visibility;
+                document.getElementById('goalLevel').value = goal.level || 'individual';
+                document.getElementById('goalDepartmentId').value = goal.department?.id || '';
+                if (goal.employee) {
+                    document.getElementById('goalEmployeeId').value = goal.employee.id;
+                    document.getElementById('goalEmployeeSearch').value = formatEmployeeLabel(goal.employee);
+                } else {
+                    goalEmployeeSearch?.clearSelection?.();
+                }
+                syncGoalLevelFields();
+                renderKrRows(document.getElementById('keyResultsList'), goal.key_results?.length ? goal.key_results : [{ title: '', target_value: 100, current_value: 0 }]);
+                modal?.show();
+            } catch (error) {
+                showAlert(getErrorMessage(error), 'danger');
+            }
+
+            return;
+        }
+
+        const cascadeBtn = e.target.closest('[data-cascade-goal]');
+        if (!cascadeBtn) return;
+
+        const goalId = cascadeBtn.dataset.cascadeGoal;
+        const confirmMessage = cascadeBtn.title.includes('departments')
+            ? 'Create department goals from this company goal for all active departments?'
+            : 'Create individual goals from this department goal for all active employees in the department?';
+
+        if (!window.confirm(confirmMessage)) return;
 
         try {
-            const { data } = await api.get(`/goals/${editBtn.dataset.editGoal}`);
-            const goal = data.data.goal;
-            document.getElementById('goalEditingId').value = goal.id;
-            document.getElementById('goalModalLabel').textContent = 'Edit Goal';
-            document.getElementById('goalTitle').value = goal.title;
-            document.getElementById('goalDescription').value = goal.description || '';
-            document.getElementById('goalPeriodStart').value = goal.period_start || '';
-            document.getElementById('goalPeriodEnd').value = goal.period_end || '';
-            document.getElementById('goalStatus').value = goal.status;
-            document.getElementById('goalVisibility').value = goal.visibility;
-            renderKrRows(document.getElementById('keyResultsList'), goal.key_results?.length ? goal.key_results : [{ title: '', target_value: 100, current_value: 0 }]);
-            modal?.show();
+            const { data } = await api.post(`/goals/${goalId}/cascade`);
+            showAlert(data.message || 'Goals cascaded successfully.');
+            await load(currentPage);
         } catch (error) {
             showAlert(getErrorMessage(error), 'danger');
         }
     });
 
-    ['goalStatusFilter', 'goalSearchFilter'].forEach((id) => {
+    ['goalStatusFilter', 'goalSearchFilter', 'goalLevelFilter'].forEach((id) => {
         document.getElementById(id)?.addEventListener('input', () => load(1).catch((e) => showAlert(getErrorMessage(e), 'danger')));
         document.getElementById(id)?.addEventListener('change', () => load(1).catch((e) => showAlert(getErrorMessage(e), 'danger')));
     });
@@ -1194,6 +1326,765 @@ const initInsights = async () => {
     }
 };
 
+const formatMoney = (value, currency = 'INR') => {
+    if (value === null || value === undefined || value === '') return '—';
+    return new Intl.NumberFormat('en-IN', { style: 'currency', currency, maximumFractionDigits: 0 }).format(Number(value));
+};
+
+const loadReviewCycles = async (selectId) => {
+    const select = document.getElementById(selectId);
+    if (!select) return;
+
+    const placeholder = selectId === 'calibrationCycleId'
+        ? '<option value="">No cycle (manual session)</option>'
+        : '<option value="">Select review cycle</option>';
+
+    try {
+        const { data } = await api.get('/performance-review-cycles');
+        const cycles = data.data?.cycles || [];
+        const current = select.value;
+        select.innerHTML = placeholder + cycles.map((cycle) => (
+            `<option value="${cycle.id}">${escapeHtml(cycle.name)}</option>`
+        )).join('');
+        if (current) select.value = current;
+    } catch (error) {
+        showAlert(getErrorMessage(error), 'danger');
+    }
+};
+
+const initCalibration = async () => {
+    const body = document.getElementById('calibrationTableBody');
+    if (!body) return;
+
+    const modalEl = document.getElementById('calibrationModal');
+    const modal = modalEl ? Modal.getOrCreateInstance(modalEl) : null;
+    const detailModalEl = document.getElementById('calibrationDetailModal');
+    const detailModal = detailModalEl ? Modal.getOrCreateInstance(detailModalEl) : null;
+    let currentPage = 1;
+    let activeSessionId = null;
+
+    const load = async (pageNum = 1) => {
+        currentPage = pageNum;
+        const params = {
+            page: pageNum,
+            per_page: readPerPage(document.getElementById('calibrationPerPage')),
+            status: document.getElementById('calibrationStatusFilter')?.value || undefined,
+            search: document.getElementById('calibrationSearchFilter')?.value || undefined,
+        };
+        const { data } = await api.get('/performance-calibration', { params });
+        const sessions = data.data.sessions || [];
+
+        if (!sessions.length) {
+            body.innerHTML = '<tr><td colspan="5" class="text-center text-muted py-4">No calibration sessions found.</td></tr>';
+            renderPagination('calibration', data.data.pagination, load);
+            return;
+        }
+
+        body.innerHTML = sessions.map((session) => `
+            <tr>
+                <td>${escapeHtml(session.name)}</td>
+                <td>${escapeHtml(session.cycle?.name || '—')}</td>
+                <td>${session.entries_count ?? 0}</td>
+                <td>${statusPill(session.status)}</td>
+                <td class="text-end">${renderActionGroup([
+                    renderViewIconButton('data-view-calibration', session.id),
+                ])}</td>
+            </tr>
+        `).join('');
+
+        renderPagination('calibration', data.data.pagination, load);
+    };
+
+    const renderEntries = (session) => {
+        const entriesBody = document.getElementById('calibrationEntriesBody');
+        const finalizeBtn = document.getElementById('finalizeCalibrationBtn');
+        activeSessionId = session.id;
+
+        document.getElementById('calibrationDetailTitle').textContent = session.name;
+        document.getElementById('calibrationDetailMeta').textContent = `${session.cycle?.name || 'Manual session'} • ${session.entries?.length || 0} employees`;
+        finalizeBtn?.classList.toggle('d-none', session.status === 'finalized');
+
+        if (!session.entries?.length) {
+            entriesBody.innerHTML = '<tr><td colspan="5" class="text-center text-muted py-4">No entries in this session.</td></tr>';
+            return;
+        }
+
+        entriesBody.innerHTML = session.entries.map((entry) => `
+            <tr>
+                <td>${escapeHtml(entry.employee?.full_name || '—')}</td>
+                <td>${entry.original_rating ?? '—'}</td>
+                <td>
+                    <input type="number" class="form-control form-control-sm" min="0" max="5" step="0.1"
+                        value="${entry.calibrated_rating ?? ''}" data-calibration-entry="${entry.id}" ${session.status === 'finalized' ? 'disabled' : ''}>
+                </td>
+                <td>
+                    <input type="text" class="form-control form-control-sm" value="${escapeHtml(entry.notes || '')}"
+                        data-calibration-notes="${entry.id}" ${session.status === 'finalized' ? 'disabled' : ''}>
+                </td>
+                <td>${statusPill(entry.status)}</td>
+            </tr>
+        `).join('');
+    };
+
+    if (cfg.canManage) {
+        setHeaderAction('<button type="button" class="btn btn-primary" id="openCalibrationModalBtn">+ Create Session</button>');
+
+        document.getElementById('openCalibrationModalBtn')?.addEventListener('click', async () => {
+            document.getElementById('calibrationForm')?.reset();
+            await loadReviewCycles('calibrationCycleId');
+            modal?.show();
+        });
+
+        document.getElementById('calibrationForm')?.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            try {
+                await api.post('/performance-calibration', {
+                    name: document.getElementById('calibrationName').value,
+                    description: document.getElementById('calibrationDescription').value || null,
+                    cycle_id: Number(document.getElementById('calibrationCycleId').value) || null,
+                });
+                modal?.hide();
+                showAlert('Calibration session created.');
+                await load(currentPage);
+            } catch (error) {
+                showAlert(getErrorMessage(error), 'danger');
+            }
+        });
+
+        document.getElementById('calibrationEntriesBody')?.addEventListener('change', async (e) => {
+            const ratingInput = e.target.closest('[data-calibration-entry]');
+            const notesInput = e.target.closest('[data-calibration-notes]');
+            const entryId = ratingInput?.dataset.calibrationEntry || notesInput?.dataset.calibrationNotes;
+            if (!entryId || !activeSessionId) return;
+
+            try {
+                await api.patch(`/performance-calibration/${activeSessionId}/entries/${entryId}`, {
+                    calibrated_rating: document.querySelector(`[data-calibration-entry="${entryId}"]`)?.value || null,
+                    notes: document.querySelector(`[data-calibration-notes="${entryId}"]`)?.value || null,
+                });
+            } catch (error) {
+                showAlert(getErrorMessage(error), 'danger');
+            }
+        });
+
+        document.getElementById('finalizeCalibrationBtn')?.addEventListener('click', async () => {
+            if (!activeSessionId || !window.confirm('Finalize this session and apply calibrated ratings to reviews?')) return;
+            try {
+                const { data } = await api.patch(`/performance-calibration/${activeSessionId}/finalize`);
+                renderEntries(data.data.session);
+                showAlert('Calibration session finalized.');
+                await load(currentPage);
+            } catch (error) {
+                showAlert(getErrorMessage(error), 'danger');
+            }
+        });
+    }
+
+    body.addEventListener('click', async (e) => {
+        const viewBtn = e.target.closest('[data-view-calibration]');
+        if (!viewBtn) return;
+
+        try {
+            const { data } = await api.get(`/performance-calibration/${viewBtn.dataset.viewCalibration}`);
+            renderEntries(data.data.session);
+            detailModal?.show();
+        } catch (error) {
+            showAlert(getErrorMessage(error), 'danger');
+        }
+    });
+
+    ['calibrationStatusFilter', 'calibrationSearchFilter'].forEach((id) => {
+        document.getElementById(id)?.addEventListener('input', () => load(1).catch((err) => showAlert(getErrorMessage(err), 'danger')));
+        document.getElementById(id)?.addEventListener('change', () => load(1).catch((err) => showAlert(getErrorMessage(err), 'danger')));
+    });
+
+    try {
+        await load();
+    } catch (error) {
+        showAlert(getErrorMessage(error), 'danger');
+    }
+};
+
+const initPromotions = async () => {
+    const body = document.getElementById('promotionsTableBody');
+    if (!body) return;
+
+    const modalEl = document.getElementById('promotionModal');
+    const modal = modalEl ? Modal.getOrCreateInstance(modalEl) : null;
+    let currentPage = 1;
+    const promotionEmployeeSearch = bindEmployeeSearchSelect({
+        inputId: 'promotionEmployeeSearch',
+        hiddenId: 'promotionEmployeeId',
+    });
+
+    const load = async (pageNum = 1) => {
+        currentPage = pageNum;
+        const params = {
+            page: pageNum,
+            per_page: readPerPage(document.getElementById('promotionsPerPage')),
+            status: document.getElementById('promotionStatusFilter')?.value || undefined,
+            search: document.getElementById('promotionSearchFilter')?.value || undefined,
+        };
+        const { data } = await api.get('/promotions', { params });
+        const nominations = data.data.nominations || [];
+
+        if (!nominations.length) {
+            body.innerHTML = '<tr><td colspan="6" class="text-center text-muted py-4">No promotion nominations found.</td></tr>';
+            renderPagination('promotions', data.data.pagination, load);
+            return;
+        }
+
+        body.innerHTML = nominations.map((item) => {
+            const actions = [];
+            if (item.status === 'draft') {
+                actions.push(renderEditIconButton('data-edit-promotion', item.id));
+                actions.push(`<button type="button" class="table-action-btn table-action-btn--approve" title="Nominate" data-nominate-promotion="${item.id}">&#9654;</button>`);
+            }
+            if (cfg.canManage && item.status === 'nominated') {
+                actions.push(`<button type="button" class="table-action-btn table-action-btn--approve" title="Approve" data-approve-promotion="${item.id}">&#10003;</button>`);
+                actions.push(`<button type="button" class="table-action-btn table-action-btn--reject" title="Reject" data-reject-promotion="${item.id}">&#10007;</button>`);
+            }
+
+            return `
+            <tr>
+                <td>${escapeHtml(item.employee?.full_name || '—')}</td>
+                <td>${escapeHtml(item.current_designation || item.employee?.designation || '—')}</td>
+                <td>${escapeHtml(item.proposed_designation)}</td>
+                <td>${escapeHtml(item.effective_date || '—')}</td>
+                <td>${statusPill(item.status)}</td>
+                <td class="text-end">${actions.length ? renderActionGroup(actions) : '—'}</td>
+            </tr>
+        `;
+        }).join('');
+
+        renderPagination('promotions', data.data.pagination, load);
+    };
+
+    if (cfg.canManage || cfg.canReview) {
+        setHeaderAction('<button type="button" class="btn btn-primary" id="openPromotionModalBtn">+ Nominate Promotion</button>');
+
+        document.getElementById('openPromotionModalBtn')?.addEventListener('click', () => {
+            document.getElementById('promotionEditingId').value = '';
+            document.getElementById('promotionModalLabel').textContent = 'Create Promotion Nomination';
+            document.getElementById('promotionForm').reset();
+            promotionEmployeeSearch?.clearSelection();
+            modal?.show();
+        });
+
+        document.getElementById('promotionForm')?.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const id = document.getElementById('promotionEditingId').value;
+            const payload = {
+                employee_id: Number(document.getElementById('promotionEmployeeId').value),
+                current_designation: document.getElementById('promotionCurrentDesignation').value || null,
+                proposed_designation: document.getElementById('promotionProposedDesignation').value,
+                justification: document.getElementById('promotionJustification').value || null,
+                effective_date: document.getElementById('promotionEffectiveDate').value || null,
+            };
+
+            try {
+                if (id) await api.put(`/promotions/${id}`, payload);
+                else await api.post('/promotions', payload);
+                modal?.hide();
+                showAlert('Promotion nomination saved.');
+                await load(currentPage);
+            } catch (error) {
+                showAlert(getErrorMessage(error), 'danger');
+            }
+        });
+    }
+
+    body.addEventListener('click', async (e) => {
+        const editBtn = e.target.closest('[data-edit-promotion]');
+        const nominateBtn = e.target.closest('[data-nominate-promotion]');
+        const approveBtn = e.target.closest('[data-approve-promotion]');
+        const rejectBtn = e.target.closest('[data-reject-promotion]');
+
+        try {
+            if (editBtn) {
+                const { data } = await api.get(`/promotions/${editBtn.dataset.editPromotion}`);
+                const item = data.data.nomination;
+                document.getElementById('promotionEditingId').value = item.id;
+                document.getElementById('promotionModalLabel').textContent = 'Edit Promotion Nomination';
+                document.getElementById('promotionProposedDesignation').value = item.proposed_designation;
+                document.getElementById('promotionCurrentDesignation').value = item.current_designation || '';
+                document.getElementById('promotionJustification').value = item.justification || '';
+                document.getElementById('promotionEffectiveDate').value = item.effective_date || '';
+                promotionEmployeeSearch?.setSelection(item.employee?.id ? {
+                    id: item.employee.id,
+                    label: formatEmployeeLabel(item.employee),
+                } : null);
+                modal?.show();
+                return;
+            }
+
+            if (nominateBtn) {
+                await api.patch(`/promotions/${nominateBtn.dataset.nominatePromotion}/status`, { status: 'nominated' });
+                showAlert('Promotion nominated.');
+                await load(currentPage);
+                return;
+            }
+
+            if (approveBtn) {
+                await api.patch(`/promotions/${approveBtn.dataset.approvePromotion}/status`, { status: 'approved' });
+                showAlert('Promotion approved.');
+                await load(currentPage);
+                return;
+            }
+
+            if (rejectBtn) {
+                await api.patch(`/promotions/${rejectBtn.dataset.rejectPromotion}/status`, { status: 'rejected' });
+                showAlert('Promotion rejected.');
+                await load(currentPage);
+            }
+        } catch (error) {
+            showAlert(getErrorMessage(error), 'danger');
+        }
+    });
+
+    ['promotionStatusFilter', 'promotionSearchFilter'].forEach((id) => {
+        document.getElementById(id)?.addEventListener('input', () => load(1).catch((err) => showAlert(getErrorMessage(err), 'danger')));
+        document.getElementById(id)?.addEventListener('change', () => load(1).catch((err) => showAlert(getErrorMessage(err), 'danger')));
+    });
+
+    try {
+        await load();
+    } catch (error) {
+        showAlert(getErrorMessage(error), 'danger');
+    }
+};
+
+const initCompensation = async () => {
+    if (!cfg.canManage) {
+        setHeaderAction('');
+        document.getElementById('bandsTableBody').innerHTML = '<tr><td colspan="7" class="text-center text-muted py-4">You do not have permission to manage compensation plans.</td></tr>';
+        return;
+    }
+
+    const bandsBody = document.getElementById('bandsTableBody');
+    const meritBody = document.getElementById('meritTableBody');
+    const bandModal = document.getElementById('bandModal') ? Modal.getOrCreateInstance(document.getElementById('bandModal')) : null;
+    const meritModal = document.getElementById('meritModal') ? Modal.getOrCreateInstance(document.getElementById('meritModal')) : null;
+    let bandsPage = 1;
+    let meritPage = 1;
+
+    const meritEmployeeSearch = bindEmployeeSearchSelect({
+        inputId: 'meritEmployeeSearch',
+        hiddenId: 'meritEmployeeId',
+    });
+
+    const loadBands = async (pageNum = 1) => {
+        bandsPage = pageNum;
+        const { data } = await api.get('/compensation-bands', {
+            params: {
+                page: pageNum,
+                per_page: readPerPage(document.getElementById('bandsPerPage')),
+                search: document.getElementById('bandSearchFilter')?.value || undefined,
+            },
+        });
+        const bands = data.data.bands || [];
+        bandsBody.innerHTML = bands.length ? bands.map((band) => `
+            <tr>
+                <td>${escapeHtml(band.name)}</td>
+                <td>${escapeHtml(band.grade || '—')}</td>
+                <td>${formatMoney(band.min_salary, band.currency)}</td>
+                <td>${band.mid_salary ? formatMoney(band.mid_salary, band.currency) : '—'}</td>
+                <td>${formatMoney(band.max_salary, band.currency)}</td>
+                <td>${band.is_active ? '<span class="badge bg-success">Active</span>' : '<span class="badge bg-secondary">Inactive</span>'}</td>
+                <td class="text-end">${renderActionGroup([renderEditIconButton('data-edit-band', band.id)])}</td>
+            </tr>
+        `).join('') : '<tr><td colspan="7" class="text-center text-muted py-4">No salary bands found.</td></tr>';
+        renderPagination('bands', data.data.pagination, loadBands);
+    };
+
+    const loadMerit = async (pageNum = 1) => {
+        meritPage = pageNum;
+        const { data } = await api.get('/compensation-recommendations', {
+            params: {
+                page: pageNum,
+                per_page: readPerPage(document.getElementById('meritPerPage')),
+                status: document.getElementById('meritStatusFilter')?.value || undefined,
+                search: document.getElementById('meritSearchFilter')?.value || undefined,
+            },
+        });
+        const items = data.data.recommendations || [];
+        meritBody.innerHTML = items.length ? items.map((item) => `
+            <tr>
+                <td>${escapeHtml(item.employee?.full_name || '—')}</td>
+                <td>${formatMoney(item.current_salary)}</td>
+                <td>${item.recommended_increase_percent ?? '—'}%</td>
+                <td>${formatMoney(item.recommended_new_salary)}</td>
+                <td>${escapeHtml(item.band?.name || '—')}</td>
+                <td>${statusPill(item.status)}</td>
+                <td class="text-end">${renderActionGroup([
+                    renderEditIconButton('data-edit-merit', item.id),
+                    item.status === 'draft' ? `<button type="button" class="table-action-btn table-action-btn--approve" title="Propose" data-propose-merit="${item.id}">&#9654;</button>` : '',
+                    item.status === 'proposed' ? `<button type="button" class="table-action-btn table-action-btn--approve" title="Approve" data-approve-merit="${item.id}">&#10003;</button>` : '',
+                ].filter(Boolean))}</td>
+            </tr>
+        `).join('') : '<tr><td colspan="7" class="text-center text-muted py-4">No merit recommendations found.</td></tr>';
+        renderPagination('merit', data.data.pagination, loadMerit);
+    };
+
+    const loadBandOptions = async () => {
+        const { data } = await api.get('/compensation-bands', { params: { per_page: 100, active_only: 1 } });
+        const select = document.getElementById('meritBandId');
+        if (!select) return;
+        select.innerHTML = '<option value="">Select band</option>' + (data.data.bands || []).map((band) => (
+            `<option value="${band.id}">${escapeHtml(band.name)}</option>`
+        )).join('');
+    };
+
+    setHeaderAction(`
+        <div class="btn-group">
+            <button type="button" class="btn btn-outline-primary" id="openBandModalBtn">+ Salary Band</button>
+            <button type="button" class="btn btn-primary" id="openMeritModalBtn">+ Merit Recommendation</button>
+        </div>
+    `);
+
+    document.getElementById('openBandModalBtn')?.addEventListener('click', () => {
+        document.getElementById('bandEditingId').value = '';
+        document.getElementById('bandModalLabel').textContent = 'Create Salary Band';
+        document.getElementById('bandForm').reset();
+        bandModal?.show();
+    });
+
+    document.getElementById('openMeritModalBtn')?.addEventListener('click', async () => {
+        document.getElementById('meritEditingId').value = '';
+        document.getElementById('meritModalLabel').textContent = 'Create Merit Recommendation';
+        document.getElementById('meritForm').reset();
+        meritEmployeeSearch?.clearSelection();
+        await loadBandOptions();
+        meritModal?.show();
+    });
+
+    document.getElementById('bandForm')?.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const id = document.getElementById('bandEditingId').value;
+        const payload = {
+            name: document.getElementById('bandName').value,
+            grade: document.getElementById('bandGrade').value || null,
+            min_salary: Number(document.getElementById('bandMin').value),
+            mid_salary: document.getElementById('bandMid').value ? Number(document.getElementById('bandMid').value) : null,
+            max_salary: Number(document.getElementById('bandMax').value),
+            description: document.getElementById('bandDescription').value || null,
+        };
+
+        try {
+            if (id) await api.put(`/compensation-bands/${id}`, payload);
+            else await api.post('/compensation-bands', payload);
+            bandModal?.hide();
+            showAlert('Salary band saved.');
+            await loadBands(bandsPage);
+        } catch (error) {
+            showAlert(getErrorMessage(error), 'danger');
+        }
+    });
+
+    document.getElementById('meritForm')?.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const id = document.getElementById('meritEditingId').value;
+        const payload = {
+            employee_id: Number(document.getElementById('meritEmployeeId').value),
+            band_id: Number(document.getElementById('meritBandId').value) || null,
+            current_salary: document.getElementById('meritCurrentSalary').value ? Number(document.getElementById('meritCurrentSalary').value) : null,
+            recommended_increase_percent: document.getElementById('meritIncreasePercent').value ? Number(document.getElementById('meritIncreasePercent').value) : null,
+            recommended_new_salary: document.getElementById('meritNewSalary').value ? Number(document.getElementById('meritNewSalary').value) : null,
+            notes: document.getElementById('meritNotes').value || null,
+        };
+
+        try {
+            if (id) await api.put(`/compensation-recommendations/${id}`, payload);
+            else await api.post('/compensation-recommendations', payload);
+            meritModal?.hide();
+            showAlert('Merit recommendation saved.');
+            await loadMerit(meritPage);
+        } catch (error) {
+            showAlert(getErrorMessage(error), 'danger');
+        }
+    });
+
+    bandsBody?.addEventListener('click', async (e) => {
+        const editBtn = e.target.closest('[data-edit-band]');
+        if (!editBtn) return;
+        try {
+            const { data } = await api.get('/compensation-bands', { params: { per_page: 100 } });
+            const band = (data.data.bands || []).find((item) => String(item.id) === String(editBtn.dataset.editBand));
+            if (!band) return;
+            document.getElementById('bandEditingId').value = band.id;
+            document.getElementById('bandModalLabel').textContent = 'Edit Salary Band';
+            document.getElementById('bandName').value = band.name;
+            document.getElementById('bandGrade').value = band.grade || '';
+            document.getElementById('bandMin').value = band.min_salary;
+            document.getElementById('bandMid').value = band.mid_salary ?? '';
+            document.getElementById('bandMax').value = band.max_salary;
+            document.getElementById('bandDescription').value = band.description || '';
+            bandModal?.show();
+        } catch (error) {
+            showAlert(getErrorMessage(error), 'danger');
+        }
+    });
+
+    meritBody?.addEventListener('click', async (e) => {
+        const editBtn = e.target.closest('[data-edit-merit]');
+        const proposeBtn = e.target.closest('[data-propose-merit]');
+        const approveBtn = e.target.closest('[data-approve-merit]');
+
+        try {
+            if (editBtn) {
+                const { data } = await api.get('/compensation-recommendations', { params: { per_page: 100 } });
+                const item = (data.data.recommendations || []).find((row) => String(row.id) === String(editBtn.dataset.editMerit));
+                if (!item) return;
+                await loadBandOptions();
+                document.getElementById('meritEditingId').value = item.id;
+                document.getElementById('meritModalLabel').textContent = 'Edit Merit Recommendation';
+                meritEmployeeSearch?.setSelection(item.employee?.id ? { id: item.employee.id, label: formatEmployeeLabel(item.employee) } : null);
+                document.getElementById('meritBandId').value = item.band?.id || '';
+                document.getElementById('meritCurrentSalary').value = item.current_salary ?? '';
+                document.getElementById('meritIncreasePercent').value = item.recommended_increase_percent ?? '';
+                document.getElementById('meritNewSalary').value = item.recommended_new_salary ?? '';
+                document.getElementById('meritNotes').value = item.notes || '';
+                meritModal?.show();
+                return;
+            }
+
+            if (proposeBtn) {
+                await api.patch(`/compensation-recommendations/${proposeBtn.dataset.proposeMerit}/status`, { status: 'proposed' });
+                showAlert('Merit recommendation proposed.');
+                await loadMerit(meritPage);
+                return;
+            }
+
+            if (approveBtn) {
+                await api.patch(`/compensation-recommendations/${approveBtn.dataset.approveMerit}/status`, { status: 'approved' });
+                showAlert('Merit recommendation approved.');
+                await loadMerit(meritPage);
+            }
+        } catch (error) {
+            showAlert(getErrorMessage(error), 'danger');
+        }
+    });
+
+    document.getElementById('meritIncreasePercent')?.addEventListener('input', () => {
+        const current = Number(document.getElementById('meritCurrentSalary').value || 0);
+        const percent = Number(document.getElementById('meritIncreasePercent').value || 0);
+        if (current > 0 && percent >= 0) {
+            document.getElementById('meritNewSalary').value = Math.round(current + (current * percent / 100));
+        }
+    });
+
+    ['bandSearchFilter'].forEach((id) => {
+        document.getElementById(id)?.addEventListener('input', () => loadBands(1).catch((err) => showAlert(getErrorMessage(err), 'danger')));
+    });
+    ['meritStatusFilter', 'meritSearchFilter'].forEach((id) => {
+        document.getElementById(id)?.addEventListener('input', () => loadMerit(1).catch((err) => showAlert(getErrorMessage(err), 'danger')));
+        document.getElementById(id)?.addEventListener('change', () => loadMerit(1).catch((err) => showAlert(getErrorMessage(err), 'danger')));
+    });
+
+    try {
+        await Promise.all([loadBands(), loadMerit()]);
+    } catch (error) {
+        showAlert(getErrorMessage(error), 'danger');
+    }
+};
+
+const initSkills = async () => {
+    const profilesBody = document.getElementById('skillProfilesTableBody');
+    if (!profilesBody) return;
+
+    const profileModal = document.getElementById('skillProfileModal') ? Modal.getOrCreateInstance(document.getElementById('skillProfileModal')) : null;
+    const competencyModal = document.getElementById('competencyModal') ? Modal.getOrCreateInstance(document.getElementById('competencyModal')) : null;
+    let profilesPage = 1;
+    let competenciesPage = 1;
+
+    const profileEmployeeSearch = bindEmployeeSearchSelect({
+        inputId: 'skillProfileEmployeeSearch',
+        hiddenId: 'skillProfileEmployeeId',
+    });
+
+    const loadCompetencyOptions = async () => {
+        const { data } = await api.get('/competencies', { params: { per_page: 100, active_only: 1 } });
+        const select = document.getElementById('skillProfileCompetencyId');
+        if (!select) return;
+        select.innerHTML = '<option value="">Select competency</option>' + (data.data.competencies || []).map((item) => (
+            `<option value="${item.id}">${escapeHtml(item.name)}</option>`
+        )).join('');
+    };
+
+    const loadProfiles = async (pageNum = 1) => {
+        profilesPage = pageNum;
+        const { data } = await api.get('/employee-competencies', {
+            params: {
+                page: pageNum,
+                per_page: readPerPage(document.getElementById('skillProfilesPerPage')),
+                search: document.getElementById('skillProfileSearchFilter')?.value || undefined,
+            },
+        });
+        const records = data.data.employee_competencies || [];
+        profilesBody.innerHTML = records.length ? records.map((record) => `
+            <tr>
+                <td>${escapeHtml(record.employee?.full_name || '—')}</td>
+                <td>${escapeHtml(record.competency?.name || '—')}</td>
+                <td>${record.current_level}</td>
+                <td>${record.target_level}</td>
+                <td>${record.gap > 0 ? `<span class="badge bg-warning">${record.gap}</span>` : '<span class="badge bg-success">0</span>'}</td>
+                <td class="text-end">${renderActionGroup([renderEditIconButton('data-edit-skill-profile', record.id)])}</td>
+            </tr>
+        `).join('') : '<tr><td colspan="6" class="text-center text-muted py-4">No skill profiles found.</td></tr>';
+        renderPagination('skillProfiles', data.data.pagination, loadProfiles);
+    };
+
+    const loadCompetencies = async (pageNum = 1) => {
+        const body = document.getElementById('competenciesTableBody');
+        if (!body) return;
+
+        competenciesPage = pageNum;
+        const { data } = await api.get('/competencies', {
+            params: {
+                page: pageNum,
+                per_page: readPerPage(document.getElementById('competenciesPerPage')),
+                search: document.getElementById('competencySearchFilter')?.value || undefined,
+            },
+        });
+        const items = data.data.competencies || [];
+        body.innerHTML = items.length ? items.map((item) => `
+            <tr>
+                <td>${escapeHtml(item.name)}</td>
+                <td>${escapeHtml(item.category || '—')}</td>
+                <td>${item.max_level}</td>
+                <td>${item.is_active ? '<span class="badge bg-success">Active</span>' : '<span class="badge bg-secondary">Inactive</span>'}</td>
+                <td class="text-end">${cfg.canManage ? renderActionGroup([renderEditIconButton('data-edit-competency', item.id)]) : '—'}</td>
+            </tr>
+        `).join('') : '<tr><td colspan="5" class="text-center text-muted py-4">No competencies found.</td></tr>';
+        renderPagination('competencies', data.data.pagination, loadCompetencies);
+    };
+
+    setHeaderAction(cfg.canManage
+        ? '<div class="btn-group"><button type="button" class="btn btn-outline-primary" id="openCompetencyModalBtn">+ Competency</button><button type="button" class="btn btn-primary" id="openSkillProfileModalBtn">+ Skill Profile</button></div>'
+        : '<button type="button" class="btn btn-primary" id="openSkillProfileModalBtn">+ Skill Profile</button>');
+
+    document.getElementById('openSkillProfileModalBtn')?.addEventListener('click', async () => {
+        document.getElementById('skillProfileEditingId').value = '';
+        document.getElementById('skillProfileModalLabel').textContent = 'Assign Competency';
+        document.getElementById('skillProfileForm').reset();
+        profileEmployeeSearch?.clearSelection();
+        await loadCompetencyOptions();
+        profileModal?.show();
+    });
+
+    document.getElementById('openCompetencyModalBtn')?.addEventListener('click', () => {
+        document.getElementById('competencyEditingId').value = '';
+        document.getElementById('competencyModalLabel').textContent = 'Create Competency';
+        document.getElementById('competencyForm').reset();
+        document.getElementById('competencyMaxLevel').value = 5;
+        competencyModal?.show();
+    });
+
+    document.getElementById('skillProfileForm')?.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const id = document.getElementById('skillProfileEditingId').value;
+        const payload = {
+            employee_id: Number(document.getElementById('skillProfileEmployeeId').value),
+            competency_id: Number(document.getElementById('skillProfileCompetencyId').value),
+            current_level: Number(document.getElementById('skillProfileCurrentLevel').value || 1),
+            target_level: Number(document.getElementById('skillProfileTargetLevel').value || 3),
+            notes: document.getElementById('skillProfileNotes').value || null,
+        };
+
+        try {
+            if (id) await api.put(`/employee-competencies/${id}`, payload);
+            else await api.post('/employee-competencies', payload);
+            profileModal?.hide();
+            showAlert('Skill profile saved.');
+            await loadProfiles(profilesPage);
+        } catch (error) {
+            showAlert(getErrorMessage(error), 'danger');
+        }
+    });
+
+    document.getElementById('competencyForm')?.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const id = document.getElementById('competencyEditingId').value;
+        const payload = {
+            name: document.getElementById('competencyName').value,
+            category: document.getElementById('competencyCategory').value || null,
+            description: document.getElementById('competencyDescription').value || null,
+            max_level: Number(document.getElementById('competencyMaxLevel').value || 5),
+        };
+
+        try {
+            if (id) await api.put(`/competencies/${id}`, payload);
+            else await api.post('/competencies', payload);
+            competencyModal?.hide();
+            showAlert('Competency saved.');
+            await loadCompetencies(competenciesPage);
+            await loadCompetencyOptions();
+        } catch (error) {
+            showAlert(getErrorMessage(error), 'danger');
+        }
+    });
+
+    profilesBody.addEventListener('click', async (e) => {
+        const editBtn = e.target.closest('[data-edit-skill-profile]');
+        if (!editBtn) return;
+
+        try {
+            const { data } = await api.get('/employee-competencies', { params: { per_page: 100 } });
+            const record = (data.data.employee_competencies || []).find((row) => String(row.id) === String(editBtn.dataset.editSkillProfile));
+            if (!record) return;
+            await loadCompetencyOptions();
+            document.getElementById('skillProfileEditingId').value = record.id;
+            document.getElementById('skillProfileModalLabel').textContent = 'Edit Skill Profile';
+            profileEmployeeSearch?.setSelection(record.employee?.id ? { id: record.employee.id, label: formatEmployeeLabel(record.employee) } : null);
+            document.getElementById('skillProfileCompetencyId').value = record.competency?.id || '';
+            document.getElementById('skillProfileCurrentLevel').value = record.current_level;
+            document.getElementById('skillProfileTargetLevel').value = record.target_level;
+            document.getElementById('skillProfileNotes').value = record.notes || '';
+            profileModal?.show();
+        } catch (error) {
+            showAlert(getErrorMessage(error), 'danger');
+        }
+    });
+
+    document.getElementById('competenciesTableBody')?.addEventListener('click', async (e) => {
+        const editBtn = e.target.closest('[data-edit-competency]');
+        if (!editBtn) return;
+
+        try {
+            const { data } = await api.get('/competencies', { params: { per_page: 100 } });
+            const item = (data.data.competencies || []).find((row) => String(row.id) === String(editBtn.dataset.editCompetency));
+            if (!item) return;
+            document.getElementById('competencyEditingId').value = item.id;
+            document.getElementById('competencyModalLabel').textContent = 'Edit Competency';
+            document.getElementById('competencyName').value = item.name;
+            document.getElementById('competencyCategory').value = item.category || '';
+            document.getElementById('competencyDescription').value = item.description || '';
+            document.getElementById('competencyMaxLevel').value = item.max_level;
+            competencyModal?.show();
+        } catch (error) {
+            showAlert(getErrorMessage(error), 'danger');
+        }
+    });
+
+    document.getElementById('library-tab')?.addEventListener('shown.bs.tab', () => {
+        loadCompetencies(competenciesPage).catch((error) => showAlert(getErrorMessage(error), 'danger'));
+    });
+
+    ['skillProfileSearchFilter'].forEach((id) => {
+        document.getElementById(id)?.addEventListener('input', () => loadProfiles(1).catch((err) => showAlert(getErrorMessage(err), 'danger')));
+    });
+    ['competencySearchFilter'].forEach((id) => {
+        document.getElementById(id)?.addEventListener('input', () => loadCompetencies(1).catch((err) => showAlert(getErrorMessage(err), 'danger')));
+    });
+
+    try {
+        await loadProfiles();
+        if (cfg.canManage) await loadCompetencyOptions();
+    } catch (error) {
+        showAlert(getErrorMessage(error), 'danger');
+    }
+};
+
 document.addEventListener('DOMContentLoaded', () => {
     const inits = {
         overview: initOverview,
@@ -1206,6 +2097,10 @@ document.addEventListener('DOMContentLoaded', () => {
         goals: initGoals,
         kpi: initKpi,
         pip: initPip,
+        calibration: initCalibration,
+        promotions: initPromotions,
+        compensation: initCompensation,
+        skills: initSkills,
     };
 
     inits[page]?.();

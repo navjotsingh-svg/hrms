@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api\V1;
 
 use App\Http\Controllers\Controller;
 use App\Http\Concerns\ApiResponse;
+use App\Models\Department;
 use App\Models\Employee;
 use App\Models\Goal;
 use App\Models\GoalKeyResult;
@@ -24,6 +25,8 @@ class GoalController extends Controller
             'status' => ['nullable', Rule::in(['draft', 'active', 'completed', 'cancelled'])],
             'search' => ['nullable', 'string', 'max:255'],
             'scope' => ['nullable', Rule::in(['all', 'team'])],
+            'level' => ['nullable', Rule::in(['company', 'department', 'individual'])],
+            'department_id' => ['nullable', 'integer', 'exists:departments,id'],
             'employee_id' => ['nullable', 'integer', 'exists:employees,id'],
             'per_page' => ['nullable', 'integer', Rule::in([5, 10, 25, 50])],
             'page' => ['nullable', 'integer', 'min:1'],
@@ -114,6 +117,21 @@ class GoalController extends Controller
         return $this->success(null, 'Key result deleted successfully.');
     }
 
+    public function cascade(Request $request, Goal $goal): JsonResponse
+    {
+        $result = $this->goalService->cascade($request->user(), $goal);
+
+        return $this->success([
+            'created' => $result['created'],
+            'skipped' => $result['skipped'],
+            'goals' => $result['goals']->map(fn (Goal $child) => $this->formatGoal($child))->values(),
+        ], sprintf(
+            '%d goal(s) created.%s',
+            $result['created'],
+            $result['skipped'] > 0 ? " {$result['skipped']} already existed and were skipped." : ''
+        ));
+    }
+
     private function validateGoalPayload(Request $request): array
     {
         return $request->validate([
@@ -123,7 +141,10 @@ class GoalController extends Controller
             'period_end' => ['nullable', 'date', 'after_or_equal:period_start'],
             'status' => ['nullable', Rule::in(['draft', 'active', 'completed', 'cancelled'])],
             'visibility' => ['nullable', Rule::in(['private', 'team', 'company'])],
+            'level' => ['nullable', Rule::in(['company', 'department', 'individual'])],
             'employee_id' => ['nullable', 'integer', 'exists:employees,id'],
+            'department_id' => ['nullable', 'integer', 'exists:departments,id'],
+            'parent_goal_id' => ['nullable', 'integer', 'exists:goals,id'],
             'key_results' => ['nullable', 'array'],
             'key_results.*.id' => ['nullable', 'integer'],
             'key_results.*.title' => ['required_with:key_results', 'string', 'max:255'],
@@ -141,6 +162,7 @@ class GoalController extends Controller
     {
         $data = [
             'id' => $goal->id,
+            'level' => $goal->level,
             'title' => $goal->title,
             'description' => $goal->description,
             'period_start' => $goal->period_start?->toDateString(),
@@ -149,6 +171,13 @@ class GoalController extends Controller
             'visibility' => $goal->visibility,
             'progress' => (float) $goal->progress,
             'employee' => $this->employeeBrief($goal->employee),
+            'department' => $this->departmentBrief($goal->department),
+            'parent' => $goal->parent ? [
+                'id' => $goal->parent->id,
+                'title' => $goal->parent->title,
+                'level' => $goal->parent->level,
+            ] : null,
+            'can_cascade' => in_array($goal->level, [Goal::LEVEL_COMPANY, Goal::LEVEL_DEPARTMENT], true),
             'created_at' => $goal->created_at?->toIso8601String(),
             'updated_at' => $goal->updated_at?->toIso8601String(),
         ];
@@ -186,6 +215,18 @@ class GoalController extends Controller
             'id' => $employee->id,
             'employee_code' => $employee->employee_code,
             'full_name' => $employee->full_name,
+        ];
+    }
+
+    private function departmentBrief(?Department $department): ?array
+    {
+        if (! $department) {
+            return null;
+        }
+
+        return [
+            'id' => $department->id,
+            'name' => $department->name,
         ];
     }
 }

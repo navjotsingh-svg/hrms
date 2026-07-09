@@ -1,3 +1,4 @@
+import { renderDateTimeStackFromLabel } from './datetime-utils';
 import Swal from 'sweetalert2';
 import api, { getErrorMessage } from './api';
 import { initAttendancePunch } from './attendance-punch';
@@ -51,9 +52,9 @@ const renderPersonChip = (person) => `
     </div>
 `;
 
-const renderCelebrationEmpty = (title, message) => `
-    <div class="dash-celebration-empty">
-        <div class="dash-celebration-empty-art" aria-hidden="true">🎉</div>
+const renderCelebrationEmpty = (title, message, variant = 'birthdays') => `
+    <div class="dash-celebration-empty dash-celebration-empty--${variant}">
+        <div class="dash-celebration-empty-art" aria-hidden="true">${variant === 'anniversaries' ? '🏆' : '🎂'}</div>
         <div class="fw-semibold mb-1">${title}</div>
         <div class="text-muted small">${message}</div>
     </div>
@@ -130,6 +131,7 @@ const renderCelebrations = (celebrations = {}) => {
             || renderCelebrationEmpty(
                 'Work anniversaries',
                 'No work anniversaries coming up. They appear based on employee joining dates.',
+                'anniversaries',
             );
     }
 };
@@ -208,7 +210,7 @@ const renderPendingApprovals = (items = [], pagination = null, showSection = tru
             </td>
             <td>${renderEmployeeNameBlock(item.requester_name, item.requester_code)}</td>
             <td>${item.category_label || item.subject || 'Request'}</td>
-            <td>${item.submitted_at_label || '—'}</td>
+            <td>${renderDateTimeStackFromLabel(item.submitted_at_label)}</td>
             <td><span class="badge text-bg-warning">${item.status_label || 'Pending'}</span></td>
             <td class="text-end">${renderRequestActions(item, { includeReview: true })}</td>
         </tr>
@@ -261,7 +263,7 @@ const renderMyRequests = (items = [], showSection = true, page = myRequestsPage)
         <tr>
             <td>${item.category_label || item.subject || 'Request'}</td>
             <td>${item.detail || item.subject || '—'}</td>
-            <td>${item.submitted_at_label || '—'}</td>
+            <td>${renderDateTimeStackFromLabel(item.submitted_at_label)}</td>
             <td><span class="badge ${statusBadgeClass(item.status)}">${item.status_label || 'Pending'}</span></td>
             <td class="text-end">${renderRequestActions(item)}</td>
         </tr>

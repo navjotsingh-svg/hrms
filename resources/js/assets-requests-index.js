@@ -1,5 +1,5 @@
 import api, { getErrorMessage } from './api';
-import { showAutoDismissAlert } from './form-utils';
+import { showAutoDismissAlert, renderDateTimeStackFromLabel } from './form-utils';
 import { bindPagination, bindPerPageSelect, getSerialNumber, readPerPage, renderListPagination } from './pagination';
 import {
     bindAssetItemReviewHandlers,
@@ -49,7 +49,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                 cancel: item.can_cancel
                     ? renderCancelIconButton('data-cancel-asset', item.id, 'Cancel asset request')
                     : '',
-            })}</td>
+            }, { reserveCancelSlot: true })}</td>
         </tr>`;
     };
 
@@ -77,7 +77,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                     <div class="d-flex flex-wrap justify-content-between gap-2 mb-3">
                         <div class="flex-grow-1">
                             <div class="fw-semibold">${item.employee?.full_name || 'Employee'}</div>
-                            <div class="small text-muted">${item.created_at_label || ''}</div>
+                            <div class="small text-muted">${renderDateTimeStackFromLabel(item.created_at_label, { empty: '' })}</div>
                             <div class="small mt-2">${item.reason || ''}</div>
                         </div>
                         ${composeActionGroup({ view: viewLink })}

@@ -140,6 +140,15 @@ class ExpenseController extends Controller
         ], 'Expense cancelled.');
     }
 
+    public function markPaid(Request $request, Expense $expense): JsonResponse
+    {
+        $expense = $this->expenseService->markAsPaid($request->user(), $expense);
+
+        return $this->success([
+            'expense' => new ExpenseResource($expense),
+        ], 'Expense marked as paid.');
+    }
+
     public function export(Request $request): StreamedResponse
     {
         $validated = $request->validate([

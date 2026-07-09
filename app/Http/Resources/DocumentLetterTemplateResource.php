@@ -22,8 +22,8 @@ class DocumentLetterTemplateResource extends JsonResource
             'requires_signature' => (bool) $this->requires_signature,
             'is_default' => (bool) $this->is_default,
             'status' => $this->status,
-            'created_at_label' => $this->created_at?->format('d M Y, h:i A'),
-            'updated_at_label' => $this->updated_at?->format('d M Y, h:i A'),
+            'created_at_label' => $this->created_at?->labelStack(),
+            'updated_at_label' => $this->updated_at?->labelStack(),
         ];
     }
 }

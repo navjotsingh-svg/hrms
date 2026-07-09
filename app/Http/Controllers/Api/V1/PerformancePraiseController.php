@@ -32,15 +32,25 @@ class PerformancePraiseController extends Controller
     {
         $validated = $request->validate([
             'employee_id' => ['required', 'integer', 'exists:employees,id'],
-            'content' => ['required', 'string', 'max:2000'],
+            'content' => ['nullable', 'string', 'max:2000'],
+            'attachments' => ['nullable', 'array', 'max:5'],
+            'attachments.*' => ['file', 'max:5120', 'mimes:jpg,jpeg,png,gif,webp,pdf'],
         ]);
 
         $praise = $this->momentService->createPraise(
             $request->user(),
             (int) $validated['employee_id'],
-            $validated['content'],
+            trim((string) ($validated['content'] ?? '')),
+            $request->file('attachments', []) ?? [],
         );
 
         return $this->success(['praise' => $praise], 'Praise shared successfully.', 201);
+    }
+
+    public function destroy(Request $request, int $moment): JsonResponse
+    {
+        $this->momentService->deletePraise($request->user(), $moment);
+
+        return $this->success(null, 'Praise post deleted.');
     }
 }

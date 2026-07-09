@@ -220,7 +220,7 @@
 
                 <div class="d-flex flex-wrap justify-content-end gap-2 mt-4" id="timesheetFormActions">
 
-                    <button type="submit" class="btn btn-primary" id="submitTimesheetBtn">Submit report</button>
+                    <button type="submit" class="btn btn-primary" id="submitTimesheetBtn">Submit</button>
 
                 </div>
 

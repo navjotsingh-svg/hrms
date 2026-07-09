@@ -1,4 +1,5 @@
 import api, { getErrorMessage } from './api';
+import { renderDateTimeStackFromLabel } from './datetime-utils';
 
 const statusClass = (status) => ({
     draft: 'company-status-pill--inactive',
@@ -106,7 +107,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                 <div class="col-md-3"><div class="small text-muted">Status</div><span class="company-status-pill ${statusClass(letter.status)}">${letter.status_label}</span></div>
                 <div class="col-md-3"><div class="small text-muted">Category</div><div>${letter.category_label}</div></div>
                 <div class="col-md-3"><div class="small text-muted">Employee</div><div>${letter.employee?.full_name || '—'}</div></div>
-                <div class="col-md-3"><div class="small text-muted">Issued</div><div>${letter.issued_at_label || '—'}</div></div>
+                <div class="col-md-3"><div class="small text-muted">Issued</div><div>${renderDateTimeStackFromLabel(letter.issued_at_label)}</div></div>
             </div>
         `;
 
@@ -119,7 +120,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (letter.status === 'signed') {
             document.getElementById('docLetterSignedDetails').innerHTML = `
                 <p class="mb-2"><strong>Signed by:</strong> ${letter.signature_name || letter.signed_by?.name || '—'}</p>
-                <p class="mb-2"><strong>Signed on:</strong> ${letter.signed_at_label || '—'}</p>
+                <p class="mb-2"><strong>Signed on:</strong> ${renderDateTimeStackFromLabel(letter.signed_at_label)}</p>
                 ${letter.signature_image_url ? `<img src="${letter.signature_image_url}" alt="Signature" class="border rounded bg-white" style="max-width: 320px;">` : ''}
             `;
         }

@@ -25,8 +25,9 @@ class ExpenseResource extends JsonResource
             'status_label' => ucfirst($this->status),
             'payout_status' => $this->payout_status,
             'payout_status_label' => ucfirst($this->payout_status),
+            'paid_at_label' => $this->paid_at?->labelStack(),
             'review_notes' => $this->review_notes,
-            'reviewed_at_label' => $this->reviewed_at?->format('d M Y, h:i A'),
+            'reviewed_at_label' => $this->reviewed_at?->labelStack(),
             'expense_type' => new ExpenseTypeResource($this->whenLoaded('expenseType')),
             'expense_group_id' => $this->expense_group_id,
             'employee' => $this->when($this->relationLoaded('employee'), fn () => [
@@ -51,6 +52,7 @@ class ExpenseResource extends JsonResource
                 && in_array($this->status, ['draft', 'pending'], true)
                 && $this->is_independent,
             'can_review' => $request->user()?->canReviewExpense($this->resource) ?? false,
+            'can_mark_paid' => $request->user()?->canMarkExpensePaid($this->resource) ?? false,
         ];
     }
 }

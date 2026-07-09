@@ -1,4 +1,5 @@
 import api, { getErrorMessage } from './api';
+import { renderDateTimeStackFromLabel } from './datetime-utils';
 import { bindBackButton, buildCategoryReturnUrl, showAutoDismissAlert } from './form-utils';
 import { renderExpenseDetailHtml, renderExpenseGroupDetailHtml } from './expense-modals';
 import {
@@ -108,7 +109,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                 <div class="col-md-6"><span class="text-muted">Date</span><div>${item.attendance_date_label || '—'}</div></div>
                 ${renderRegularizationPunchFields(item)}
                 <div class="col-md-6"><span class="text-muted">Status</span><div class="fw-semibold text-capitalize">${item.status_label || item.status}</div></div>
-                <div class="col-md-6"><span class="text-muted">Submitted On</span><div>${item.created_at_label || '—'}</div></div>
+                <div class="col-md-6"><span class="text-muted">Submitted On</span><div>${renderDateTimeStackFromLabel(item.created_at_label)}</div></div>
                 <div class="col-12"><span class="text-muted">Reason</span><div>${item.reason || '—'}</div></div>
                 ${item.review_notes ? `<div class="col-12"><span class="text-muted">Review Notes</span><div>${item.review_notes}</div></div>` : ''}
             </div>
@@ -155,7 +156,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                     <ul class="mb-0 ps-3">${renderRegularizationBatchDates(group.dates || [])}</ul>
                 </div>
                 <div class="col-md-6"><span class="text-muted">Status</span><div class="fw-semibold text-capitalize">${group.status_label || group.status || '—'}</div></div>
-                <div class="col-md-6"><span class="text-muted">Submitted On</span><div>${group.created_at_label || '—'}</div></div>
+                <div class="col-md-6"><span class="text-muted">Submitted On</span><div>${renderDateTimeStackFromLabel(group.created_at_label)}</div></div>
                 <div class="col-12"><span class="text-muted">Reason</span><div>${group.reason || '—'}</div></div>
                 ${group.reviewed_at_label ? `<div class="col-12"><span class="text-muted">Reviewed</span><div>${group.reviewed_at_label}${group.reviewed_by_name ? ` by ${group.reviewed_by_name}` : ''}</div></div>` : ''}
             </div>

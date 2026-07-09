@@ -25,12 +25,31 @@
                         </li>
                     </ul>
                     <div class="tab-content dash-celebrations-body" id="dashboardCelebrationTabContent">
-                        <div class="tab-pane fade show active" id="dashBirthdaysPane" role="tabpanel">
-                            <div id="dashboardBirthdaysToday"></div>
-                            <div id="dashboardBirthdaysUpcoming"></div>
+                        <div class="tab-pane fade show active dash-celebration-pane dash-celebration-pane--birthdays" id="dashBirthdaysPane" role="tabpanel">
+                            <div class="dash-celebration-decor" aria-hidden="true">
+                                <span class="dash-celebration-decor__item dash-celebration-decor__balloon dash-celebration-decor__balloon--1"></span>
+                                <span class="dash-celebration-decor__item dash-celebration-decor__balloon dash-celebration-decor__balloon--2"></span>
+                                <span class="dash-celebration-decor__item dash-celebration-decor__balloon dash-celebration-decor__balloon--3"></span>
+                                <span class="dash-celebration-decor__item dash-celebration-decor__cake"></span>
+                                <span class="dash-celebration-decor__item dash-celebration-decor__confetti dash-celebration-decor__confetti--1"></span>
+                                <span class="dash-celebration-decor__item dash-celebration-decor__confetti dash-celebration-decor__confetti--2"></span>
+                                <span class="dash-celebration-decor__item dash-celebration-decor__confetti dash-celebration-decor__confetti--3"></span>
+                            </div>
+                            <div class="dash-celebration-content">
+                                <div id="dashboardBirthdaysToday"></div>
+                                <div id="dashboardBirthdaysUpcoming"></div>
+                            </div>
                         </div>
-                        <div class="tab-pane fade" id="dashAnniversariesPane" role="tabpanel">
-                            <div id="dashboardAnniversariesUpcoming"></div>
+                        <div class="tab-pane fade dash-celebration-pane dash-celebration-pane--anniversaries" id="dashAnniversariesPane" role="tabpanel">
+                            <div class="dash-celebration-decor" aria-hidden="true">
+                                <span class="dash-celebration-decor__item dash-celebration-decor__star dash-celebration-decor__star--1"></span>
+                                <span class="dash-celebration-decor__item dash-celebration-decor__star dash-celebration-decor__star--2"></span>
+                                <span class="dash-celebration-decor__item dash-celebration-decor__medal"></span>
+                                <span class="dash-celebration-decor__item dash-celebration-decor__ribbon"></span>
+                            </div>
+                            <div class="dash-celebration-content">
+                                <div id="dashboardAnniversariesUpcoming"></div>
+                            </div>
                         </div>
                     </div>
                 </div>

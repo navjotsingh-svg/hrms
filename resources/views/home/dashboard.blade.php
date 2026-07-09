@@ -31,7 +31,7 @@
                 <button type="button" class="btn btn-primary btn-sm" id="homeDashboardApplyRangeBtn">Apply</button>
             </div>
             @if (Auth::user()->hasPermission('home.dashboard.manage'))
-                <button type="button" class="btn btn-outline-primary btn-sm" id="homeDashboardManageBtn">Manage Widgets</button>
+                <button type="button" class="btn btn-outline-primary btn-sm" id="homeDashboardManageBtn">Add Charts</button>
             @endif
         </div>
     </div>
@@ -43,19 +43,21 @@
 
     <div id="homeDashboardAlert" class="alert d-none"></div>
     <div id="homeDashboardRoot" class="row g-4"></div>
-    <div id="homeDashboardEmpty" class="text-center text-muted py-5 d-none">No widgets available for your role.</div>
+    <div id="homeDashboardEmpty" class="text-center text-muted py-5 d-none">No widgets on your dashboard yet. Click <strong>Add Charts</strong> to get started.</div>
 
     <div class="modal fade" id="homeDashboardWidgetModal" tabindex="-1" aria-hidden="true">
-        <div class="modal-dialog modal-dialog-scrollable">
-            <div class="modal-content">
-                <div class="modal-header">
-                    <h5 class="modal-title">Manage Dashboard Widgets</h5>
+        <div class="modal-dialog modal-xl modal-dialog-scrollable">
+            <div class="modal-content home-dashboard-gallery-modal">
+                <div class="modal-header border-0 pb-0">
+                    <div>
+                        <p class="home-dashboard-saved-charts mb-1" id="homeDashboardSavedCount">Saved Charts (0)</p>
+                        <h5 class="modal-title mb-0">Add Charts</h5>
+                    </div>
                     <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
                 </div>
-                <div class="modal-body" id="homeDashboardWidgetOptions"></div>
-                <div class="modal-footer">
-                    <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
-                    <button type="button" class="btn btn-primary" id="homeDashboardSaveWidgetsBtn">Save Layout</button>
+                <div class="modal-body pt-3" id="homeDashboardWidgetOptions"></div>
+                <div class="modal-footer border-0 pt-0">
+                    <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Close</button>
                 </div>
             </div>
         </div>

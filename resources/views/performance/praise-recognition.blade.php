@@ -1,7 +1,7 @@
 @extends('performance.layout')
 
 @section('performance-content')
-    <div id="praisePageRoot" data-can-post="{{ ($canPostPraise ?? false) ? '1' : '0' }}">
+    <div id="praisePageRoot" data-can-post="{{ ($canPostPraise ?? false) ? '1' : '0' }}" data-can-manage="{{ ($canManagePraise ?? false) ? '1' : '0' }}">
         @if ($canPostPraise ?? false)
             <div class="content-card mb-4">
                 <div class="content-card-body">
@@ -17,7 +17,12 @@
                         </div>
                         <div class="col-md-7">
                             <label for="praiseContent" class="form-label">Your message</label>
-                            <textarea class="form-control" id="praiseContent" rows="3" maxlength="2000" placeholder="Share what they did well and why it matters..." required></textarea>
+                            <textarea class="form-control" id="praiseContent" rows="3" maxlength="2000" placeholder="Share what they did well and why it matters..."></textarea>
+                            <div class="mt-3">
+                                <label class="form-label small text-muted mb-1" for="praiseAttachments">Attachments (PDF or images, up to 5 files, 5 MB each)</label>
+                                <input type="file" class="form-control form-control-sm" id="praiseAttachments" accept=".pdf,image/jpeg,image/png,image/gif,image/webp" multiple>
+                                <div id="praiseAttachmentPreview" class="moments-attachment-preview mt-2"></div>
+                            </div>
                         </div>
                         <div class="col-12 d-flex justify-content-end">
                             <button type="submit" class="btn btn-primary" id="praiseSubmitBtn">Share Praise</button>

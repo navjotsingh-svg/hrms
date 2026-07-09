@@ -20,7 +20,7 @@ class ExitSurveyQuestionResource extends JsonResource
             'is_required' => (bool) $this->is_required,
             'sort_order' => (int) $this->sort_order,
             'status' => $this->status,
-            'updated_at_label' => $this->updated_at?->format('d M Y, h:i A'),
+            'updated_at_label' => $this->updated_at?->labelStack(),
         ];
     }
 }

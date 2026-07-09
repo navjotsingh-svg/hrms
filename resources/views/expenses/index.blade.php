@@ -6,7 +6,7 @@
     <div class="d-flex flex-wrap align-items-center justify-content-between gap-2">
         <div>
             <h1 class="page-title mb-1">Expenses</h1>
-            <p class="page-subtitle mb-0">Submit expense claims and groups. Only HR or Company Admin can approve; approved reimbursements are included in payroll.</p>
+            <p class="page-subtitle mb-0">Submit expense claims and groups. HR or Company Admin approve claims and can mark approved reimbursements as paid.</p>
         </div>
         <div class="d-flex gap-2">
             @if (Auth::user()->canApplyExpenses())
@@ -22,7 +22,7 @@
 
     <div class="content-card companies-list-card">
         <div class="content-card-body border-bottom">
-            <p class="small text-muted mb-3 mb-md-0">HR or Company Admin approve expenses from <a href="{{ route('web.requests.index') }}">Requests</a>. Only approved claims are paid through payroll.</p>
+            <p class="small text-muted mb-3 mb-md-0">HR or Company Admin approve expenses from <a href="{{ route('web.requests.index') }}">Requests</a>. Approved reimbursable claims can be marked as paid here or included in payroll.</p>
             <ul class="nav nav-tabs mb-0" id="expensesTabs">
                 <li class="nav-item">
                     <button class="nav-link active" type="button" data-expenses-tab="all">All Expenses</button>

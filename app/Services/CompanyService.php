@@ -18,7 +18,10 @@ class CompanyService
 {
     use ValidatesCompanyFields;
 
-    public function __construct(private ImageCompressor $imageCompressor) {}
+    public function __construct(
+        private ImageCompressor $imageCompressor,
+        private CompanyAdminEmployeeService $companyAdminEmployeeService,
+    ) {}
 
     public function create(array $data, ?UploadedFile $logo = null): array
     {
@@ -31,7 +34,7 @@ class CompanyService
         $company = DB::transaction(function () use ($data, $plainPassword) {
             $company = Company::create($data);
 
-            User::create([
+            $adminUser = User::create([
                 'company_id' => $company->id,
                 'role_id' => Role::idFor(Role::SLUG_COMPANY_ADMIN),
                 'name' => $company->contact_person_name ?: $company->name,
@@ -39,6 +42,8 @@ class CompanyService
                 'password' => $plainPassword,
                 'email_verified_at' => now(),
             ]);
+
+            $this->companyAdminEmployeeService->ensureForAdmin($adminUser);
 
             return $company;
         });

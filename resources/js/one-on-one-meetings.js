@@ -1,5 +1,6 @@
 import { Modal } from 'bootstrap';
 import api, { getErrorMessage } from './api';
+import { renderDateTimeStackFromLabel } from './datetime-utils';
 import { bindEmployeeSearchSelect } from './employee-autocomplete';
 import { composeActionGroup, renderViewIconButton } from './action-icons';
 import { bindPagination, bindPerPageSelect, readPerPage, renderListPagination } from './pagination';
@@ -88,7 +89,7 @@ document.addEventListener('DOMContentLoaded', () => {
                         ${escapeHtml(item.employee?.full_name || '—')}
                         <div class="small text-muted">${escapeHtml(item.employee?.employee_code || '')}</div>
                     </td>
-                    <td>${escapeHtml(item.scheduled_at_label || '—')}</td>
+                    <td>${renderDateTimeStackFromLabel(item.scheduled_at_label)}</td>
                     <td>${item.duration_minutes || 30} min</td>
                     <td>${meetCell(item)}</td>
                     <td><span class="company-status-pill ${statusClass(item.status)}">${escapeHtml(item.status_label || item.status)}</span></td>
@@ -209,7 +210,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 </div>
                 <div class="col-md-6">
                     <div class="small text-muted">Scheduled</div>
-                    <div>${escapeHtml(meeting.scheduled_at_label || '—')} (${meeting.duration_minutes || 30} min)</div>
+                    <div>${renderDateTimeStackFromLabel(meeting.scheduled_at_label)} (${meeting.duration_minutes || 30} min)</div>
                 </div>
                 <div class="col-md-6">
                     <div class="small text-muted">Status</div>

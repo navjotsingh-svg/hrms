@@ -60,6 +60,12 @@ class HomeDashboardController extends Controller
 
             'available_widgets' => $this->homeDashboardService->availableWidgets($user),
 
+            'gallery_tabs' => $this->homeDashboardService->galleryTabsForUser($user),
+
+            'recommended_widget_keys' => $this->homeDashboardService->recommendedWidgetKeys($user),
+
+            'saved_widget_count' => count($this->homeDashboardService->widgetsForUser($user)),
+
             'widgets' => $this->homeDashboardService->widgetsWithData($user, $rangeInput),
 
         ]);

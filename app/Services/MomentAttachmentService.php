@@ -101,4 +101,12 @@ class MomentAttachmentService
             'file_size' => $fileSize,
         ]);
     }
+
+    public function deleteAll(CompanyMoment $moment): void
+    {
+        $moment->attachments->each(function (CompanyMomentAttachment $attachment) {
+            $attachment->deleteFile();
+            $attachment->delete();
+        });
+    }
 }

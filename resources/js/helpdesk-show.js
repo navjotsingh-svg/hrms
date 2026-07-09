@@ -1,4 +1,5 @@
 import api, { getErrorMessage } from './api';
+import { renderDateTimeStackFromLabel } from './datetime-utils';
 
 const routes = () => window.HRMS_WEB_ROUTES || {};
 
@@ -62,8 +63,8 @@ document.addEventListener('DOMContentLoaded', async () => {
                     </div>
                 </div>
                 <div class="text-end small text-muted">
-                    <div>Created ${escapeHtml(ticket.created_at_label || '—')}</div>
-                    <div>Updated ${escapeHtml(ticket.updated_at_label || '—')}</div>
+                    <div>Created ${renderDateTimeStackFromLabel(ticket.created_at_label)}</div>
+                    <div>Updated ${renderDateTimeStackFromLabel(ticket.updated_at_label)}</div>
                 </div>
             </div>
             <div class="row g-3 small">
@@ -91,7 +92,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             <div class="border rounded p-3 ${comment.is_internal ? 'bg-light' : ''}">
                 <div class="d-flex flex-wrap justify-content-between gap-2 mb-2">
                     <strong>${escapeHtml(comment.user?.name || 'System')}</strong>
-                    <span class="small text-muted">${escapeHtml(comment.created_at_label || '')}${comment.is_internal ? ' · Internal note' : ''}</span>
+                    <span class="small text-muted">${renderDateTimeStackFromLabel(comment.created_at_label, { empty: '' })}${comment.is_internal ? ' · Internal note' : ''}</span>
                 </div>
                 <div>${escapeHtml(comment.body).replace(/\n/g, '<br>')}</div>
             </div>

@@ -100,7 +100,7 @@ class AttendanceCorrectionService
                 $remarks[$employeeId] = [
                     'reason' => trim((string) $log->action_note),
                     'marked_by_name' => $log->user_name,
-                    'marked_at_label' => $log->logged_at?->format('d M Y, h:i A') ?? '',
+                    'marked_at_label' => $log->logged_at?->labelStack() ?? '',
                 ];
             });
 

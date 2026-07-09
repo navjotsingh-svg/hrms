@@ -16,6 +16,14 @@ export const renderRejectIconButton = (attrName, id, label = 'Reject') => `
     </button>
 `;
 
+export const MARK_PAID_ICON = '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16" aria-hidden="true"><path d="M10.97 4.97a.75.75 0 0 1 1.07 1.05l-3.99 4.99a.75.75 0 0 1-1.08.02L4.324 8.384a.75.75 0 1 1 1.06-1.06l2.094 2.093 3.473-4.425z"/><path d="M0 4a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H2a2 2 0 0 1-2-2zm2-1a1 1 0 0 0-1 1v1h14V4a1 1 0 0 0-1-1zm13 4H1v5a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1z"/></svg>';
+
+export const renderMarkPaidIconButton = (attrName, id, label = 'Mark as paid') => `
+    <button type="button" class="table-action-btn table-action-btn--approve" title="${label}" aria-label="${label}" ${attrName}="${id}">
+        ${MARK_PAID_ICON}
+    </button>
+`;
+
 export const renderViewDocumentIconButton = (id, title = 'Document', extraAttrs = '') => `
     <button type="button" class="table-action-btn table-action-btn--view" title="View" aria-label="View ${title}" data-view-document="${id}" data-view-title="${title}" ${extraAttrs}>
         ${VIEW_ICON}

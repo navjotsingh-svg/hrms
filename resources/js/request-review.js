@@ -122,7 +122,7 @@ export const renderRequestActions = (item, {
     cancel: canShowRequestCancelAction(item)
         ? renderCancelIconButton(cancelAttr, `${item.category}:${item.entity_id}`, 'Cancel request (withdraw)')
         : '',
-});
+}, { reserveCancelSlot: includeView });
 
 export const renderHeaderReviewActions = (item, {
     approveAttr = 'data-approve-request',

@@ -2,7 +2,7 @@ import api, { getErrorMessage } from './api';
 
 import { renderAvatarHtml } from './avatar';
 
-import { bindOrgChartInteractions, renderOrgChart } from './org-chart';
+import { bindOrgChartInteractions, initOrgChartViewport, renderOrgChart } from './org-chart';
 
 import { bindPagination, bindPerPageSelect, readPerPage, renderListPagination } from './pagination';
 
@@ -201,6 +201,7 @@ const loadPeopleOrgChart = async () => {
         const { data } = await api.get('/people/org-chart');
 
         renderOrgChart(data.data || {}, 'peopleOrgChartRoot');
+        initOrgChartViewport('peopleOrgChartRoot');
 
         orgChartLoaded = true;
 

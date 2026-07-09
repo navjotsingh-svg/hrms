@@ -377,15 +377,29 @@ document.addEventListener('DOMContentLoaded', async () => {
         cardGrid.innerHTML = employees.map((employee) => renderCard(employee)).join('');
     };
 
+    const renderLoadingState = () => {
+        const loadingMessage = 'Loading employees...';
+
+        if (currentLayout === 'table') {
+            tableBody.innerHTML = `<tr><td colspan="${columnCount()}" class="text-center text-muted py-5">${loadingMessage}</td></tr>`;
+            return;
+        }
+
+        cardGrid.innerHTML = `<div class="employees-card-empty text-center text-muted py-5">${loadingMessage}</div>`;
+    };
+
     const loadEmployees = async (page = 1) => {
         currentPage = page;
+        renderLoadingState();
 
         const params = {
             page,
             per_page: currentPerPage,
         };
 
-        if (selectedEmployee?.employee?.employee_code) {
+        if (selectedEmployee?.id) {
+            params.employee_id = selectedEmployee.id;
+        } else if (selectedEmployee?.employee?.employee_code) {
             params.search = selectedEmployee.employee.employee_code;
         } else if (selectedEmployee?.employee) {
             const name = selectedEmployee.employee.full_name
@@ -618,6 +632,6 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
 
     applyLayout(currentLayout);
-    await loadDepartments();
+    void loadDepartments();
     await loadEmployees();
 });

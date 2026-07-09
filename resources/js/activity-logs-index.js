@@ -1,4 +1,10 @@
 import api, { getErrorMessage } from './api';
+import {
+    buildRangeQueryParams,
+    formatDisplayDate,
+    resolveClientDateRange,
+    todayDateInput,
+} from './date-range-utils';
 import { bindPagination, bindPerPageSelect, readPerPage, renderListPagination } from './pagination';
 
 const escapeHtml = (value) => String(value ?? '')
@@ -39,10 +45,27 @@ const statusBadge = (status) => {
     return `<span class="badge ${className}">${label}</span>`;
 };
 
+const formatRangeTitle = (range) => {
+    if (!range) {
+        return 'selected period';
+    }
+
+    if (range.from_date === range.to_date) {
+        return formatDisplayDate(range.from_date);
+    }
+
+    return `${formatDisplayDate(range.from_date)} – ${formatDisplayDate(range.to_date)}`;
+};
+
 document.addEventListener('DOMContentLoaded', async () => {
     const alertBox = document.getElementById('activityLogsAlert');
     const companySelect = document.getElementById('activityLogCompanyId');
-    const dateInput = document.getElementById('activityLogDate');
+    const rangePresetEl = document.getElementById('activityLogRangePreset');
+    const customRangeWrap = document.getElementById('activityLogCustomRange');
+    const fromDateEl = document.getElementById('activityLogFromDate');
+    const toDateEl = document.getElementById('activityLogToDate');
+    const applyRangeBtn = document.getElementById('activityLogApplyRangeBtn');
+    const rangeSummaryEl = document.getElementById('activityLogRangeSummary');
     const moduleSelect = document.getElementById('activityLogModule');
     const statusSelect = document.getElementById('activityLogStatus');
     const searchInput = document.getElementById('activityLogSearch');
@@ -57,8 +80,81 @@ document.addEventListener('DOMContentLoaded', async () => {
     const isSuperAdmin = Boolean(companySelect);
     let currentPage = 1;
     let currentPerPage = readPerPage(perPageSelect, 50);
+    let customRangePending = false;
+    let currentRange = resolveClientDateRange('today');
 
-    dateInput.value = new Date().toISOString().slice(0, 10);
+    const isCustomPickerActive = () => customRangePending || rangePresetEl?.value === 'custom';
+
+    const updateRangeSummary = () => {
+        if (!rangeSummaryEl) {
+            return;
+        }
+
+        if (isCustomPickerActive() && currentRange.preset !== 'custom') {
+            rangeSummaryEl.textContent = 'Select from and to dates, then click Apply.';
+            return;
+        }
+
+        const presetLabel = rangePresetEl?.selectedOptions?.[0]?.textContent?.trim() || 'Today';
+
+        rangeSummaryEl.textContent = currentRange.preset === 'custom'
+            ? `Showing logs from ${formatDisplayDate(currentRange.from_date)} to ${formatDisplayDate(currentRange.to_date)}`
+            : `Showing logs for ${presetLabel.toLowerCase()} (${formatDisplayDate(currentRange.from_date)} – ${formatDisplayDate(currentRange.to_date)})`;
+    };
+
+    const syncRangeControls = () => {
+        if (isCustomPickerActive() && currentRange.preset !== 'custom') {
+            customRangeWrap?.classList.remove('d-none');
+            updateRangeSummary();
+            return;
+        }
+
+        customRangePending = false;
+
+        if (rangePresetEl) {
+            rangePresetEl.value = currentRange.preset;
+        }
+
+        customRangeWrap?.classList.toggle('d-none', currentRange.preset !== 'custom');
+
+        if (fromDateEl) {
+            fromDateEl.value = currentRange.from_date || todayDateInput();
+            fromDateEl.max = todayDateInput();
+        }
+
+        if (toDateEl) {
+            toDateEl.value = currentRange.to_date || todayDateInput();
+            toDateEl.max = todayDateInput();
+        }
+
+        updateRangeSummary();
+    };
+
+    const showCustomRangePicker = () => {
+        customRangePending = true;
+        customRangeWrap?.classList.remove('d-none');
+
+        if (fromDateEl && !fromDateEl.value) {
+            fromDateEl.value = currentRange.from_date || todayDateInput();
+        }
+
+        if (toDateEl && !toDateEl.value) {
+            toDateEl.value = currentRange.to_date || todayDateInput();
+        }
+
+        updateRangeSummary();
+    };
+
+    const applyRangeSelection = (preset) => {
+        if (preset === 'custom') {
+            showCustomRangePicker();
+            return;
+        }
+
+        currentRange = resolveClientDateRange(preset);
+        syncRangeControls();
+        resetAndLoad();
+    };
 
     const showAlert = (message, type = 'danger') => {
         if (!alertBox) {
@@ -70,31 +166,15 @@ document.addEventListener('DOMContentLoaded', async () => {
         alertBox.classList.remove('d-none');
     };
 
-    const buildParams = () => {
-        const params = {
-            date: dateInput.value,
-            page: currentPage,
-            per_page: currentPerPage,
-        };
-
-        if (moduleSelect.value) {
-            params.module = moduleSelect.value;
-        }
-
-        if (statusSelect.value) {
-            params.status = statusSelect.value;
-        }
-
-        if (searchInput.value.trim()) {
-            params.search = searchInput.value.trim();
-        }
-
-        if (isSuperAdmin && companySelect.value) {
-            params.company_id = companySelect.value;
-        }
-
-        return params;
-    };
+    const buildParams = () => ({
+        ...buildRangeQueryParams(currentRange),
+        page: currentPage,
+        per_page: currentPerPage,
+        ...(moduleSelect?.value ? { module: moduleSelect.value } : {}),
+        ...(statusSelect?.value ? { status: statusSelect.value } : {}),
+        ...(searchInput?.value.trim() ? { search: searchInput.value.trim() } : {}),
+        ...(isSuperAdmin && companySelect?.value ? { company_id: companySelect.value } : {}),
+    });
 
     const renderPagination = (pagination) => {
         renderListPagination({
@@ -150,9 +230,11 @@ document.addEventListener('DOMContentLoaded', async () => {
             const payload = data.data || data;
             const entries = payload.entries || [];
             const pagination = payload.pagination || {};
+            const range = payload.date_range || currentRange;
+            const rangeLabel = formatRangeTitle(range);
 
-            titleEl.textContent = `Activity log entries — ${payload.date || dateInput.value}`;
-            summaryEl.textContent = `${pagination.total || 0} entries for this day`;
+            titleEl.textContent = `Activity log entries — ${rangeLabel}`;
+            summaryEl.textContent = `${pagination.total || 0} entries for ${rangeLabel}`;
             renderRows(entries);
             renderPagination(pagination);
         } catch (error) {
@@ -192,7 +274,18 @@ document.addEventListener('DOMContentLoaded', async () => {
         resetAndLoad();
     });
 
-    [dateInput, moduleSelect, statusSelect].forEach((element) => {
+    rangePresetEl?.addEventListener('change', () => {
+        applyRangeSelection(rangePresetEl.value);
+    });
+
+    applyRangeBtn?.addEventListener('click', () => {
+        currentRange = resolveClientDateRange('custom', fromDateEl?.value, toDateEl?.value);
+        customRangePending = false;
+        syncRangeControls();
+        resetAndLoad();
+    });
+
+    [moduleSelect, statusSelect].forEach((element) => {
         element?.addEventListener('change', resetAndLoad);
     });
 
@@ -206,6 +299,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     });
 
     loadBtn?.addEventListener('click', resetAndLoad);
+
+    syncRangeControls();
 
     if (isSuperAdmin) {
         await loadCompanies();

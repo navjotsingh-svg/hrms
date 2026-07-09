@@ -47,6 +47,10 @@ document.addEventListener('DOMContentLoaded', async () => {
     const detailDrawer = detailDrawerEl ? Offcanvas.getOrCreateInstance(detailDrawerEl) : null;
     const yearSelect = document.getElementById('payrollYear');
     const monthSelect = document.getElementById('payrollMonth');
+    const offboardForm = document.getElementById('payrollOffboardForm');
+    const offboardEmployeeSelect = document.getElementById('payrollOffboardEmployee');
+    const offboardGenerateBtn = document.getElementById('payrollOffboardGenerateBtn');
+    const offboardRefreshBtn = document.getElementById('payrollOffboardRefreshBtn');
 
     const inrFormatter = new Intl.NumberFormat('en-IN', {
         style: 'currency',
@@ -139,10 +143,13 @@ document.addEventListener('DOMContentLoaded', async () => {
     const updatePeriodActions = () => {
         const period = selectedPeriod();
         const isPaid = Boolean(period?.is_paid || period?.status === 'paid');
+        const isOffboard = period?.type === 'offboard' || period?.is_offboard;
 
         if (regenerateBtn) {
-            regenerateBtn.disabled = isPaid;
-            regenerateBtn.title = isPaid ? 'Paid payroll cannot be regenerated.' : '';
+            regenerateBtn.disabled = isPaid || isOffboard;
+            regenerateBtn.title = isOffboard
+                ? 'Use offboard payroll for exiting employees.'
+                : (isPaid ? 'Paid payroll cannot be regenerated.' : '');
         }
 
         if (markPaidBtn) {
@@ -478,7 +485,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
             return `
                 <option value="${period.id}">
-                    ${period.label} (${period.type === 'regular' ? 'Regular' : period.type})${statusSuffix}
+                    ${period.label} (${period.type_label || (period.type === 'regular' ? 'Regular' : period.type)})${statusSuffix}
                 </option>
             `;
         }).join('');
@@ -521,6 +528,38 @@ document.addEventListener('DOMContentLoaded', async () => {
         const { data } = await api.get('/payroll-periods');
         periods = data.data.periods || [];
         renderPeriodOptions();
+    };
+
+    const loadEligibleOffboardEmployees = async () => {
+        if (!offboardEmployeeSelect) {
+            return;
+        }
+
+        offboardEmployeeSelect.innerHTML = '<option value="">Loading eligible employees...</option>';
+        offboardGenerateBtn && (offboardGenerateBtn.disabled = true);
+
+        try {
+            const { data } = await api.get('/payroll-periods/offboard/eligible');
+            const employees = data.data.employees || [];
+
+            if (!employees.length) {
+                offboardEmployeeSelect.innerHTML = '<option value="">No offboard employees pending final payroll</option>';
+                return;
+            }
+
+            offboardEmployeeSelect.innerHTML = [
+                '<option value="">Select offboarded employee...</option>',
+                ...employees.map((employee) => `
+                    <option value="${employee.employee_id}">
+                        ${escapeHtml(employee.employee_name || 'Employee')} (${escapeHtml(employee.employee_code || employee.employee_id)}) · LWD ${escapeHtml(employee.last_working_date_label || '—')}
+                    </option>
+                `),
+            ].join('');
+            offboardGenerateBtn && (offboardGenerateBtn.disabled = false);
+        } catch (error) {
+            offboardEmployeeSelect.innerHTML = '<option value="">Unable to load offboard employees</option>';
+            showAlert(getErrorMessage(error), 'danger');
+        }
     };
 
     const loadMyPayslips = async () => {
@@ -739,6 +778,10 @@ document.addEventListener('DOMContentLoaded', async () => {
 
             updatePeriodActions();
             showAlert(data.message || 'Payroll marked as paid successfully.');
+
+            if (updatedPeriod?.type === 'offboard' || updatedPeriod?.is_offboard) {
+                await loadEligibleOffboardEmployees();
+            }
         } catch (error) {
             showAlert(getErrorMessage(error), 'danger');
         } finally {
@@ -802,11 +845,52 @@ document.addEventListener('DOMContentLoaded', async () => {
         );
     });
 
+    offboardForm?.addEventListener('submit', async (event) => {
+        event.preventDefault();
+
+        const employeeId = offboardEmployeeSelect?.value;
+
+        if (!employeeId) {
+            showAlert('Select an offboarded employee to generate final payroll.', 'warning');
+            return;
+        }
+
+        offboardGenerateBtn.disabled = true;
+        const originalText = offboardGenerateBtn.textContent;
+        offboardGenerateBtn.textContent = 'Generating...';
+
+        try {
+            const { data } = await api.post('/payroll-periods/offboard/generate', {
+                employee_id: Number(employeeId),
+            });
+
+            showAlert(data.message || 'Offboard payroll generated successfully.');
+            payslipsByPeriod.delete(String(data.data.period.id));
+            await loadPeriods();
+            await loadEligibleOffboardEmployees();
+
+            if (periodSelect && data.data?.period?.id) {
+                periodSelect.value = String(data.data.period.id);
+                periodSelect.dispatchEvent(new Event('change'));
+            }
+        } catch (error) {
+            showAlert(getErrorMessage(error), 'danger');
+        } finally {
+            offboardGenerateBtn.disabled = false;
+            offboardGenerateBtn.textContent = originalText;
+        }
+    });
+
+    offboardRefreshBtn?.addEventListener('click', () => {
+        loadEligibleOffboardEmployees().catch((error) => showAlert(getErrorMessage(error), 'danger'));
+    });
+
     populateGenerateSelectors();
 
     try {
         if (isManageMode) {
             await loadPeriods();
+            await loadEligibleOffboardEmployees();
         } else {
             await loadMyPayslips();
         }

@@ -1,4 +1,5 @@
 import api, { getErrorMessage } from './api';
+import { renderDateTimeStackFromLabel } from './datetime-utils';
 import {
     buildRangeQueryParams,
     formatDisplayDate as formatRangeDisplayDate,
@@ -22,6 +23,9 @@ const formatToday = () => {
 
     return `${now.getFullYear()}-${month}-${day}`;
 };
+
+const SUBMIT_BUTTON_LABEL = 'Submit';
+const SUBMITTING_BUTTON_LABEL = 'Submitting...';
 
 const formatDisplayDate = (value) => {
     if (!value) {
@@ -124,6 +128,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     let currentRange = resolveClientDateRange('today');
     let selectedProjectFilter = '';
     let loadedPeriodDays = [];
+    let isSubmitting = false;
 
     if (!form || !entriesBody) {
         return;
@@ -299,7 +304,19 @@ document.addEventListener('DOMContentLoaded', async () => {
             return;
         }
 
-        submitBtn.textContent = `Submit report for ${formatDisplayDate(selectedWorkDate())}`;
+        submitBtn.textContent = isSubmitting ? SUBMITTING_BUTTON_LABEL : SUBMIT_BUTTON_LABEL;
+    };
+
+    const setSubmittingState = (submitting) => {
+        isSubmitting = submitting;
+
+        if (!submitBtn) {
+            return;
+        }
+
+        submitBtn.disabled = submitting || projectOptions.length === 0;
+        submitBtn.textContent = submitting ? SUBMITTING_BUTTON_LABEL : SUBMIT_BUTTON_LABEL;
+        submitBtn.setAttribute('aria-busy', submitting ? 'true' : 'false');
     };
 
     const applyViewMode = () => {
@@ -322,7 +339,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         addRowBtn?.classList.toggle('d-none', readOnly);
         submitBtn?.classList.toggle('d-none', readOnly);
 
-        entriesBody.querySelectorAll('input, select, textarea, button[data-remove-row]').forEach((element) => {
+        entriesBody.querySelectorAll('[data-row-id] input, [data-row-id] select, [data-row-id] textarea, [data-row-id] button[data-remove-row]').forEach((element) => {
             if (element.matches('button[data-remove-row]')) {
                 element.classList.toggle('d-none', readOnly);
             } else {
@@ -375,8 +392,19 @@ document.addEventListener('DOMContentLoaded', async () => {
         });
     };
 
-    const renderProjectOptions = (currentRowId, selectedProjectId = '') => {
+    const renderProjectOptions = (currentRowId, selectedProjectId = '', entryProject = null) => {
         const options = availableProjectsForRow(currentRowId, selectedProjectId);
+
+        if (
+            selectedProjectId
+            && entryProject?.name
+            && !options.some((project) => String(project.id) === String(selectedProjectId))
+        ) {
+            options.unshift({
+                id: Number(selectedProjectId),
+                name: entryProject.name,
+            });
+        }
 
         return `
             <option value="">Select project</option>
@@ -573,7 +601,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                     <div class="col-md-4">
                         <label class="form-label small mb-1">Project</label>
                         <select class="form-select" data-project-select required>
-                            ${renderProjectOptions(rowId, entry?.project_id || '')}
+                            ${renderProjectOptions(rowId, entry?.project_id || '', entry?.project || null)}
                         </select>
                     </div>
                     <div class="col-md-2">
@@ -693,7 +721,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                     <strong>${escapeHtml(reply.author_name || 'User')}</strong>
                     ${reply.author_role_label ? `<span class="badge text-bg-light border ms-1">${escapeHtml(reply.author_role_label)}</span>` : ''}
                 </div>
-                <span class="small text-muted">${escapeHtml(reply.created_at_label || '')}</span>
+                <span class="small text-muted">${renderDateTimeStackFromLabel(reply.created_at_label, { empty: '' })}</span>
             </div>
             <div class="mt-1">${escapeHtml(reply.body)}</div>
             ${canReply ? `<button type="button" class="btn btn-link btn-sm p-0 mt-1" data-reply-to="${reply.id}" data-reply-project="${projectId}">Reply</button>` : ''}
@@ -710,7 +738,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                         <strong>${escapeHtml(comment.author_name || 'User')}</strong>
                         ${comment.author_role_label ? `<span class="badge text-bg-light border ms-1">${escapeHtml(comment.author_role_label)}</span>` : ''}
                     </div>
-                    <span class="small text-muted">${escapeHtml(comment.created_at_label || '')}</span>
+                    <span class="small text-muted">${renderDateTimeStackFromLabel(comment.created_at_label, { empty: '' })}</span>
                 </div>
                 <div class="mt-2">${escapeHtml(comment.body)}</div>
                 ${canReply ? `<button type="button" class="btn btn-link btn-sm p-0 mt-2" data-reply-to="${comment.id}" data-reply-project="${projectId}">Reply</button>` : ''}
@@ -864,7 +892,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             }
         } catch (error) {
             if (capabilities.is_viewing_team_member) {
-                entriesBody.innerHTML = `<div class="text-danger py-2">${escapeHtml(getErrorMessage(error))}</div>`;
+                showAlert(getErrorMessage(error), 'danger');
             } else {
                 projectDiscussionsList.innerHTML = `<div class="text-danger py-2">${escapeHtml(getErrorMessage(error))}</div>`;
                 projectDiscussionsWrap?.classList.remove('d-none');
@@ -961,13 +989,16 @@ document.addEventListener('DOMContentLoaded', async () => {
                 teamEmployeeSelect.value = String(selectedEmployeeId);
             }
         } catch (error) {
-            showAlert(getErrorMessage(error), 'danger');
+            showAlert(getErrorMessage(error, 'Unable to load team employees.'), 'danger');
         }
     };
 
     const loadProjects = async () => {
         if (!pageConfig.canSubmit || isReadOnlyView()) {
             noProjectsNotice?.classList.add('d-none');
+            if (addRowBtn) {
+                addRowBtn.disabled = false;
+            }
             return;
         }
 
@@ -976,10 +1007,18 @@ document.addEventListener('DOMContentLoaded', async () => {
             projectOptions = response.data?.data?.projects || [];
             const hasAssignedProjects = projectOptions.some((project) => project.name !== 'Other');
             noProjectsNotice?.classList.toggle('d-none', hasAssignedProjects);
-            addRowBtn.disabled = projectOptions.length === 0;
-            submitBtn.disabled = projectOptions.length === 0;
+            if (addRowBtn) {
+                addRowBtn.disabled = false;
+            }
+            submitBtn.disabled = isSubmitting || projectOptions.length === 0;
+            if (!isSubmitting) {
+                updateSubmitButtonLabel();
+            }
             refreshProjectSelects();
         } catch (error) {
+            if (addRowBtn) {
+                addRowBtn.disabled = false;
+            }
             showAlert(getErrorMessage(error), 'danger');
         }
     };
@@ -1005,10 +1044,10 @@ document.addEventListener('DOMContentLoaded', async () => {
                 capabilities = { ...capabilities, ...payload.capabilities };
             }
 
+            await loadProjects();
             renderRows(entries);
             updateDaySummary(payload.summary);
             applyViewMode();
-            await loadProjects();
             await loadComments();
         } catch (error) {
             showAlert(getErrorMessage(error), 'danger');
@@ -1133,11 +1172,50 @@ document.addEventListener('DOMContentLoaded', async () => {
     };
 
     addRowBtn?.addEventListener('click', () => {
+        if (isReadOnlyView()) {
+            return;
+        }
+
         entriesBody.querySelector('[data-placeholder-row]')?.remove();
         entriesBody.insertAdjacentHTML('beforeend', createRow(null, { canRemove: true }));
         refreshProjectSelects();
         syncRemoveButtons();
     });
+
+    const refreshProjectDiscussionUi = () => {
+        if (capabilities.is_viewing_team_member) {
+            renderRows(loadedEntries);
+            return;
+        }
+
+        renderProjectDiscussions();
+    };
+
+    const handleProjectDiscussionClick = (event) => {
+        const replyButton = event.target.closest('[data-reply-to]');
+        const postButton = event.target.closest('[data-post-project-comment]');
+        const cancelButton = event.target.closest('[data-cancel-project-reply]');
+
+        if (replyButton) {
+            pendingReply = {
+                projectId: Number(replyButton.dataset.replyProject),
+                parentId: Number(replyButton.dataset.replyTo),
+            };
+            refreshProjectDiscussionUi();
+            document.querySelector(`[data-project-comment-input="${pendingReply.projectId}"]`)?.focus();
+            return;
+        }
+
+        if (cancelButton) {
+            clearPendingReply();
+            refreshProjectDiscussionUi();
+            return;
+        }
+
+        if (postButton) {
+            postProjectComment(Number(postButton.dataset.postProjectComment));
+        }
+    };
 
     entriesBody.addEventListener('input', (event) => {
         const row = event.target.closest('[data-row-id]');
@@ -1156,21 +1234,22 @@ document.addEventListener('DOMContentLoaded', async () => {
     entriesBody.addEventListener('click', (event) => {
         const removeButton = event.target.closest('[data-remove-row]');
 
-        if (!removeButton) {
+        if (removeButton) {
+            const rowId = removeButton.closest('[data-row-id]')?.dataset.rowId;
+            if (rowId) {
+                removeRowGroup(rowId);
+            }
+
+            if (!entriesBody.querySelector('[data-row-id]')) {
+                ensureInitialRow();
+            } else {
+                syncRemoveButtons();
+                refreshProjectSelects();
+            }
             return;
         }
 
-        const rowId = removeButton.closest('[data-row-id]')?.dataset.rowId;
-        if (rowId) {
-            removeRowGroup(rowId);
-        }
-
-        if (!entriesBody.querySelector('[data-row-id]')) {
-            ensureInitialRow();
-        } else {
-            syncRemoveButtons();
-            refreshProjectSelects();
-        }
+        handleProjectDiscussionClick(event);
     });
 
     periodReportsContainer?.addEventListener('click', async (event) => {
@@ -1215,15 +1294,6 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
     });
 
-    const refreshProjectDiscussionUi = () => {
-        if (capabilities.is_viewing_team_member) {
-            renderRows(loadedEntries);
-            return;
-        }
-
-        renderProjectDiscussions();
-    };
-
     teamEmployeeSelect?.addEventListener('change', async () => {
         selectedEmployeeId = teamEmployeeSelect.value ? Number(teamEmployeeSelect.value) : null;
         selectedProjectFilter = '';
@@ -1239,36 +1309,6 @@ document.addEventListener('DOMContentLoaded', async () => {
     projectDiscussionsList?.addEventListener('click', (event) => {
         handleProjectDiscussionClick(event);
     });
-
-    entriesBody?.addEventListener('click', (event) => {
-        handleProjectDiscussionClick(event);
-    });
-
-    const handleProjectDiscussionClick = (event) => {
-        const replyButton = event.target.closest('[data-reply-to]');
-        const postButton = event.target.closest('[data-post-project-comment]');
-        const cancelButton = event.target.closest('[data-cancel-project-reply]');
-
-        if (replyButton) {
-            pendingReply = {
-                projectId: Number(replyButton.dataset.replyProject),
-                parentId: Number(replyButton.dataset.replyTo),
-            };
-            refreshProjectDiscussionUi();
-            document.querySelector(`[data-project-comment-input="${pendingReply.projectId}"]`)?.focus();
-            return;
-        }
-
-        if (cancelButton) {
-            clearPendingReply();
-            refreshProjectDiscussionUi();
-            return;
-        }
-
-        if (postButton) {
-            postProjectComment(Number(postButton.dataset.postProjectComment));
-        }
-    };
 
     projectFilterEl?.addEventListener('change', () => {
         selectedProjectFilter = projectFilterEl.value;
@@ -1313,7 +1353,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             return;
         }
 
-        submitBtn.disabled = true;
+        setSubmittingState(true);
 
         try {
             const response = await api.post('/timesheets', {
@@ -1331,7 +1371,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         } catch (error) {
             showFormAlert(getErrorMessage(error));
         } finally {
-            submitBtn.disabled = projectOptions.length === 0;
+            setSubmittingState(false);
         }
     });
 
@@ -1348,14 +1388,23 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     syncRangeControls();
 
-    await loadTeamEmployees();
+    try {
+        await loadTeamEmployees();
 
-    if (presetEmployeeId && teamEmployeeSelect) {
-        selectedEmployeeId = Number(presetEmployeeId);
-        teamEmployeeSelect.value = presetEmployeeId;
+        if (presetEmployeeId && teamEmployeeSelect) {
+            selectedEmployeeId = Number(presetEmployeeId);
+            teamEmployeeSelect.value = presetEmployeeId;
+        }
+
+        if (!selectedEmployeeId && pageConfig.ownEmployeeId) {
+            selectedEmployeeId = Number(pageConfig.ownEmployeeId);
+        }
+
+        await loadProjects();
+        await reloadAll();
+        ensureInitialRow();
+        applyViewMode();
+    } catch (error) {
+        showAlert(getErrorMessage(error, 'Unable to load timesheets. Please refresh the page.'), 'danger');
     }
-
-    await loadProjects();
-    await reloadAll();
-    ensureInitialRow();
 });

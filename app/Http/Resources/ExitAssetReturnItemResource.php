@@ -15,7 +15,7 @@ class ExitAssetReturnItemResource extends JsonResource
             'status' => $this->status,
             'status_label' => ucfirst($this->status),
             'condition_notes' => $this->condition_notes,
-            'returned_at_label' => $this->returned_at?->format('d M Y, h:i A'),
+            'returned_at_label' => $this->returned_at?->labelStack(),
             'received_by' => $this->when($this->relationLoaded('receivedBy') && $this->receivedBy, fn () => [
                 'id' => $this->receivedBy->id,
                 'name' => $this->receivedBy->name,

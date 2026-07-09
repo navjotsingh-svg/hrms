@@ -16,8 +16,8 @@ class ExitCaseResource extends JsonResource
             'status' => $this->status,
             'status_label' => ucfirst(str_replace('_', ' ', $this->status)),
             'last_working_date' => $this->last_working_date?->format('d M Y'),
-            'completed_at_label' => $this->completed_at?->format('d M Y, h:i A'),
-            'created_at_label' => $this->created_at?->format('d M Y, h:i A'),
+            'completed_at_label' => $this->completed_at?->labelStack(),
+            'created_at_label' => $this->created_at?->labelStack(),
             'employee' => $this->when($this->relationLoaded('employee'), fn () => [
                 'id' => $this->employee->id,
                 'full_name' => $this->employee->full_name,
@@ -27,7 +27,7 @@ class ExitCaseResource extends JsonResource
             'clearance_items' => ExitClearanceItemResource::collection($this->whenLoaded('clearanceItems')),
             'asset_return_items' => ExitAssetReturnItemResource::collection($this->whenLoaded('assetReturnItems')),
             'survey_response' => $this->when($this->relationLoaded('surveyResponse') && $this->surveyResponse, fn () => [
-                'submitted_at_label' => $this->surveyResponse->submitted_at?->format('d M Y, h:i A'),
+                'submitted_at_label' => $this->surveyResponse->submitted_at?->labelStack(),
                 'responses' => $this->surveyResponse->responses,
                 'is_submitted' => (bool) $this->surveyResponse->submitted_at,
             ]),
@@ -39,7 +39,7 @@ class ExitCaseResource extends JsonResource
                 'settlement_notes' => $this->fullAndFinalSettlement->settlement_notes,
                 'status' => $this->fullAndFinalSettlement->status,
                 'status_label' => ucfirst($this->fullAndFinalSettlement->status),
-                'processed_at_label' => $this->fullAndFinalSettlement->processed_at?->format('d M Y, h:i A'),
+                'processed_at_label' => $this->fullAndFinalSettlement->processed_at?->labelStack(),
             ]),
             'survey_questions' => $this->when(
                 ($request->user()?->isExitCaseOwner($this->resource) ?? false)

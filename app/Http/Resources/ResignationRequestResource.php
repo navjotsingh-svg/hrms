@@ -18,8 +18,8 @@ class ResignationRequestResource extends JsonResource
             'approved_last_working_date' => $this->approved_last_working_date?->format('d M Y'),
             'notice_period_days' => $this->notice_period_days,
             'review_notes' => $this->review_notes,
-            'reviewed_at_label' => $this->reviewed_at?->format('d M Y, h:i A'),
-            'created_at_label' => $this->created_at?->format('d M Y, h:i A'),
+            'reviewed_at_label' => $this->reviewed_at?->labelStack(),
+            'created_at_label' => $this->created_at?->labelStack(),
             'employee' => $this->when($this->relationLoaded('employee'), fn () => [
                 'id' => $this->employee->id,
                 'full_name' => $this->employee->full_name,

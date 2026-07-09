@@ -2,7 +2,7 @@ import { Modal } from 'bootstrap';
 import api, { getErrorMessage } from './api';
 import { renderCancelIconButton, renderViewLink, composeActionGroup } from './action-icons';
 import { renderApproveIconButton, renderRejectIconButton } from './review-actions';
-import { setSubmitLoading, showAutoDismissAlert } from './form-utils';
+import { setSubmitLoading, showAutoDismissAlert, renderDateTimeStackFromLabel } from './form-utils';
 import { bindEmployeeSearchSelect } from './employee-autocomplete';
 import { formatOriginalPunchLine, formatRequestedPunchLine, renderEmployeeNameBlock } from './request-display';
 import { reviewSingleRequest } from './request-review';
@@ -438,10 +438,10 @@ const formatEligiblePunchMeta = (item) => {
                             <div class="small text-muted">${item.status_label}</div>
                             <div class="small text-muted mt-1">Current: ${formatOriginalTimes(item)}</div>
                             <div class="small text-muted">Requested: ${formatTimes(item)}</div>
-                            ${item.submitted_at_label ? `<div class="small text-muted">Submitted ${item.submitted_at_label}</div>` : ''}
+                            ${item.submitted_at_label ? `<div class="small text-muted">Submitted ${renderDateTimeStackFromLabel(item.submitted_at_label)}</div>` : ''}
                             <div class="small mt-2">${item.reason || ''}</div>
                         </div>
-                        ${composeActionGroup({ view: viewLink, cancel: cancelAction })}
+                        ${composeActionGroup({ view: viewLink, cancel: cancelAction }, { reserveCancelSlot: true })}
                     </div>
                 </div>
             `;
@@ -602,7 +602,7 @@ const formatEligiblePunchMeta = (item) => {
                             ${employeeCode ? `<div class="small text-muted">${employeeCode}</div>` : ''}
                             <div class="small text-muted mt-1">Login / Logout: ${originalTimes}</div>
                             <div class="small text-muted">Requested: ${times}</div>
-                            ${group.created_at_label ? `<div class="small text-muted">Submitted ${group.created_at_label}</div>` : ''}
+                            ${group.created_at_label ? `<div class="small text-muted">Submitted ${renderDateTimeStackFromLabel(group.created_at_label)}</div>` : ''}
                             <div class="regularize-pending-dates mt-2">${dateList}</div>
                             <div class="small mt-2">${group.reason || ''}</div>
                         </div>
@@ -637,7 +637,7 @@ const formatEligiblePunchMeta = (item) => {
             <td>${formatTimes(item)}</td>
             <td class="text-truncate" style="max-width:220px">${item.reason}</td>
             <td><span class="company-status-pill ${statusClass(item.status)}">${item.status_label}</span></td>
-            <td>${composeActionGroup({ view: viewLink, cancel: cancelAction })}${updateAction}</td>
+            <td>${composeActionGroup({ view: viewLink, cancel: cancelAction }, { reserveCancelSlot: true })}${updateAction}</td>
         </tr>`;
     };
 

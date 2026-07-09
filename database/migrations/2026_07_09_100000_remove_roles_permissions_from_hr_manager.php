@@ -23,10 +23,12 @@ return new class extends Migration
             ->pluck('id');
 
         if ($hrRoleIds->isNotEmpty()) {
-            DB::table('permission_role')
-                ->whereIn('role_id', $hrRoleIds)
-                ->whereIn('permission_id', $permissionIds)
-                ->delete();
+            if (Schema::hasTable('role_permission')) {
+                DB::table('role_permission')
+                    ->whereIn('role_id', $hrRoleIds)
+                    ->whereIn('permission_id', $permissionIds)
+                    ->delete();
+            }
 
             if (Schema::hasTable('company_role_permissions')) {
                 DB::table('company_role_permissions')

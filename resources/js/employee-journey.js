@@ -6,6 +6,7 @@ import {
     resolveClientDateRange,
     todayDateInput,
 } from './date-range-utils';
+import { renderDateTimeStack } from './datetime-utils';
 import { bindPagination, bindPerPageSelect, readPerPage, renderListPagination } from './pagination';
 const escapeHtml = (value) => String(value ?? '')
     .replace(/&/g, '&amp;')
@@ -13,19 +14,7 @@ const escapeHtml = (value) => String(value ?? '')
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;');
 
-const formatDateTime = (value) => {
-    if (!value) {
-        return '—';
-    }
-
-    return new Date(value).toLocaleString('en-IN', {
-        day: '2-digit',
-        month: 'short',
-        year: 'numeric',
-        hour: '2-digit',
-        minute: '2-digit',
-    });
-};
+const formatDateTime = (value) => renderDateTimeStack(value);
 
 const markerClass = (marker) => {
     if (marker === 'failure') {

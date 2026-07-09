@@ -19,8 +19,8 @@ class AssetRequestResource extends JsonResource
             'status' => $this->status,
             'status_label' => $this->resource->statusLabel(),
             'review_notes' => $this->review_notes,
-            'reviewed_at_label' => $this->reviewed_at?->format('d M Y, h:i A'),
-            'created_at_label' => $this->created_at?->format('d M Y, h:i A'),
+            'reviewed_at_label' => $this->reviewed_at?->labelStack(),
+            'created_at_label' => $this->created_at?->labelStack(),
             'has_pending_items' => $this->when(
                 $this->relationLoaded('items'),
                 fn () => $this->resource->hasPendingItems(),

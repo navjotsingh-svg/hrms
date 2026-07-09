@@ -186,7 +186,7 @@ class RoleSeeder extends Seeder
                     'timesheets.submit',
                     'expenses.apply',
                     'hiring.requisition.create', 'hiring.interview',
-                    'home.view', 'home.dashboard.view', 'home.moments.view', 'home.moments.post', 'home.moments.comment',
+                    'home.view', 'home.dashboard.view', 'home.dashboard.manage', 'home.moments.view', 'home.moments.post', 'home.moments.comment',
                 ],
             ],
             [
@@ -205,7 +205,7 @@ class RoleSeeder extends Seeder
                     'projects.view',
                     'timesheets.submit',
                     'expenses.apply',
-                    'home.view', 'home.moments.view', 'home.moments.comment',
+                    'home.view', 'home.dashboard.view', 'home.dashboard.manage', 'home.moments.view', 'home.moments.comment',
                     'helpdesk.apply',
                 ],
             ],

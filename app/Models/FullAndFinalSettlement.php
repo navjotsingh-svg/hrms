@@ -15,6 +15,7 @@ class FullAndFinalSettlement extends Model
 
     protected $fillable = [
         'exit_case_id',
+        'payroll_period_id',
         'employee_id',
         'leave_encashment',
         'pending_dues',
@@ -40,6 +41,11 @@ class FullAndFinalSettlement extends Model
     public function exitCase(): BelongsTo
     {
         return $this->belongsTo(ExitCase::class);
+    }
+
+    public function payrollPeriod(): BelongsTo
+    {
+        return $this->belongsTo(PayrollPeriod::class);
     }
 
     public function employee(): BelongsTo

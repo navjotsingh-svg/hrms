@@ -1,5 +1,6 @@
 import { Modal } from 'bootstrap';
 import api, { getErrorMessage } from './api';
+import { renderDateTimeStackFromLabel } from './datetime-utils';
 
 export const escapeHtml = (value) => String(value)
     .replace(/&/g, '&amp;')
@@ -41,7 +42,8 @@ export const renderExpenseDetailHtml = (expense) => {
         ${detailRow('Claim reimbursement', expense.claim_reimbursement ? 'Yes' : 'No')}
         ${detailRow('Approval status', `<span class="badge ${expenseStatusClass(expense.status)}">${escapeHtml(expense.status_label || '—')}</span>`)}
         ${detailRow('Payout status', `<span class="badge ${expenseStatusClass(expense.payout_status)}">${escapeHtml(expense.payout_status_label || '—')}</span>`)}
-        ${detailRow('Submitted on', escapeHtml(expense.created_at_label || '—'))}
+        ${detailRow('Paid on', renderDateTimeStackFromLabel(expense.paid_at_label))}
+        ${detailRow('Submitted on', renderDateTimeStackFromLabel(expense.created_at_label))}
         ${detailRow('Reviewed by', escapeHtml(expense.reviewed_by?.name || '—'))}
         ${detailRow('Review notes', escapeHtml(expense.review_notes || '—'))}
         ${detailRow('Receipt', receipts)}
@@ -86,7 +88,9 @@ export const bindExpenseRequestViewModal = ({
     modalId = 'expenseRequestDetailModal',
     titleId = 'expenseRequestDetailTitle',
     bodyId = 'expenseRequestDetailBody',
+    footerActionsId = 'expenseRequestDetailActions',
     onError = null,
+    onMarkPaid = null,
 } = {}) => {
     const modalEl = document.getElementById(modalId);
 
@@ -97,12 +101,44 @@ export const bindExpenseRequestViewModal = ({
     const modal = Modal.getOrCreateInstance(modalEl);
     const titleEl = document.getElementById(titleId);
     const bodyEl = document.getElementById(bodyId);
+    const footerActionsEl = document.getElementById(footerActionsId);
 
     const showError = (error) => {
         if (typeof onError === 'function') {
             onError(getErrorMessage(error));
         }
     };
+
+    const renderFooterActions = (expense) => {
+        if (!footerActionsEl) {
+            return;
+        }
+
+        if (expense?.can_mark_paid) {
+            footerActionsEl.innerHTML = `
+                <button type="button" class="btn btn-success btn-sm" data-mark-paid-expense="${expense.id}">Mark as paid</button>
+            `;
+            footerActionsEl.classList.remove('d-none');
+            return;
+        }
+
+        footerActionsEl.innerHTML = '';
+        footerActionsEl.classList.add('d-none');
+    };
+
+    footerActionsEl?.addEventListener('click', async (event) => {
+        const button = event.target.closest('[data-mark-paid-expense]');
+
+        if (!button || typeof onMarkPaid !== 'function') {
+            return;
+        }
+
+        try {
+            await onMarkPaid(button.dataset.markPaidExpense);
+        } catch (error) {
+            showError(error);
+        }
+    });
 
     const openExpense = async (expenseId) => {
         try {
@@ -119,6 +155,7 @@ export const bindExpenseRequestViewModal = ({
                 bodyEl.innerHTML = renderExpenseDetailHtml(expense);
             }
 
+            renderFooterActions(expense);
             modal.show();
         } catch (error) {
             showError(error);
@@ -138,6 +175,8 @@ export const bindExpenseRequestViewModal = ({
                 bodyEl.innerHTML = renderExpenseGroupDetailHtml(group);
             }
 
+            footerActionsEl && (footerActionsEl.innerHTML = '');
+            footerActionsEl?.classList.add('d-none');
             modal.show();
         } catch (error) {
             showError(error);

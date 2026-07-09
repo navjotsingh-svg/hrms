@@ -89,11 +89,11 @@ class RequestsSummaryService
                 'request_type' => 'Leave',
                 'request_by' => $request->appliedBy?->name ?? '—',
                 'employee' => $request->employee?->full_name ?? '—',
-                'requested_on' => $request->created_at?->format('d M Y, h:i A'),
+                'requested_on' => $request->created_at?->labelStack(),
                 'status' => ucfirst(str_replace('_', ' ', (string) $request->status)),
                 'details' => trim(($request->leaveType?->name ?? 'Leave').' · '.$request->from_date?->format('d M Y').' to '.$request->to_date?->format('d M Y')),
                 'actioned_by' => $request->reviewedBy?->name ?? '—',
-                'actioned_on' => $request->reviewed_at?->format('d M Y, h:i A') ?? '—',
+                'actioned_on' => $request->reviewed_at?->labelStack() ?? '—',
                 'action_note' => $request->review_notes ?? '—',
             ]);
     }
@@ -114,11 +114,11 @@ class RequestsSummaryService
                 'request_type' => 'Attendance Regularization',
                 'request_by' => $request->appliedBy?->name ?? '—',
                 'employee' => $request->employee?->full_name ?? '—',
-                'requested_on' => $request->created_at?->format('d M Y, h:i A'),
+                'requested_on' => $request->created_at?->labelStack(),
                 'status' => ucfirst(str_replace('_', ' ', (string) $request->status)),
                 'details' => trim(($request->attendance_date?->format('d M Y') ?? '—').' · '.($request->reason ?? '')),
                 'actioned_by' => $request->reviewedBy?->name ?? '—',
-                'actioned_on' => $request->reviewed_at?->format('d M Y, h:i A') ?? '—',
+                'actioned_on' => $request->reviewed_at?->labelStack() ?? '—',
                 'action_note' => $request->review_notes ?? '—',
             ]);
     }
@@ -140,11 +140,11 @@ class RequestsSummaryService
                 'request_type' => 'Expense',
                 'request_by' => $expense->submittedBy?->name ?? $expense->employee?->full_name ?? '—',
                 'employee' => $expense->employee?->full_name ?? '—',
-                'requested_on' => $expense->created_at?->format('d M Y, h:i A'),
+                'requested_on' => $expense->created_at?->labelStack(),
                 'status' => ucfirst(str_replace('_', ' ', (string) $expense->status)),
                 'details' => trim(($expense->expenseType?->name ?? 'Expense').' · ₹'.number_format((float) $expense->amount, 2)),
                 'actioned_by' => $expense->reviewedBy?->name ?? '—',
-                'actioned_on' => $expense->reviewed_at?->format('d M Y, h:i A') ?? '—',
+                'actioned_on' => $expense->reviewed_at?->labelStack() ?? '—',
                 'action_note' => $expense->review_notes ?? '—',
             ]);
     }
@@ -165,11 +165,11 @@ class RequestsSummaryService
                 'request_type' => 'Expense Group',
                 'request_by' => $group->submittedBy?->name ?? $group->employee?->full_name ?? '—',
                 'employee' => $group->employee?->full_name ?? '—',
-                'requested_on' => $group->created_at?->format('d M Y, h:i A'),
+                'requested_on' => $group->created_at?->labelStack(),
                 'status' => ucfirst(str_replace('_', ' ', (string) $group->status)),
                 'details' => trim(($group->title ?? 'Expense group').' · ₹'.number_format((float) $group->total_amount, 2)),
                 'actioned_by' => $group->reviewedBy?->name ?? '—',
-                'actioned_on' => $group->reviewed_at?->format('d M Y, h:i A') ?? '—',
+                'actioned_on' => $group->reviewed_at?->labelStack() ?? '—',
                 'action_note' => $group->review_notes ?? '—',
             ]);
     }
@@ -239,11 +239,11 @@ class RequestsSummaryService
             'request_type' => 'Employee Core Update',
             'request_by' => $submitter?->name ?? $item->employee?->full_name ?? '—',
             'employee' => $item->employee?->full_name ?? '—',
-            'requested_on' => $item->created_at?->format('d M Y, h:i A'),
+            'requested_on' => $item->created_at?->labelStack(),
             'status' => ucfirst(str_replace('_', ' ', (string) $item->status)),
             'details' => trim($label.' · '.$detail),
             'actioned_by' => $item->reviewedBy?->name ?? '—',
-            'actioned_on' => $item->reviewed_at?->format('d M Y, h:i A') ?? '—',
+            'actioned_on' => $item->reviewed_at?->labelStack() ?? '—',
             'action_note' => $item->notes ?? '—',
         ];
     }
@@ -264,11 +264,11 @@ class RequestsSummaryService
                 'request_type' => 'Job Requisition',
                 'request_by' => $requisition->requestedBy?->name ?? '—',
                 'employee' => '—',
-                'requested_on' => $requisition->created_at?->format('d M Y, h:i A'),
+                'requested_on' => $requisition->created_at?->labelStack(),
                 'status' => ucfirst(str_replace('_', ' ', (string) $requisition->status)),
                 'details' => trim(($requisition->title ?? 'Requisition').' · '.($requisition->department?->name ?? '')),
                 'actioned_by' => $requisition->approver?->name ?? '—',
-                'actioned_on' => $requisition->approved_at?->format('d M Y, h:i A') ?? '—',
+                'actioned_on' => $requisition->approved_at?->labelStack() ?? '—',
                 'action_note' => $requisition->rejection_reason ?? '—',
             ]);
     }

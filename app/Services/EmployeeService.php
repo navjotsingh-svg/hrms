@@ -29,6 +29,7 @@ class EmployeeService
         private EmployeeAccessService $employeeAccessService,
         private ActivityLogService $activityLogService,
         private CompanyPayrollSettingsService $companyPayrollSettingsService,
+        private CompanyAdminEmployeeService $companyAdminEmployeeService,
     ) {}
 
     public function listForCompany(int $companyId, array $filters = [], ?array $visibleEmployeeIds = null): LengthAwarePaginator
@@ -67,7 +68,14 @@ class EmployeeService
             $query->where('status', $filters['status']);
         }
 
-        return $query->paginate($filters['per_page'] ?? 10);
+        if (! empty($filters['employee_id'])) {
+            $query->where('id', (int) $filters['employee_id']);
+        }
+
+        $page = max(1, (int) ($filters['page'] ?? 1));
+        $perPage = max(1, (int) ($filters['per_page'] ?? 10));
+
+        return $query->paginate($perPage, ['*'], 'page', $page);
     }
 
     public function create(int $companyId, array $data): array
@@ -380,6 +388,7 @@ class EmployeeService
                     'user_id' => $user->id,
                     'role_id' => $adminRoleId,
                     'portal_access_date' => now()->toDateString(),
+                    'is_paid_employee' => true,
                 ]);
 
                 $grantedPortalAccess = true;
@@ -387,11 +396,22 @@ class EmployeeService
                 return;
             }
 
-            $employee->update(['role_id' => $adminRoleId]);
+            $employee->update([
+                'role_id' => $adminRoleId,
+                'is_paid_employee' => true,
+            ]);
             $employee->user?->update(['role_id' => $adminRoleId]);
         });
 
-        $employee = $employee->fresh()->load(['department', 'departments', 'role', 'manager', 'shift', 'company']);
+        $employee = $employee->fresh()->load(['department', 'departments', 'role', 'manager', 'shift', 'company', 'user']);
+
+        if ($employee->user) {
+            $synced = $this->companyAdminEmployeeService->ensureForAdmin($employee->user);
+
+            if ($synced) {
+                $employee = $synced->load(['department', 'departments', 'role', 'manager', 'shift', 'company', 'user']);
+            }
+        }
 
         if ($grantedPortalAccess && $plainPassword) {
             try {

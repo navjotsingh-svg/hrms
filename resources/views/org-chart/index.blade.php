@@ -11,7 +11,7 @@
 
 @section('content')
     <div class="content-card">
-        <div class="content-card-body">
+        <div class="content-card-body p-0">
             <div class="org-chart-wrap" id="orgChartRoot">
                 <div class="text-center text-muted py-5">Loading organization chart...</div>
             </div>

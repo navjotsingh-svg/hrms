@@ -1,4 +1,5 @@
 import api, { getErrorMessage } from './api';
+import { renderDateTimeStackFromLabel } from './datetime-utils';
 import { compressImageFiles } from './image-compress';
 import { bindBackButton, buildCategoryReturnUrl, showAutoDismissAlert } from './form-utils';
 import {
@@ -103,7 +104,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                 <div class="col-md-6"><span class="text-muted">Dates</span><div>${item.dates_label || item.from_date_label || '—'}</div></div>
                 <div class="col-md-6"><span class="text-muted">Total Days</span><div>${item.total_days_label || item.total_days}</div></div>
                 <div class="col-md-6"><span class="text-muted">Status</span><div class="fw-semibold text-capitalize">${item.status_label}</div></div>
-                <div class="col-md-6"><span class="text-muted">Applied On</span><div>${item.created_at_label || '—'}</div></div>
+                <div class="col-md-6"><span class="text-muted">Applied On</span><div>${renderDateTimeStackFromLabel(item.created_at_label)}</div></div>
                 ${item.reviewed_by?.name ? `<div class="col-md-6"><span class="text-muted">Approved By</span><div class="fw-semibold">${item.reviewed_by.name}</div></div>` : ''}
                 ${item.reviewed_at_label ? `<div class="col-md-6"><span class="text-muted">Approved On</span><div>${item.reviewed_at_label}</div></div>` : ''}
                 <div class="col-12"><span class="text-muted">Reason</span><div>${item.reason}</div></div>

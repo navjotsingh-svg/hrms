@@ -8,6 +8,12 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class Goal extends Model
 {
+    public const LEVEL_COMPANY = 'company';
+
+    public const LEVEL_DEPARTMENT = 'department';
+
+    public const LEVEL_INDIVIDUAL = 'individual';
+
     public const STATUS_DRAFT = 'draft';
 
     public const STATUS_ACTIVE = 'active';
@@ -24,7 +30,10 @@ class Goal extends Model
 
     protected $fillable = [
         'company_id',
+        'level',
         'employee_id',
+        'department_id',
+        'parent_goal_id',
         'title',
         'description',
         'period_start',
@@ -52,6 +61,21 @@ class Goal extends Model
     public function employee(): BelongsTo
     {
         return $this->belongsTo(Employee::class);
+    }
+
+    public function department(): BelongsTo
+    {
+        return $this->belongsTo(Department::class);
+    }
+
+    public function parent(): BelongsTo
+    {
+        return $this->belongsTo(Goal::class, 'parent_goal_id');
+    }
+
+    public function children(): HasMany
+    {
+        return $this->hasMany(Goal::class, 'parent_goal_id');
     }
 
     public function createdBy(): BelongsTo

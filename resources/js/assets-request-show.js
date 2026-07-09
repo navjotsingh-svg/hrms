@@ -1,4 +1,5 @@
 import api, { getErrorMessage } from './api';
+import { renderDateTimeStackFromLabel } from './datetime-utils';
 
 import {
 
@@ -101,7 +102,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
                 <div class="col-md-6"><span class="text-muted">Overall Status</span><div><span class="company-status-pill ${itemStatusClass(item.status)}">${item.status_label}</span></div></div>
 
-                <div class="col-md-6"><span class="text-muted">Applied On</span><div>${item.created_at_label || '—'}</div></div>
+                <div class="col-md-6"><span class="text-muted">Applied On</span><div>${renderDateTimeStackFromLabel(item.created_at_label)}</div></div>
 
                 ${item.reviewed_at_label ? `<div class="col-md-6"><span class="text-muted">Last Reviewed On</span><div>${item.reviewed_at_label}</div></div>` : ''}
 

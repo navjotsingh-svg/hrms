@@ -1346,6 +1346,27 @@ class User extends Authenticatable
         return $this->hasPermission('expenses.manage');
     }
 
+    public function canMarkExpensePaid(Expense $expense): bool
+    {
+        if ((int) $expense->company_id !== (int) $this->company_id) {
+            return false;
+        }
+
+        if ($expense->status !== Expense::STATUS_APPROVED) {
+            return false;
+        }
+
+        if ($expense->payout_status === Expense::PAYOUT_PAID) {
+            return false;
+        }
+
+        if (! $expense->claim_reimbursement) {
+            return false;
+        }
+
+        return $this->canViewAllExpenses();
+    }
+
     public function canViewExpenses(): bool
     {
         if (! $this->company_id) {

@@ -14,7 +14,7 @@ class AssetRequestItemResource extends JsonResource
             'status' => $this->status,
             'status_label' => ucfirst($this->status),
             'review_notes' => $this->review_notes,
-            'reviewed_at_label' => $this->reviewed_at?->format('d M Y, h:i A'),
+            'reviewed_at_label' => $this->reviewed_at?->labelStack(),
             'asset_type' => $this->when($this->relationLoaded('assetType') && $this->assetType, fn () => [
                 'id' => $this->assetType->id,
                 'name' => $this->assetType->name,

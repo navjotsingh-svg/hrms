@@ -80,7 +80,8 @@ class MomentService
         return $this->feedForUser($user, ['praise' => true], $page, $perPage);
     }
 
-    public function createPraise(User $user, int $employeeId, string $content): array
+    /** @param  array<int, \Illuminate\Http\UploadedFile>  $attachments */
+    public function createPraise(User $user, int $employeeId, string $content, array $attachments = []): array
     {
         if (! $user->hasPermission('home.moments.post') && ! $user->hasPermission('performance.participate')) {
             throw new AccessDeniedHttpException('You are not allowed to send praise.');
@@ -93,10 +94,11 @@ class MomentService
         }
 
         $content = trim($content);
+        $hasAttachments = collect($attachments)->contains(fn ($file) => $file instanceof \Illuminate\Http\UploadedFile);
 
-        if ($content === '') {
+        if ($content === '' && ! $hasAttachments) {
             throw ValidationException::withMessages([
-                'content' => ['Write a message to recognize your colleague.'],
+                'content' => ['Write a message or attach at least one file.'],
             ]);
         }
 
@@ -115,7 +117,7 @@ class MomentService
             'company_id' => $user->company_id,
             'type' => CompanyMoment::TYPE_POST,
             'author_user_id' => $user->id,
-            'content' => $content,
+            'content' => $content !== '' ? $content : null,
             'metadata' => [
                 'is_praise' => true,
                 'employee_id' => $employee->id,
@@ -125,12 +127,40 @@ class MomentService
             'published_at' => now(),
         ]);
 
+        if ($hasAttachments) {
+            $this->attachmentService->storeMany($moment, $attachments);
+        }
+
         $moment->load(['author.employee', 'reactions.user.employee', 'attachments', 'comments.user.employee']);
         $moment->loadCount('comments');
 
         $this->notifyCompanyAboutMoment($moment, $user);
 
         return $this->transformMoment($moment, $user);
+    }
+
+    public function deletePraise(User $user, int $momentId): void
+    {
+        if (! $user->canManagePerformance()) {
+            throw new AccessDeniedHttpException('You are not allowed to delete praise posts.');
+        }
+
+        if (! $user->company_id) {
+            throw new NotFoundHttpException('Praise post not found.');
+        }
+
+        $moment = CompanyMoment::query()
+            ->where('company_id', $user->company_id)
+            ->where('type', CompanyMoment::TYPE_POST)
+            ->where('metadata->is_praise', true)
+            ->find($momentId);
+
+        if (! $moment) {
+            throw new NotFoundHttpException('Praise post not found.');
+        }
+
+        $this->attachmentService->deleteAll($moment);
+        $moment->delete();
     }
 
     public function summaryForUser(User $user): array

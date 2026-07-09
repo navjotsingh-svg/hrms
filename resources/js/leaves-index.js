@@ -51,7 +51,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                 cancel: item.can_cancel && item.status === 'pending'
                     ? renderCancelIconButton('data-cancel-leave', item.id, 'Cancel leave request')
                     : '',
-            })}</td>
+            }, { reserveCancelSlot: true })}</td>
         </tr>`;
     };
 

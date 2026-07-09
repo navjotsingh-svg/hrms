@@ -1,6 +1,7 @@
 import { Modal, Tab } from 'bootstrap';
 import api, { getErrorMessage } from './api';
 import { setSubmitLoading } from './form-utils';
+import { renderDateTimeStack } from './datetime-utils';
 import { renderReviewIconActionGroup, renderViewDocumentIconButton, renderDeleteDocumentIconButton, renderReviewIconActions } from './review-actions';
 import { patchProfileReviewAction } from './request-review';
 import { hasSalaryRevisionTimeline, renderSalaryRevisionTimeline } from './salary-timeline';
@@ -69,17 +70,7 @@ const formatDate = (value) => {
     });
 };
 
-const formatDateTime = (value) => {
-    if (!value) {
-        return '—';
-    }
-
-    return new Date(value).toLocaleDateString('en-IN', {
-        day: '2-digit',
-        month: 'short',
-        year: 'numeric',
-    });
-};
+const formatDateTime = (value) => renderDateTimeStack(value);
 
 const getInitials = (name = '') => {
     const parts = String(name).trim().split(/\s+/).filter(Boolean);

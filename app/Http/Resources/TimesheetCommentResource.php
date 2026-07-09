@@ -26,7 +26,7 @@ class TimesheetCommentResource extends JsonResource
             'is_mine' => $viewer && (int) $this->user_id === (int) $viewer->id,
             'is_employee_owner' => $linkedEmployeeId > 0 && (int) $this->employee_id === $linkedEmployeeId,
             'created_at' => $this->created_at?->toIso8601String(),
-            'created_at_label' => $this->created_at?->timezone(config('app.timezone'))->format('d M Y, h:i A'),
+            'created_at_label' => $this->created_at?->timezone(config('app.timezone'))->labelStack(),
             'replies' => self::collection($this->whenLoaded('replies')),
         ];
     }

@@ -6,7 +6,7 @@
     <div class="d-flex flex-wrap align-items-center justify-content-between gap-2">
         <div>
             <h1 class="page-title mb-1">Payroll</h1>
-            <p class="page-subtitle mb-0">Generate monthly payroll and view employee payslips.</p>
+            <p class="page-subtitle mb-0">Generate monthly payroll and process final settlement for offboarded employees.</p>
         </div>
     </div>
 @endsection
@@ -17,7 +17,7 @@
     <div class="content-card mb-4">
         <div class="content-card-body">
             <h2 class="h6 mb-3">Generate Payroll</h2>
-            <p class="small text-muted mb-3">Payroll is calculated from employee salary components and attendance for the selected month.</p>
+            <p class="small text-muted mb-3">Payroll is calculated from employee salary components and attendance for the selected month. Employees leaving in that month are excluded and paid separately under offboard payroll.</p>
             <form id="payrollGenerateForm" class="row g-3 align-items-end">
                 <div class="col-md-3">
                     <label for="payrollYear" class="form-label">Year</label>
@@ -30,6 +30,25 @@
                 <div class="col-md-6 d-flex flex-wrap gap-2">
                     <button type="submit" class="btn btn-primary" id="payrollGenerateBtn">Generate Payroll</button>
                     <button type="button" class="btn btn-outline-warning" id="payrollRegenerateBtn">Regenerate Payroll</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <div class="content-card mb-4">
+        <div class="content-card-body">
+            <h2 class="h6 mb-3">Pay Offboard Employee</h2>
+            <p class="small text-muted mb-3">Generate final payroll for employees who exited during offboarding. Once paid, they will not appear here again. Employee records and history are retained; portal login is disabled after payment.</p>
+            <form id="payrollOffboardForm" class="row g-3 align-items-end">
+                <div class="col-md-6">
+                    <label for="payrollOffboardEmployee" class="form-label">Offboarded employee</label>
+                    <select class="form-select" id="payrollOffboardEmployee" required>
+                        <option value="">Loading eligible employees...</option>
+                    </select>
+                </div>
+                <div class="col-md-6 d-flex flex-wrap gap-2">
+                    <button type="submit" class="btn btn-primary" id="payrollOffboardGenerateBtn">Generate Offboard Payroll</button>
+                    <button type="button" class="btn btn-outline-secondary" id="payrollOffboardRefreshBtn">Refresh List</button>
                 </div>
             </form>
         </div>

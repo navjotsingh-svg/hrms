@@ -20,6 +20,9 @@ class ActivityLogController extends Controller
         $this->authorizeViewer($request);
 
         $validated = $request->validate([
+            'range' => ['nullable', 'string', 'in:today,yesterday,this_week,this_month,custom'],
+            'from_date' => ['nullable', 'date_format:Y-m-d'],
+            'to_date' => ['nullable', 'date_format:Y-m-d', 'after_or_equal:from_date'],
             'date' => ['nullable', 'date_format:Y-m-d'],
             'module' => ['nullable', 'string', 'max:50'],
             'status' => ['nullable', 'in:success,failure'],
@@ -30,10 +33,15 @@ class ActivityLogController extends Controller
             'per_page' => ['nullable', 'integer', 'min:10', 'max:200'],
         ]);
 
+        $range = $this->activityLogService->resolveViewerDateRange($validated);
         $result = $this->activityLogService->listForViewer($request->user(), $validated);
 
         return $this->success([
-            'date' => $validated['date'] ?? now()->toDateString(),
+            'date_range' => [
+                'preset' => $range['preset'],
+                'from_date' => $range['from_date'],
+                'to_date' => $range['to_date'],
+            ],
             'entries' => $result['entries'],
             'pagination' => [
                 'current_page' => $result['page'],

@@ -5,6 +5,7 @@ import {
     escapeHtml,
     expenseStatusClass,
 } from './expense-modals';
+import { renderDateTimeStackFromLabel } from './datetime-utils';
 import {
     composeActionGroup,
     renderActionGroup,
@@ -13,8 +14,9 @@ import {
     renderEditIconButton,
     renderViewIconButton,
 } from './action-icons';
-import { renderApproveIconButton } from './review-actions';
+import { renderApproveIconButton, renderMarkPaidIconButton } from './review-actions';
 import { bindPagination, bindPerPageSelect, readPerPage, renderListPagination } from './pagination';
+import { confirmAction } from './swal-utils';
 
 const formatToday = () => new Date().toISOString().slice(0, 10);
 
@@ -52,6 +54,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     const groupDetailModal = groupDetailModalEl ? Modal.getOrCreateInstance(groupDetailModalEl) : null;
     const expenseViewModal = bindExpenseRequestViewModal({
         onError: (message) => showAlert(message, 'danger'),
+        onMarkPaid: (expenseId) => markExpensePaid(expenseId, { closeModal: true }),
     });
 
     const expenseEditingIdInput = document.getElementById('expenseEditingId');
@@ -216,6 +219,28 @@ document.addEventListener('DOMContentLoaded', async () => {
         alertBox.classList.remove('d-none');
     };
 
+    const markExpensePaid = async (expenseId, { closeModal = false } = {}) => {
+        const confirmed = await confirmAction({
+            title: 'Mark expense as paid?',
+            text: 'This will record the reimbursement as paid outside payroll.',
+            confirmText: 'Yes, mark paid',
+            confirmButtonColor: '#198754',
+        });
+
+        if (!confirmed) {
+            return;
+        }
+
+        await api.patch(`/expenses/${expenseId}/mark-paid`);
+        showAlert('Expense marked as paid.');
+
+        if (closeModal) {
+            expenseViewModal.modalEl && Modal.getInstance(expenseViewModal.modalEl)?.hide();
+        }
+
+        loadActiveTab();
+    };
+
     const filters = () => ({
         status: filterApprovalStatus?.value || '',
         belongs_to: filterBelongsTo?.value || 'myself',
@@ -293,7 +318,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
                 return `<tr>
                     <td>${escapeHtml(expense.expense_date_label || '—')}</td>
-                    <td>${escapeHtml(expense.created_at_label || '—')}</td>
+                    <td>${renderDateTimeStackFromLabel(expense.created_at_label)}</td>
                     <td>${escapeHtml(expense.expense_type?.name || '—')}</td>
                     <td>${escapeHtml(expense.amount_label || '—')}</td>
                     <td><span class="company-status-pill ${expenseStatusClass(expense.payout_status)}">${escapeHtml(expense.payout_status_label || '—')}</span></td>
@@ -309,10 +334,13 @@ document.addEventListener('DOMContentLoaded', async () => {
                         approve: expense.can_submit
                             ? renderApproveIconButton('data-submit-expense', expense.id, 'Submit expense')
                             : '',
+                        markPaid: expense.can_mark_paid
+                            ? renderMarkPaidIconButton('data-mark-paid-expense', expense.id, 'Mark as paid')
+                            : '',
                         cancel: expense.can_cancel
                             ? renderCancelIconButton('data-cancel-expense', expense.id, 'Cancel expense')
                             : '',
-                    })}</td>
+                    }, { reserveCancelSlot: true })}</td>
                 </tr>`;
             }).join('');
 
@@ -342,7 +370,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                 <tr>
                     <td>${escapeHtml(group.name)}</td>
                     <td>${escapeHtml(group.employee?.full_name || '—')} (${escapeHtml(group.employee?.employee_code || '—')})</td>
-                    <td>${escapeHtml(group.created_at_label || '—')}</td>
+                    <td>${renderDateTimeStackFromLabel(group.created_at_label)}</td>
                     <td>${escapeHtml(group.total_amount_label || '—')}</td>
                     <td>${escapeHtml(group.approved_reimbursable_label || '—')}</td>
                     <td>${escapeHtml(group.travel_advance_label || '—')}</td>
@@ -359,7 +387,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                         cancel: group.can_cancel
                             ? renderCancelIconButton('data-cancel-group', group.id, 'Cancel expense group')
                             : '',
-                    })}</td>
+                    }, { reserveCancelSlot: true })}</td>
                 </tr>
             `).join('');
 
@@ -409,13 +437,16 @@ document.addEventListener('DOMContentLoaded', async () => {
                 const editBtn = expense.can_edit
                     ? renderEditIconButton('data-edit-expense', expense.id, 'Edit expense')
                     : '<span class="text-muted">—</span>';
+                const markPaidBtn = expense.can_mark_paid
+                    ? renderMarkPaidIconButton('data-mark-paid-expense', expense.id, 'Mark as paid')
+                    : '';
 
                 return `<tr>
                     <td>${escapeHtml(expense.expense_date_label || '—')}</td>
                     <td>${escapeHtml(expense.expense_type?.name || '—')}</td>
                     <td>${escapeHtml(expense.amount_label || '—')}</td>
                     <td>${receipt}</td>
-                    <td>${editBtn}</td>
+                    <td class="text-nowrap">${renderActionGroup([editBtn, markPaidBtn].filter(Boolean).join('') || '<span class="text-muted">—</span>')}</td>
                 </tr>`;
             }).join('') || '<tr><td colspan="5" class="text-muted">No expenses added yet.</td></tr>';
 
@@ -613,6 +644,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         const cancelExpenseId = event.target.closest('[data-cancel-expense]')?.dataset.cancelExpense;
         const viewExpenseId = event.target.closest('[data-view-expense]')?.dataset.viewExpense;
         const editExpenseId = event.target.closest('[data-edit-expense]')?.dataset.editExpense;
+        const markPaidExpenseId = event.target.closest('[data-mark-paid-expense]')?.dataset.markPaidExpense;
         const editGroupId = event.target.closest('[data-edit-group]')?.dataset.editGroup;
         const submitGroupId = event.target.closest('[data-submit-group]')?.dataset.submitGroup;
         const cancelGroupId = event.target.closest('[data-cancel-group]')?.dataset.cancelGroup;
@@ -625,6 +657,10 @@ document.addEventListener('DOMContentLoaded', async () => {
 
         if (editExpenseId) {
             openExpenseForEdit(editExpenseId);
+        }
+
+        if (markPaidExpenseId) {
+            markExpensePaid(markPaidExpenseId).catch((error) => showAlert(getErrorMessage(error), 'danger'));
         }
 
         if (submitExpenseId) {

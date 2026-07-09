@@ -23,6 +23,7 @@ import {
     resolveDateRange,
     saveRequestsListState,
     showAutoDismissAlert,
+    renderDateTimeStackFromLabel,
 } from './form-utils';
 
 import { bindPagination, bindPerPageSelect, paginateArray, readPerPage, renderListPagination } from './pagination';
@@ -814,7 +815,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
 
 
-        return `<div class="small text-muted mt-1">${item.reviewed_at_label || 'Reviewed'}${by}</div>`;
+        return `<div class="small text-muted mt-1">${item.reviewed_at_label ? renderDateTimeStackFromLabel(item.reviewed_at_label) : 'Reviewed'}${by}</div>`;
 
     };
 
@@ -871,7 +872,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
             </td>
 
-            <td class="text-nowrap">${item.submitted_at_label || '—'}</td>
+            <td class="text-nowrap">${renderDateTimeStackFromLabel(item.submitted_at_label)}</td>
 
             <td>
 

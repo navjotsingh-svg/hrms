@@ -56,18 +56,9 @@ document.addEventListener('DOMContentLoaded', async () => {
         alertBox.classList.remove('d-none');
     };
 
-    const operationColumns = () => {
-        const types = new Set();
-
-        catalog.forEach((group) => {
-            (group.modules || []).forEach((module) => {
-                (module.operations || []).forEach((operation) => {
-                    types.add(operation.type || operation.label);
-                });
-            });
-        });
-
+    const sortOperationTypes = (types) => {
         const order = ['view', 'manage', 'apply', 'approve', 'regularize', 'submit', 'export', 'participate', 'review', 'pip', 'requisition_create', 'requisition_approve', 'interview', 'careers'];
+
         return [...types].sort((a, b) => {
             const ai = order.indexOf(a);
             const bi = order.indexOf(b);
@@ -86,6 +77,18 @@ document.addEventListener('DOMContentLoaded', async () => {
 
             return ai - bi;
         });
+    };
+
+    const columnsForGroup = (group) => {
+        const types = new Set();
+
+        (group.modules || []).forEach((module) => {
+            (module.operations || []).forEach((operation) => {
+                types.add(operation.type || operation.label);
+            });
+        });
+
+        return sortOperationTypes(types);
     };
 
     const columnLabel = (type) => ({
@@ -136,10 +139,16 @@ document.addEventListener('DOMContentLoaded', async () => {
             return;
         }
 
-        const columns = operationColumns();
         const disabled = !isEditable ? 'disabled' : '';
 
-        permissionsWrap.innerHTML = catalog.map((group) => `
+        permissionsWrap.innerHTML = catalog.map((group) => {
+            const columns = columnsForGroup(group);
+
+            if (!columns.length) {
+                return '';
+            }
+
+            return `
             <div class="role-permission-group mb-4">
                 <h6 class="role-permission-group-title">${escapeHtml(group.group)}</h6>
                 <div class="table-responsive">
@@ -161,7 +170,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                                         const operation = (module.operations || []).find((item) => item.type === type);
 
                                         if (!operation) {
-                                            return '<td class="text-center text-muted">—</td>';
+                                            return '<td class="text-center"></td>';
                                         }
 
                                         const checked = selectedSlugs.has(operation.slug) ? 'checked' : '';
@@ -183,7 +192,8 @@ document.addEventListener('DOMContentLoaded', async () => {
                     </table>
                 </div>
             </div>
-        `).join('');
+        `;
+        }).filter(Boolean).join('');
 
         permissionsWrap.querySelectorAll('.role-permission-checkbox').forEach((input) => {
             input.addEventListener('change', () => {

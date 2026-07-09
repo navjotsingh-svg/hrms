@@ -1,4 +1,5 @@
 import api, { getErrorMessage } from './api';
+import { renderDateTimeStackFromLabel } from './datetime-utils';
 import { composeActionGroup, renderViewLink } from './action-icons';
 import { bindPagination, bindPerPageSelect, readPerPage, renderListPagination } from './pagination';
 
@@ -116,7 +117,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             <td><span class="${priorityClass(item.priority)}">${item.priority_label}</span></td>
             <td><span class="company-status-pill ${statusClass(item.status)}">${item.status_label}</span></td>
             ${employeeCell}
-            <td>${item.updated_at_label || '—'}</td>
+            <td>${renderDateTimeStackFromLabel(item.updated_at_label)}</td>
             <td>${composeActionGroup({
                 view: renderViewLink(`${routes().helpdeskShow || '/helpdesk'}/${item.id}`, 'View ticket'),
             })}</td>

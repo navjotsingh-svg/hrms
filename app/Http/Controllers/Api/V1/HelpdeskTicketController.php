@@ -232,7 +232,7 @@ class HelpdeskTicketController extends Controller
 
                 'is_internal' => $comment->is_internal,
 
-                'created_at_label' => $comment->created_at?->format('d M Y, h:i A'),
+                'created_at_label' => $comment->created_at?->labelStack(),
 
                 'user' => $comment->user ? [
 

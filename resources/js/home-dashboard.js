@@ -20,7 +20,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     const manageBtn = document.getElementById('homeDashboardManageBtn');
     const widgetModalEl = document.getElementById('homeDashboardWidgetModal');
     const widgetOptions = document.getElementById('homeDashboardWidgetOptions');
-    const saveWidgetsBtn = document.getElementById('homeDashboardSaveWidgetsBtn');
+    const savedCountEl = document.getElementById('homeDashboardSavedCount');
     const widgetModal = widgetModalEl ? Modal.getOrCreateInstance(widgetModalEl) : null;
     const rangePresetEl = document.getElementById('homeDashboardRangePreset');
     const customRangeWrap = document.getElementById('homeDashboardCustomRange');
@@ -33,9 +33,13 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     let availableWidgets = [];
     let activeWidgets = [];
+    let galleryTabs = [];
+    let activeGalleryTab = 'leave';
     let loadRequestId = 0;
     let customRangePending = false;
+    let addingWidgetKey = null;
     let currentRange = resolveClientDateRange('this_month');
+
     const showAlert = (message, type = 'success') => {
         if (!alertBox) return;
         alertBox.className = `alert alert-${type} alert-dismissible fade show`;
@@ -113,15 +117,22 @@ document.addEventListener('DOMContentLoaded', async () => {
 
         updateRangeSummary();
     };
+
     const destroyCharts = () => {
         chartInstances.forEach((chart) => chart.destroy());
         chartInstances.clear();
     };
 
+    const chartJsType = (catalog = {}) => {
+        if (catalog.chart_type === 'line') return 'line';
+        if (catalog.chart_type === 'bar') return 'bar';
+        return 'doughnut';
+    };
+
     const renderChart = (canvas, widget) => {
         const catalog = widget.catalog || {};
         const data = widget.data || { labels: [], series: [] };
-        const type = catalog.chart_type === 'bar' ? 'bar' : 'doughnut';
+        const type = chartJsType(catalog);
         const chartLabel = catalog.label || 'Count';
         const hasData = (data.series || []).some((value) => Number(value) > 0);
 
@@ -145,8 +156,12 @@ document.addEventListener('DOMContentLoaded', async () => {
                 datasets: [{
                     label: chartLabel,
                     data: data.series || [],
-                    backgroundColor: CHART_COLORS,
-                    borderWidth: 0,
+                    backgroundColor: type === 'line' ? CHART_COLORS[0] : CHART_COLORS,
+                    borderColor: CHART_COLORS[0],
+                    borderWidth: type === 'line' ? 2 : 0,
+                    tension: 0.35,
+                    fill: false,
+                    pointRadius: type === 'line' ? 4 : 0,
                 }],
             },
             options: {
@@ -154,8 +169,8 @@ document.addEventListener('DOMContentLoaded', async () => {
                 maintainAspectRatio: false,
                 plugins: {
                     legend: {
-                        display: type !== 'bar',
-                        position: type === 'bar' ? 'top' : 'bottom',
+                        display: type === 'doughnut',
+                        position: 'bottom',
                     },
                     title: {
                         display: Boolean(data.meta?.chart_title),
@@ -164,9 +179,9 @@ document.addEventListener('DOMContentLoaded', async () => {
                         font: { size: 13, weight: '600' },
                     },
                 },
-                scales: type === 'bar' ? {
+                scales: type === 'doughnut' ? {} : {
                     y: { beginAtZero: true, ticks: { precision: 0 } },
-                } : {},
+                },
             },
         });
 
@@ -214,6 +229,101 @@ document.addEventListener('DOMContentLoaded', async () => {
         });
     };
 
+    const savedWidgetKeys = () => new Set(activeWidgets.map((widget) => widget.key));
+
+    const updateSavedCount = () => {
+        if (savedCountEl) {
+            savedCountEl.textContent = `Saved Charts (${activeWidgets.length})`;
+        }
+    };
+
+    const previewClassForWidget = (widget) => {
+        const label = (widget.chart_type_label || widget.chart_type || '').toLowerCase();
+        if (label.includes('pie') || label.includes('donut') || label.includes('sunburst')) return 'pie';
+        if (label.includes('line')) return 'line';
+        if (label.includes('scatter')) return 'scatter';
+        if (label.includes('heatmap')) return 'heatmap';
+        if (label.includes('box')) return 'box';
+        return 'bar';
+    };
+
+    const renderGalleryPreview = (widget) => {
+        const previewType = previewClassForWidget(widget);
+        return `<div class="home-dashboard-gallery-preview home-dashboard-gallery-preview--${previewType}" aria-hidden="true"></div>`;
+    };
+
+    const renderGalleryCard = (widget, savedKeys) => {
+        const isSaved = savedKeys.has(widget.key);
+        const isAdding = addingWidgetKey === widget.key;
+        const typeLabel = widget.chart_type_label || (widget.chart_type === 'donut' ? 'Pie Chart' : 'Bar Chart');
+
+        return `
+            <div class="home-dashboard-gallery-card ${isSaved ? 'is-saved' : ''}">
+                <span class="home-dashboard-chart-type-badge">${typeLabel}</span>
+                ${renderGalleryPreview(widget)}
+                <p class="home-dashboard-gallery-card-title">${widget.label}</p>
+                <button
+                    type="button"
+                    class="btn btn-sm w-100 ${isSaved ? 'btn-outline-secondary' : 'btn-outline-primary'}"
+                    data-add-widget="${widget.key}"
+                    ${isSaved || isAdding ? 'disabled' : ''}
+                >
+                    ${isAdding ? 'Adding…' : (isSaved ? 'Added' : 'Add to Dashboard')}
+                </button>
+            </div>
+        `;
+    };
+
+    const renderGalleryGrid = (widgets, savedKeys) => {
+        if (!widgets.length) {
+            return '<p class="text-muted small mb-0">No charts available in this tab for your role.</p>';
+        }
+
+        return `<div class="home-dashboard-gallery-grid">${widgets.map((widget) => renderGalleryCard(widget, savedKeys)).join('')}</div>`;
+    };
+
+    const renderGallery = () => {
+        if (!widgetOptions) return;
+
+        const savedKeys = savedWidgetKeys();
+        const recommended = availableWidgets.filter((widget) => widget.recommended);
+        const tabWidgets = availableWidgets.filter((widget) => widget.category === activeGalleryTab);
+        const tabsHtml = galleryTabs.map((tab) => `
+            <button
+                type="button"
+                class="home-dashboard-gallery-tab ${tab.key === activeGalleryTab ? 'is-active' : ''}"
+                data-gallery-tab="${tab.key}"
+            >${tab.label}</button>
+        `).join('');
+
+        widgetOptions.innerHTML = `
+            <section class="home-dashboard-gallery-section mb-4">
+                <button type="button" class="home-dashboard-gallery-section-toggle" data-gallery-section="recommended">
+                    <span>Recommended Charts</span>
+                    <span class="home-dashboard-gallery-chevron" aria-hidden="true"></span>
+                </button>
+                <div class="home-dashboard-gallery-section-body" id="homeDashboardRecommendedSection">
+                    ${renderGalleryGrid(recommended, savedKeys)}
+                </div>
+            </section>
+
+            <section class="home-dashboard-gallery-section">
+                <button type="button" class="home-dashboard-gallery-section-toggle" data-gallery-section="all">
+                    <span>All Charts</span>
+                    <span class="home-dashboard-gallery-chevron" aria-hidden="true"></span>
+                </button>
+                <div class="home-dashboard-gallery-section-body" id="homeDashboardAllChartsSection">
+                    <div class="home-dashboard-gallery-tabs" role="tablist">${tabsHtml}</div>
+                    <div class="home-dashboard-gallery-tab-panel">
+                        ${renderGalleryGrid(tabWidgets, savedKeys)}
+                    </div>
+                </div>
+            </section>
+        `;
+
+        updateSavedCount();
+    };
+
     const load = async () => {
         const requestId = ++loadRequestId;
         root?.classList.add('home-dashboard-loading');
@@ -227,9 +337,14 @@ document.addEventListener('DOMContentLoaded', async () => {
 
             availableWidgets = data.data?.available_widgets || [];
             activeWidgets = data.data?.widgets || [];
+            galleryTabs = data.data?.gallery_tabs || [];
+            if (!galleryTabs.some((tab) => tab.key === activeGalleryTab)) {
+                activeGalleryTab = galleryTabs[0]?.key || 'leave';
+            }
             currentRange = data.data?.date_range || currentRange;
             syncRangeControls();
             renderWidgets();
+            updateSavedCount();
         } catch (error) {
             if (requestId !== loadRequestId) {
                 return;
@@ -263,6 +378,33 @@ document.addEventListener('DOMContentLoaded', async () => {
         updateRangeSummary();
         await load();
     };
+
+    const addWidgetToDashboard = async (widgetKey) => {
+        const keys = activeWidgets.map((widget) => widget.key);
+        if (keys.includes(widgetKey)) {
+            return;
+        }
+
+        addingWidgetKey = widgetKey;
+        renderGallery();
+
+        try {
+            const { data } = await api.put('/home/dashboard/widgets', {
+                widgets: [...keys, widgetKey],
+                ...rangeParams(),
+            });
+            activeWidgets = data.data?.widgets || [];
+            renderWidgets();
+            renderGallery();
+            showAlert('Chart added to dashboard.');
+        } catch (error) {
+            showAlert(getErrorMessage(error), 'danger');
+        } finally {
+            addingWidgetKey = null;
+            renderGallery();
+        }
+    };
+
     rangePresetEl?.addEventListener('change', async () => {
         const preset = rangePresetEl.value;
 
@@ -276,63 +418,22 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     applyRangeBtn?.addEventListener('click', applyRangeSelection);
 
-    const openManageModal = () => {
-        if (!widgetOptions) return;
-
-        const selected = new Set(activeWidgets.map((widget) => widget.key));
-        const grouped = availableWidgets.reduce((acc, widget) => {
-            const category = widget.category || 'other';
-            if (!acc[category]) {
-                acc[category] = [];
-            }
-            acc[category].push(widget);
-            return acc;
-        }, {});
-
-        widgetOptions.innerHTML = Object.entries(grouped).map(([category, widgets]) => `
-            <div class="mb-3">
-                <h6 class="text-uppercase text-muted small mb-2">${category.replace(/_/g, ' ')}</h6>
-                ${widgets.map((widget) => `
-                    <div class="form-check mb-2">
-                        <input class="form-check-input" type="checkbox" value="${widget.key}" id="widget-${widget.key}" ${selected.has(widget.key) ? 'checked' : ''}>
-                        <label class="form-check-label" for="widget-${widget.key}">
-                            <span class="fw-semibold">${widget.label}</span>
-                            <span class="d-block small text-muted">${widget.description || ''}</span>
-                        </label>
-                    </div>
-                `).join('')}
-            </div>
-        `).join('');
-
+    manageBtn?.addEventListener('click', () => {
+        renderGallery();
         widgetModal?.show();
-    };
+    });
 
-    manageBtn?.addEventListener('click', openManageModal);
-
-    saveWidgetsBtn?.addEventListener('click', async () => {
-        const widgets = Array.from(widgetOptions?.querySelectorAll('input[type="checkbox"]:checked') || [])
-            .map((input) => input.value);
-
-        if (!widgets.length) {
-            showAlert('Select at least one widget.', 'warning');
+    widgetOptions?.addEventListener('click', async (event) => {
+        const tabBtn = event.target.closest('[data-gallery-tab]');
+        if (tabBtn) {
+            activeGalleryTab = tabBtn.dataset.galleryTab;
+            renderGallery();
             return;
         }
 
-        saveWidgetsBtn.disabled = true;
-
-        try {
-            const { data } = await api.put('/home/dashboard/widgets', {
-                widgets,
-                ...rangeParams(),
-            });
-            activeWidgets = data.data?.widgets || [];
-            widgetModal?.hide();
-            renderWidgets();
-            showAlert(data.message || 'Dashboard updated.');
-        } catch (error) {
-            showAlert(getErrorMessage(error), 'danger');
-        } finally {
-            saveWidgetsBtn.disabled = false;
+        const addBtn = event.target.closest('[data-add-widget]');
+        if (addBtn?.dataset.addWidget) {
+            await addWidgetToDashboard(addBtn.dataset.addWidget);
         }
     });
 

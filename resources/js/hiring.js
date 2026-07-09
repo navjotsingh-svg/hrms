@@ -12,6 +12,7 @@ import {
     readPerPage,
     renderListPagination,
 } from './pagination';
+import { renderDateTimeStack } from './datetime-utils';
 
 const cfg = window.HRMS_HIRING || {};
 const page = cfg.page || 'overview';
@@ -88,11 +89,7 @@ const renderPagination = (prefix, pagination, onPage) => {
     }
 };
 
-const formatDateTime = (value) => {
-    if (!value) return '—';
-    const date = new Date(value);
-    return Number.isNaN(date.getTime()) ? value : date.toLocaleString();
-};
+const formatDateTime = (value) => renderDateTimeStack(value);
 
 const toDatetimeLocal = (value) => {
     if (!value) return '';

@@ -27,8 +27,29 @@
                     </div>
                 @endif
                 <div class="col-md-2">
-                    <label for="activityLogDate" class="form-label">Date</label>
-                    <input type="date" class="form-control" id="activityLogDate">
+                    <label for="activityLogRangePreset" class="form-label">Period</label>
+                    <select class="form-select" id="activityLogRangePreset">
+                        <option value="today" selected>Today</option>
+                        <option value="yesterday">Yesterday</option>
+                        <option value="this_week">This Week</option>
+                        <option value="this_month">This Month</option>
+                        <option value="custom">Custom</option>
+                    </select>
+                </div>
+                <div class="col-md-4 d-none" id="activityLogCustomRange">
+                    <div class="row g-2 align-items-end">
+                        <div class="col-md-4">
+                            <label for="activityLogFromDate" class="form-label">From</label>
+                            <input type="date" class="form-control" id="activityLogFromDate">
+                        </div>
+                        <div class="col-md-4">
+                            <label for="activityLogToDate" class="form-label">To</label>
+                            <input type="date" class="form-control" id="activityLogToDate">
+                        </div>
+                        <div class="col-md-4">
+                            <button type="button" class="btn btn-primary w-100" id="activityLogApplyRangeBtn">Apply</button>
+                        </div>
+                    </div>
                 </div>
                 <div class="col-md-2">
                     <label for="activityLogModule" class="form-label">Module</label>
@@ -59,6 +80,9 @@
                 <div class="col-md-3">
                     <label for="activityLogSearch" class="form-label">Search</label>
                     <input type="search" class="form-control" id="activityLogSearch" placeholder="User, action, message, reason…">
+                </div>
+                <div class="col-12">
+                    <p class="text-muted small mb-0" id="activityLogRangeSummary"></p>
                 </div>
             </div>
         </div>

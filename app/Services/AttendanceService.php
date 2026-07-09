@@ -457,6 +457,23 @@ class AttendanceService
             }
         }
 
+        if ($employee->last_working_date) {
+            $lastWorkingDate = $employee->last_working_date->toDateString();
+
+            if ($lastWorkingDate < $periodStart) {
+                return [
+                    'month_days' => $daysInMonth,
+                    'payable_days' => 0.0,
+                    'lop_days' => 0.0,
+                    'paid_days' => 0.0,
+                ];
+            }
+
+            if ($lastWorkingDate < $periodEnd) {
+                $periodEnd = $lastWorkingDate;
+            }
+        }
+
         if ($periodEnd < $periodStart) {
             return [
                 'month_days' => $daysInMonth,

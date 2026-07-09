@@ -106,7 +106,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
                     : '',
 
-            })}</td>
+            }, { reserveCancelSlot: true })}</td>
 
         </tr>`;
 

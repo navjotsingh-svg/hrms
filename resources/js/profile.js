@@ -1,6 +1,7 @@
 import { Modal, Tab } from 'bootstrap';
 import api, { getErrorMessage } from './api';
 import { applyBackendErrors, bindUploadProgress, setFieldError, setSubmitLoading } from './form-utils';
+import { renderDateTimeStack } from './datetime-utils';
 import { initRichTextEditor } from './rich-text-editor';
 import { renderReviewIconActionGroup, renderViewDocumentIconButton, renderDeleteDocumentIconButton, renderReviewIconActions } from './review-actions';
 import { patchProfileReviewAction } from './request-review';
@@ -133,17 +134,7 @@ const formatDate = (value) => {
     });
 };
 
-const formatDateTime = (value) => {
-    if (!value) {
-        return '—';
-    }
-
-    return new Date(value).toLocaleDateString('en-IN', {
-        day: '2-digit',
-        month: 'short',
-        year: 'numeric',
-    });
-};
+const formatDateTime = (value) => renderDateTimeStack(value);
 
 const formatReviewCell = (item) => {
     if (item.status === 'pending' || !item.reviewed_by?.name) {

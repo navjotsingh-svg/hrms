@@ -1,8 +1,12 @@
-export const todayDateInput = () => new Date().toISOString().slice(0, 10);
+import { localDateInputValue } from './form-utils';
+
+export const todayDateInput = () => localDateInputValue();
 
 export const monthStartDateInput = () => {
     const today = new Date();
-    return `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-01`;
+    today.setHours(0, 0, 0, 0);
+
+    return localDateInputValue(new Date(today.getFullYear(), today.getMonth(), 1));
 };
 
 export const resolveClientDateRange = (preset, fromDate = '', toDate = '') => {
@@ -17,13 +21,10 @@ export const resolveClientDateRange = (preset, fromDate = '', toDate = '') => {
         };
     }
 
-    const end = new Date(today);
-    end.setHours(23, 59, 59, 999);
-
     if (preset === 'yesterday') {
         const day = new Date(today);
         day.setDate(day.getDate() - 1);
-        const date = day.toISOString().slice(0, 10);
+        const date = localDateInputValue(day);
 
         return { preset, from_date: date, to_date: date };
     }
@@ -38,13 +39,14 @@ export const resolveClientDateRange = (preset, fromDate = '', toDate = '') => {
 
         return {
             preset,
-            from_date: start.toISOString().slice(0, 10),
-            to_date: weekEnd.toISOString().slice(0, 10),
+            from_date: localDateInputValue(start),
+            to_date: localDateInputValue(weekEnd),
         };
     }
 
     if (preset === 'today') {
-        const date = today.toISOString().slice(0, 10);
+        const date = localDateInputValue(today);
+
         return { preset, from_date: date, to_date: date };
     }
 
@@ -53,8 +55,8 @@ export const resolveClientDateRange = (preset, fromDate = '', toDate = '') => {
 
     return {
         preset: preset || 'this_month',
-        from_date: monthStart.toISOString().slice(0, 10),
-        to_date: monthEnd.toISOString().slice(0, 10),
+        from_date: localDateInputValue(monthStart),
+        to_date: localDateInputValue(monthEnd),
     };
 };
 
