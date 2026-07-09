@@ -38,6 +38,7 @@
             </div>
         </div>
 
+        @include('partials.list-pagination-header', ['perPageId' => 'assetsPerPage'])
         <div class="table-responsive">
             <table class="companies-table table mb-0">
                 <thead>
@@ -56,14 +57,14 @@
             </table>
         </div>
 
-        <div class="content-card-body border-top companies-pagination-footer" id="assetsPagination">
-            <div class="d-flex flex-wrap align-items-center justify-content-between gap-3">
-                <div class="small text-muted" id="assetsPaginationInfo">Loading pagination...</div>
-                <nav aria-label="Assets pagination">
-                    <ul class="pagination pagination-sm mb-0" id="assetsPaginationList"></ul>
-                </nav>
-            </div>
-        </div>
+        @include('partials.list-pagination-footer', [
+            'infoId' => 'assetsPaginationInfo',
+            'listId' => 'assetsPaginationList',
+            'perPageId' => 'assetsPerPage',
+            'wrapId' => 'assetsPagination',
+            'ariaLabel' => 'Assets pagination',
+            'infoText' => 'Loading pagination...',
+        ])
     </div>
     @vite(['resources/js/assets-index.js'])
 @endsection

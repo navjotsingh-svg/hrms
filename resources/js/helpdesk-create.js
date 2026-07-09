@@ -1,5 +1,6 @@
 import api, { getErrorMessage } from './api';
 import { compressImageFiles } from './image-compress';
+import { aiSuggestHelpdesk } from './ai-tools';
 
 const routes = () => window.HRMS_WEB_ROUTES || {};
 
@@ -11,6 +12,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     const prioritySelect = document.getElementById('priority');
     const attachmentsInput = document.getElementById('attachments');
     const submitBtn = document.getElementById('helpdeskCreateBtn');
+    const aiSuggestBtn = document.getElementById('helpdeskAiSuggestBtn');
     const addCategoryBtn = document.getElementById('helpdeskAddCategoryBtn');
     const categoryForm = document.getElementById('helpdeskCategoryForm');
     const categoryNameInput = document.getElementById('helpdeskCategoryName');
@@ -77,6 +79,39 @@ document.addEventListener('DOMContentLoaded', async () => {
     } catch (error) {
         showAlert(getErrorMessage(error), 'danger');
     }
+
+    aiSuggestBtn?.addEventListener('click', async () => {
+        const description = form.description.value.trim();
+
+        if (description.length < 10) {
+            showAlert('Enter at least a short note about your issue first.', 'warning');
+            return;
+        }
+
+        aiSuggestBtn.disabled = true;
+        aiSuggestBtn.textContent = 'AI working…';
+
+        try {
+            const suggestion = await aiSuggestHelpdesk(description);
+            form.subject.value = suggestion.subject || form.subject.value;
+            form.description.value = suggestion.description || description;
+
+            if (suggestion.helpdesk_category_id) {
+                form.category.value = String(suggestion.helpdesk_category_id);
+            }
+
+            if (suggestion.priority) {
+                form.priority.value = suggestion.priority;
+            }
+
+            showAlert('Ticket draft suggested by AI. Review before submitting.');
+        } catch (error) {
+            showAlert(getErrorMessage(error), 'danger');
+        } finally {
+            aiSuggestBtn.disabled = false;
+            aiSuggestBtn.textContent = 'AI suggest';
+        }
+    });
 
     form?.addEventListener('submit', async (event) => {
         event.preventDefault();

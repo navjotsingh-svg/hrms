@@ -27,6 +27,7 @@ class EmployeeSalaryRevisionResource extends JsonResource
             'salary_effective_from' => $this->salary_effective_from?->format('Y-m-d'),
             'salary_payout_from' => $this->salary_payout_from?->format('Y-m-d'),
             'revision_notes' => $this->revision_notes,
+            'revision_type' => $this->revision_type,
             'revised_at' => $this->revised_at?->toIso8601String(),
             'revised_by' => $this->whenLoaded('revisedBy', fn () => $this->revisedBy ? [
                 'id' => $this->revisedBy->id,

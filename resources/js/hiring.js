@@ -1,10 +1,17 @@
 import { Modal } from 'bootstrap';
 import api, { getErrorMessage } from './api';
+import { aiGenerateJobDescription } from './ai-tools';
 import {
     renderActionGroup,
     renderEditIconButton,
     renderViewIconButton,
 } from './action-icons';
+import {
+    bindPagination,
+    bindPerPageSelect,
+    readPerPage,
+    renderListPagination,
+} from './pagination';
 
 const cfg = window.HRMS_HIRING || {};
 const page = cfg.page || 'overview';
@@ -60,30 +67,25 @@ const setHeaderAction = (html) => {
     if (el) el.innerHTML = html;
 };
 
+const paginationBoundPrefixes = new Set();
+
 const renderPagination = (prefix, pagination, onPage) => {
-    const info = document.getElementById(`${prefix}PaginationInfo`);
     const list = document.getElementById(`${prefix}PaginationList`);
+    const perPageSelectEl = document.getElementById(`${prefix}PerPage`);
 
-    if (info && pagination) {
-        info.textContent = pagination.total
-            ? `Showing ${pagination.from}–${pagination.to} of ${pagination.total}`
-            : 'No records';
-    }
-
-    if (!list || !pagination) return;
-
-    list.innerHTML = '';
-    for (let p = 1; p <= pagination.last_page; p += 1) {
-        list.insertAdjacentHTML('beforeend', `
-            <li class="page-item ${p === pagination.current_page ? 'active' : ''}">
-                <button type="button" class="page-link" data-page="${p}">${p}</button>
-            </li>
-        `);
-    }
-
-    list.querySelectorAll('[data-page]').forEach((btn) => {
-        btn.addEventListener('click', () => onPage(Number(btn.dataset.page)));
+    renderListPagination({
+        infoEl: document.getElementById(`${prefix}PaginationInfo`),
+        listEl: list,
+        perPageSelectEl,
+        pagination,
+        emptyMessage: 'No records',
     });
+
+    if (!paginationBoundPrefixes.has(prefix)) {
+        paginationBoundPrefixes.add(prefix);
+        bindPagination(list, onPage);
+        bindPerPageSelect(perPageSelectEl, () => onPage(1));
+    }
 };
 
 const formatDateTime = (value) => {
@@ -332,7 +334,7 @@ const initRequisitions = async () => {
 
     const load = async (pageNum = 1) => {
         currentPage = pageNum;
-        const params = { page: pageNum, per_page: 10 };
+        const params = { page: pageNum, per_page: readPerPage(document.getElementById('requisitionsPerPage')) };
         const status = document.getElementById('requisitionStatusFilter')?.value;
         const search = document.getElementById('requisitionSearchFilter')?.value?.trim();
         if (status) params.status = status;
@@ -459,7 +461,7 @@ const initJobs = async () => {
 
     const load = async (pageNum = 1) => {
         currentPage = pageNum;
-        const params = { page: pageNum, per_page: 10 };
+        const params = { page: pageNum, per_page: readPerPage(document.getElementById('jobsPerPage')) };
         const status = document.getElementById('jobStatusFilter')?.value;
         const search = document.getElementById('jobSearchFilter')?.value?.trim();
         if (status) params.status = status;
@@ -530,6 +532,34 @@ const initJobs = async () => {
                 await load(currentPage);
             } catch (error) {
                 showAlert(getErrorMessage(error), 'danger');
+            }
+        });
+
+        document.getElementById('jobAiGenerateBtn')?.addEventListener('click', async () => {
+            const title = document.getElementById('jobTitle')?.value?.trim();
+            const button = document.getElementById('jobAiGenerateBtn');
+
+            if (!title) {
+                showAlert('Enter a job title first.', 'warning');
+                return;
+            }
+
+            button.disabled = true;
+            button.textContent = 'AI working…';
+
+            try {
+                const result = await aiGenerateJobDescription({
+                    title,
+                    department: document.getElementById('jobLocation')?.value?.trim() || null,
+                    requirements: document.getElementById('jobDescriptionHtml')?.value?.trim() || null,
+                });
+                document.getElementById('jobDescriptionHtml').value = result.body_html || '';
+                showAlert('Job description generated. Review before saving.');
+            } catch (error) {
+                showAlert(getErrorMessage(error), 'danger');
+            } finally {
+                button.disabled = false;
+                button.textContent = 'AI generate';
             }
         });
     }
@@ -618,7 +648,7 @@ const initCandidates = async () => {
 
     const load = async (pageNum = 1) => {
         currentPage = pageNum;
-        const params = { page: pageNum, per_page: 10 };
+        const params = { page: pageNum, per_page: readPerPage(document.getElementById('candidatesPerPage')) };
         const stage = document.getElementById('candidateStageFilter')?.value;
         const search = document.getElementById('candidateSearchFilter')?.value?.trim();
         if (stage) params.stage = stage;
@@ -720,7 +750,7 @@ const initInterviews = async () => {
 
     const load = async (pageNum = 1) => {
         currentPage = pageNum;
-        const params = { page: pageNum, per_page: 10 };
+        const params = { page: pageNum, per_page: readPerPage(document.getElementById('interviewsPerPage')) };
         const status = document.getElementById('interviewStatusFilter')?.value;
         if (status) params.status = status;
 
@@ -828,7 +858,7 @@ const initOffers = async () => {
 
     const load = async (pageNum = 1) => {
         currentPage = pageNum;
-        const params = { page: pageNum, per_page: 10 };
+        const params = { page: pageNum, per_page: readPerPage(document.getElementById('offersPerPage')) };
         const status = document.getElementById('offerStatusFilter')?.value;
         if (status) params.status = status;
 
@@ -929,7 +959,9 @@ const initTemplates = async () => {
 
     const load = async (pageNum = 1) => {
         currentPage = pageNum;
-        const { data } = await api.get('/hiring-templates', { params: { page: pageNum, per_page: 10 } });
+        const { data } = await api.get('/hiring-templates', {
+            params: { page: pageNum, per_page: readPerPage(document.getElementById('templatesPerPage')) },
+        });
         const templates = data.data.templates || [];
 
         if (!templates.length) {

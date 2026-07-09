@@ -1,5 +1,6 @@
 import api, { getErrorMessage } from './api';
 import { composeActionGroup, renderViewLink } from './action-icons';
+import { bindPagination, bindPerPageSelect, readPerPage, renderListPagination } from './pagination';
 
 const routes = () => window.HRMS_WEB_ROUTES || {};
 
@@ -27,11 +28,13 @@ document.addEventListener('DOMContentLoaded', async () => {
     const filterReset = document.getElementById('filterReset');
     const paginationInfo = document.getElementById('helpdeskPaginationInfo');
     const paginationList = document.getElementById('helpdeskPaginationList');
+    const perPageSelect = document.getElementById('helpdeskPerPage');
     const openCount = document.getElementById('helpdeskOpenCount');
     const addCategoryBtn = document.getElementById('helpdeskIndexAddCategoryBtn');
     const categoryForm = document.getElementById('helpdeskCategoryForm');
     const categoryNameInput = document.getElementById('helpdeskCategoryName');
     let currentPage = 1;
+    let currentPerPage = readPerPage(perPageSelect);
     let meta = null;
     const pageRoot = document.getElementById('helpdeskPageRoot');
     let canManage = pageRoot?.dataset.canManage === '1';
@@ -124,7 +127,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         currentPage = page;
         const params = {
             page,
-            per_page: 10,
+            per_page: currentPerPage,
             status: filterStatus?.value || undefined,
             helpdesk_category_id: filterCategory?.value || undefined,
             priority: filterPriority?.value || undefined,
@@ -142,26 +145,21 @@ document.addEventListener('DOMContentLoaded', async () => {
             tableBody.innerHTML = tickets.map((item) => renderRow(item)).join('');
         }
 
-        if (paginationInfo && pagination) {
-            paginationInfo.textContent = pagination.total
-                ? `Showing ${pagination.from}–${pagination.to} of ${pagination.total}`
-                : 'No records';
-        }
-
-        if (paginationList && pagination) {
-            paginationList.innerHTML = '';
-            for (let p = 1; p <= pagination.last_page; p += 1) {
-                paginationList.insertAdjacentHTML('beforeend', `
-                    <li class="page-item ${p === pagination.current_page ? 'active' : ''}">
-                        <button type="button" class="page-link" data-page="${p}">${p}</button>
-                    </li>
-                `);
-            }
-            paginationList.querySelectorAll('[data-page]').forEach((btn) => {
-                btn.addEventListener('click', () => load(Number(btn.dataset.page)).catch((e) => showAlert(getErrorMessage(e), 'danger')));
-            });
-        }
+        renderListPagination({
+            infoEl: paginationInfo,
+            listEl: paginationList,
+            perPageSelectEl: perPageSelect,
+            pagination,
+            itemLabel: 'tickets',
+            emptyMessage: 'No records',
+        });
     };
+
+    bindPagination(paginationList, (page) => load(page).catch((e) => showAlert(getErrorMessage(e), 'danger')));
+    bindPerPageSelect(perPageSelect, (perPage) => {
+        currentPerPage = perPage;
+        load(1).catch((e) => showAlert(getErrorMessage(e), 'danger'));
+    });
 
     filterStatus?.addEventListener('change', () => load(1).catch((e) => showAlert(getErrorMessage(e), 'danger')));
     filterCategory?.addEventListener('change', () => load(1).catch((e) => showAlert(getErrorMessage(e), 'danger')));

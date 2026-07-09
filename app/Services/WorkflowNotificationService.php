@@ -12,8 +12,12 @@ use App\Models\UserNotification;
 use App\Models\WfhRequest;
 use App\Models\AssetRequest;
 use App\Models\AssetRequestItem;
+use App\Models\Employee;
 use App\Models\ExitCase;
 use App\Models\ResignationRequest;
+use App\Models\TimesheetComment;
+use Carbon\Carbon;
+use Illuminate\Database\Eloquent\Collection as EloquentCollection;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Mail;
 
@@ -339,6 +343,137 @@ class WorkflowNotificationService
                 'Reason' => $request->reason ?: '—',
             ],
         );
+    }
+
+    public function notifyTimesheetSubmitted(
+        Employee $employee,
+        User $submittedBy,
+        string $workDate,
+        EloquentCollection $entries,
+    ): void {
+        $totalHours = round($entries->sum('hours'), 2);
+        $projectNames = $entries->loadMissing('project')->pluck('project.name')->filter()->unique()->implode(', ');
+        $dateLabel = Carbon::parse($workDate)->format('d M Y');
+
+        $body = sprintf(
+            '%s submitted a daily report for %s (%s hour(s) across %s).',
+            $employee->full_name,
+            $dateLabel,
+            $totalHours,
+            $projectNames ?: 'projects',
+        );
+
+        $recipients = $this->recipientService
+            ->managersInChainRecipientsForEmployee($employee, $submittedBy);
+
+        foreach ($recipients as $recipient) {
+            $this->persistNotification(
+                companyId: (int) $employee->company_id,
+                userId: $recipient->id,
+                type: UserNotification::TYPE_TIMESHEET_SUBMITTED,
+                title: 'Daily report submitted',
+                body: $body,
+                actionUrl: route('web.timesheets.index').'?employee_id='.$employee->id.'&work_date='.$workDate,
+                relatedType: 'timesheet_day',
+                relatedId: (int) $employee->id,
+            );
+
+            try {
+                Mail::to($recipient->email)->send(new WorkflowActionMail(
+                    recipientName: $recipient->name,
+                    subjectLine: 'Daily report submitted – '.$employee->full_name,
+                    intro: 'A team member submitted their daily status report.',
+                    details: [
+                        'Employee' => $employee->full_name,
+                        'Date' => $dateLabel,
+                        'Total hours' => (string) $totalHours,
+                        'Projects' => $projectNames ?: '—',
+                    ],
+                    actionUrl: route('web.timesheets.index').'?employee_id='.$employee->id.'&work_date='.$workDate,
+                    actionLabel: 'View report',
+                ));
+            } catch (\Throwable $exception) {
+                Log::warning('Workflow notification email failed.', [
+                    'recipient_id' => $recipient->id,
+                    'type' => UserNotification::TYPE_TIMESHEET_SUBMITTED,
+                    'related_id' => $employee->id,
+                    'message' => $exception->getMessage(),
+                ]);
+            }
+        }
+    }
+
+    public function notifyTimesheetComment(
+        TimesheetComment $comment,
+        User $author,
+        bool $isReply,
+    ): void {
+        $comment->loadMissing(['employee.user', 'project']);
+        $employee = $comment->employee;
+
+        if (! $employee) {
+            return;
+        }
+
+        $workDate = $comment->work_date?->format('Y-m-d') ?? '';
+        $dateLabel = $workDate !== '' ? Carbon::parse($workDate)->format('d M Y') : 'the selected date';
+        $projectName = $comment->project?->name ?? 'project';
+        $actionUrl = route('web.timesheets.index').'?employee_id='.$employee->id.'&work_date='.$workDate;
+        $authorIsEmployee = $employee->user && (int) $employee->user->id === (int) $author->id;
+
+        if ($authorIsEmployee) {
+            $recipients = $this->recipientService
+                ->managersInChainRecipientsForEmployee($employee, $author);
+
+            $title = 'Reply on daily report';
+            $intro = $employee->full_name.' replied to a comment on their daily report.';
+        } else {
+            $employeeUser = $employee->user;
+
+            if (! $employeeUser || (int) $employeeUser->id === (int) $author->id) {
+                return;
+            }
+
+            $recipients = collect([$employeeUser]);
+            $title = $isReply ? 'New reply on your daily report' : 'Feedback on your daily report';
+            $intro = $author->name.' left a comment on your '.$projectName.' submission for '.$dateLabel.'.';
+        }
+
+        foreach ($recipients as $recipient) {
+            $this->persistNotification(
+                companyId: (int) $employee->company_id,
+                userId: $recipient->id,
+                type: UserNotification::TYPE_TIMESHEET_COMMENT,
+                title: $title,
+                body: $intro,
+                actionUrl: $actionUrl,
+                relatedType: 'timesheet_comment',
+                relatedId: (int) $comment->id,
+            );
+
+            try {
+                Mail::to($recipient->email)->send(new WorkflowActionMail(
+                    recipientName: $recipient->name,
+                    subjectLine: $title.' – '.$employee->full_name,
+                    intro: $intro,
+                    details: [
+                        'Employee' => $employee->full_name,
+                        'Date' => $dateLabel,
+                        'Project' => $projectName,
+                        'Comment' => $comment->body,
+                    ],
+                    actionUrl: $actionUrl,
+                    actionLabel: 'View report',
+                ));
+            } catch (\Throwable $exception) {
+                Log::warning('Workflow notification email failed.', [
+                    'recipient_id' => $recipient->id,
+                    'type' => UserNotification::TYPE_TIMESHEET_COMMENT,
+                    'related_id' => $comment->id,
+                    'message' => $exception->getMessage(),
+                ]);
+            }
+        }
     }
 
     public function notifyLeaveDecision(LeaveRequest $request, User $reviewedBy, string $decision): void

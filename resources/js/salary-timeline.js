@@ -36,6 +36,8 @@ const formatDateTime = (value) => {
     });
 };
 
+const formatBool = (value) => (value ? 'Yes' : 'No');
+
 const subtractDay = (dateStr) => {
     if (!dateStr) {
         return null;
@@ -73,7 +75,17 @@ const formatPeriod = (from, to) => {
     return `${formatDate(from)} to ${to ? formatDate(to) : 'Present'}`;
 };
 
-const formatBool = (value) => (value ? 'Yes' : 'No');
+const revisionTimelineTitle = (revisionType) => {
+    if (revisionType === 'increment') {
+        return 'Salary Increment';
+    }
+
+    if (revisionType === 'correction') {
+        return 'Salary Correction';
+    }
+
+    return 'Salary Revised';
+};
 
 const renderSalarySnapshotRows = (salary = {}) => [
     ['Annual CTC', formatCurrency(salary.annual_ctc)],
@@ -135,8 +147,10 @@ export const buildSalaryTimelineEntries = (revisions = [], currentSalary = {}) =
 
         entries.push({
             type: 'revision',
-            title: 'Salary Revised',
-            markerClass: 'salary-timeline-marker--revision',
+            title: revisionTimelineTitle(revision.revision_type),
+            markerClass: revision.revision_type === 'increment'
+                ? 'salary-timeline-marker--increment'
+                : 'salary-timeline-marker--revision',
             updatedAt: revision.revised_at,
             updatedBy: revision.revised_by,
             notes: revision.revision_notes,

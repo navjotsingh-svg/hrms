@@ -16,8 +16,17 @@ class StoreEmployeeSalaryRequest extends FormRequest
 
     public function rules(): array
     {
-        return array_merge($this->employeeSalaryRules(), [
+        $action = $this->input('salary_action', 'add');
+
+        return [
+            'salary_action' => ['nullable', 'string', 'in:add,revise,increment'],
+            'annual_ctc' => ['required', 'numeric', 'min:1'],
+            'salary_effective_from' => [
+                $action === 'add' ? 'required' : 'nullable',
+                'date',
+            ],
+            'salary_payout_from' => ['nullable', 'date', 'after_or_equal:salary_effective_from'],
             'revision_notes' => ['nullable', 'string', 'max:500'],
-        ]);
+        ];
     }
 }

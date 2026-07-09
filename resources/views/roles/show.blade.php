@@ -10,6 +10,7 @@
         </div>
         <div class="d-flex flex-wrap gap-2">
             <button type="button" class="btn btn-outline-danger d-none" id="deleteRoleBtn">Delete role</button>
+            <button type="button" class="btn btn-outline-primary d-none" id="aiRoleAdviseBtn">AI suggest permissions</button>
             <button type="button" class="btn btn-outline-secondary d-none" id="resetRolePermissionsBtn">Reset to defaults</button>
             <button type="button" class="btn btn-primary d-none" id="saveRolePermissionsBtn">Save permissions</button>
             <a href="{{ route('web.masters.roles.index') }}" class="btn btn-outline-secondary">Back to roles</a>

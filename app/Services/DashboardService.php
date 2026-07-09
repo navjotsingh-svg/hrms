@@ -118,6 +118,7 @@ class DashboardService
                 ? ($this->requestHubService->summaryForUser($user)['pending_count'] ?? 0)
                 : 0,
             'show_pending_approvals' => $this->canSeePendingApprovals($user),
+            'show_my_requests' => $this->canSeeMyRequests($user),
             'new_joinees' => $scopeCompanyId !== null || $platformScope
                 ? $this->newJoinees($scopeCompanyId, platformScope: $platformScope)
                 : [],
@@ -138,6 +139,15 @@ class DashboardService
         }
 
         return $this->requestHubService->canReviewAny($user);
+    }
+
+    private function canSeeMyRequests(User $user): bool
+    {
+        if ($user->isSuperAdmin() || ! $user->company_id) {
+            return false;
+        }
+
+        return (bool) $user->employee;
     }
 
     private function greetingName(User $user): string

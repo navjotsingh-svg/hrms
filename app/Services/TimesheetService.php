@@ -7,6 +7,7 @@ use App\Models\Employee;
 use App\Models\Project;
 use App\Models\Role;
 use App\Models\TimesheetComment;
+use App\Models\TimesheetDayReport;
 use App\Models\TimesheetEntry;
 use App\Models\User;
 use Carbon\Carbon;
@@ -21,6 +22,7 @@ class TimesheetService
     public function __construct(
         private ProjectService $projectService,
         private EmployeeAccessService $employeeAccessService,
+        private WorkflowNotificationService $workflowNotificationService,
     ) {}
 
     public function entriesForDate(User $user, string $workDate, ?int $employeeId = null): Collection
@@ -61,14 +63,80 @@ class TimesheetService
             ->groupBy(fn (TimesheetEntry $entry) => $entry->work_date->format('Y-m-d'));
     }
 
+    public const MAX_RANGE_DAYS = 31;
+
+    /** @return SupportCollection<string, Collection<int, TimesheetEntry>> */
+    public function entriesForDateRange(User $user, string $fromDate, string $toDate, ?int $employeeId = null): SupportCollection
+    {
+        $employee = $this->resolveViewableEmployee($user, $employeeId);
+        $from = Carbon::parse($fromDate)->startOfDay();
+        $to = Carbon::parse($toDate)->startOfDay();
+
+        if ($to->lt($from)) {
+            throw ValidationException::withMessages([
+                'to_date' => ['To date must be on or after from date.'],
+            ]);
+        }
+
+        $dayCount = $from->diffInDays($to) + 1;
+
+        if ($dayCount > self::MAX_RANGE_DAYS) {
+            throw ValidationException::withMessages([
+                'to_date' => ['Date range cannot exceed '.self::MAX_RANGE_DAYS.' days.'],
+            ]);
+        }
+
+        return TimesheetEntry::query()
+            ->with('project')
+            ->where('employee_id', $employee->id)
+            ->whereDate('work_date', '>=', $fromDate)
+            ->whereDate('work_date', '<=', $toDate)
+            ->orderByDesc('work_date')
+            ->orderBy('start_time')
+            ->get()
+            ->groupBy(fn (TimesheetEntry $entry) => $entry->work_date->format('Y-m-d'));
+    }
+
+    public function dayReportForDate(User $user, string $workDate, ?int $employeeId = null): ?TimesheetDayReport
+    {
+        $employee = $this->resolveViewableEmployee($user, $employeeId);
+
+        return TimesheetDayReport::query()
+            ->where('employee_id', $employee->id)
+            ->whereDate('work_date', $workDate)
+            ->first();
+    }
+
+    /** @return array<string, mixed>|null */
+    public function formatDayReport(?TimesheetDayReport $report): ?array
+    {
+        if (! $report) {
+            return null;
+        }
+
+        return [
+            'done_today' => $report->done_today,
+            'blockers' => $report->blockers,
+            'plan_tomorrow' => $report->plan_tomorrow,
+        ];
+    }
+
     public function projectOptions(User $user): Collection
     {
         $employee = $this->requireOwnEmployee($user);
 
-        return $this->projectService->assignedToEmployee(
+        $projects = $this->projectService->assignedToEmployee(
             (int) $user->company_id,
             (int) $employee->id,
         );
+
+        $otherProject = $this->projectService->otherProjectForCompany((int) $user->company_id, $user);
+
+        if (! $projects->pluck('id')->contains($otherProject->id)) {
+            $projects = $projects->push($otherProject)->sortBy('name')->values();
+        }
+
+        return $projects;
     }
 
     /**
@@ -100,7 +168,7 @@ class TimesheetService
             ->values()
             ->all();
 
-        $groups = ($user->hasFullAccess() || $user->hasPermission('projects.manage') || $user->hasPermission('attendance.manage'))
+        $groups = $user->hasFullAccess()
             ? $this->teamGroupsForEmployees($user, collect($employees))
             : [];
 
@@ -185,7 +253,7 @@ class TimesheetService
             $this->assertProjectSubmissionExists($employeeId, $workDate, $projectId, (int) $user->company_id);
         }
 
-        return TimesheetComment::create([
+        $comment = TimesheetComment::create([
             'company_id' => $user->company_id,
             'employee_id' => $employeeId,
             'work_date' => $workDate,
@@ -193,47 +261,57 @@ class TimesheetService
             'user_id' => $user->id,
             'parent_id' => $parentId,
             'body' => $body,
-        ])->load(['user.role', 'replies.user.role']);
+        ])->load(['user.role', 'replies.user.role', 'project']);
+
+        $this->workflowNotificationService->notifyTimesheetComment(
+            $comment,
+            $user,
+            $parentId !== null,
+        );
+
+        return $comment;
     }
 
     public function submitDay(User $user, string $workDate, array $entries): Collection
     {
-        if (! Carbon::parse($workDate)->isToday()) {
+        if (Carbon::parse($workDate)->isFuture()) {
             throw ValidationException::withMessages([
-                'work_date' => 'You can only submit a day report for today. Past dates are view-only.',
+                'work_date' => 'You cannot submit a report for a future date.',
             ]);
         }
 
         $employee = $this->requireOwnEmployee($user);
-        $assignedProjectIds = $this->projectOptions($user)->pluck('id')->all();
+        $assignedProjects = $this->projectOptions($user)->keyBy('id');
+        $otherProject = $this->projectService->otherProjectForCompany((int) $user->company_id, $user);
 
-        $normalizedEntries = collect($entries)->map(function (array $entry) use ($assignedProjectIds, $workDate) {
+        $normalizedEntries = collect($entries)->map(function (array $entry) use ($assignedProjects, $workDate, $otherProject) {
             $projectId = (int) $entry['project_id'];
+            $project = $assignedProjects->get($projectId);
 
-            if (! in_array($projectId, $assignedProjectIds, true)) {
+            if (! $project) {
                 throw ValidationException::withMessages([
                     'entries' => 'One or more selected projects are not assigned to you.',
                 ]);
             }
 
-            $project = Project::query()->find($projectId);
-
-            if (! $project || $project->status !== Project::STATUS_ACTIVE) {
+            if ($project->status !== Project::STATUS_ACTIVE) {
                 throw ValidationException::withMessages([
                     'entries' => 'One or more selected projects are not active.',
                 ]);
             }
 
-            if ($project->start_date && Carbon::parse($workDate)->lt($project->start_date)) {
-                throw ValidationException::withMessages([
-                    'work_date' => 'Work date is before the project start date.',
-                ]);
-            }
+            if (! $this->projectService->isOtherProject($project)) {
+                if ($project->start_date && Carbon::parse($workDate)->lt($project->start_date)) {
+                    throw ValidationException::withMessages([
+                        'work_date' => 'Work date is before the project start date.',
+                    ]);
+                }
 
-            if ($project->end_date && Carbon::parse($workDate)->gt($project->end_date)) {
-                throw ValidationException::withMessages([
-                    'work_date' => 'Work date is after the project end date.',
-                ]);
+                if ($project->end_date && Carbon::parse($workDate)->gt($project->end_date)) {
+                    throw ValidationException::withMessages([
+                        'work_date' => 'Work date is after the project end date.',
+                    ]);
+                }
             }
 
             $hours = $this->calculateHours($entry['start_time'], $entry['end_time']);
@@ -244,6 +322,9 @@ class TimesheetService
                 'end_time' => $this->normalizeTime($entry['end_time']),
                 'hours' => $hours,
                 'notes' => $entry['notes'] ?? null,
+                'done_today' => trim((string) ($entry['done_today'] ?? '')) ?: null,
+                'blockers' => trim((string) ($entry['blockers'] ?? '')) ?: null,
+                'plan_tomorrow' => trim((string) ($entry['plan_tomorrow'] ?? '')) ?: null,
             ];
         });
 
@@ -271,10 +352,16 @@ class TimesheetService
                     'end_time' => $entry['end_time'],
                     'hours' => $entry['hours'],
                     'notes' => $entry['notes'],
+                    'done_today' => $entry['done_today'],
+                    'blockers' => $entry['blockers'],
+                    'plan_tomorrow' => $entry['plan_tomorrow'],
                 ]);
             }
 
-            return $this->entriesForDate($user, $workDate);
+            $entries = $this->entriesForDate($user, $workDate);
+            $this->workflowNotificationService->notifyTimesheetSubmitted($employee, $user, $workDate, $entries);
+
+            return $entries;
         });
     }
 
@@ -292,17 +379,7 @@ class TimesheetService
                 ->all();
         }
 
-        if (! $user->hasPermission('projects.manage') && ! $user->hasPermission('attendance.manage')) {
-            return [];
-        }
-
-        $ids = collect($this->employeeAccessService->subordinateIdsForUser($user));
-
-        if ($user->hasPermission('projects.manage')) {
-            $ids = $ids->merge($this->employeesOnSubordinateTeamLeadProjects($user))->unique();
-        }
-
-        return $ids
+        return collect($this->employeeAccessService->subordinateIdsForUser($user))
             ->map(fn ($id) => (int) $id)
             ->values()
             ->all();

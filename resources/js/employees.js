@@ -383,6 +383,27 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     const isProbationApplicable = () => form.querySelector('#probation_applicable')?.checked ?? false;
 
+    const isPaidEmployee = () => form.querySelector('#is_paid_employee')?.checked ?? true;
+
+    const togglePaidEmployeeUi = () => {
+        const paid = isPaidEmployee();
+        document.getElementById('nonPaidEmployeeSalaryNotice')?.classList.toggle('d-none', paid);
+
+        form.querySelectorAll('#annual_ctc, #salary_effective_from').forEach((input) => {
+            input.required = paid;
+            input.disabled = !paid;
+        });
+
+        form.querySelectorAll('.salary-required-mark').forEach((mark) => {
+            mark.classList.toggle('d-none', !paid);
+        });
+
+        if (!paid) {
+            setFieldError(form, 'annual_ctc', '');
+            setFieldError(form, 'salary_effective_from', '');
+        }
+    };
+
     const toggleProbationFields = () => {
         const show = isProbationApplicable();
         form.querySelectorAll('.probation-field').forEach((element) => {
@@ -650,7 +671,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             return fields;
         }
         if (step === 3) {
-            return ['annual_ctc', 'salary_effective_from'];
+            return isPaidEmployee() ? ['annual_ctc', 'salary_effective_from'] : [];
         }
         return [];
     };
@@ -781,6 +802,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                     ['Manager', getSelectText('manager_id')],
                     ['Joining', getValue('joining_date') || '—'],
                     ['Type', EMPLOYMENT_LABELS[getValue('employment_type')] || '—'],
+                    ['Compensation', isPaidEmployee() ? 'Paid employee' : 'Non-paid (excluded from payroll)'],
                     ['Status', getValue('status') === 'active' ? 'Active' : 'Inactive'],
                     ['Probation', isProbationApplicable()
                         ? `${getSelectText('probation_period_months')} — ${PROBATION_STATUS_LABELS[getValue('probation_status')] || '—'}`
@@ -792,18 +814,22 @@ document.addEventListener('DOMContentLoaded', async () => {
             },
             {
                 title: 'Salary',
-                rows: [
-                    ['Annual CTC', formatCurrency(getValue('annual_ctc'))],
-                    ['Monthly Gross', formatCurrency(calculateMonthlyGross())],
-                    ['Basic', `${companyPayrollSettings.basic_salary_percent ?? 50}% (${formatCurrency(getBasicSalary())})`],
-                    ['HRA', `${companyPayrollSettings.hra_percent ?? 40}% (${formatCurrency(getHraAmount())})`],
-                    ['Special Allowance', `${companyPayrollSettings.special_allowance_percent ?? 0}% (${formatCurrency(getSpecialAllowanceAmount())})`],
-                    ['Fixed Allowances', formatCurrency(getFixedAllowancesTotal())],
-                    ['Effective From', getValue('salary_effective_from') || '—'],
-                    ['PF', companyPayrollSettings.pf_applicable ? 'Yes' : 'No'],
-                    ['ESI', companyPayrollSettings.esi_applicable ? 'Yes' : 'No'],
-                    ['Prof. Tax', companyPayrollSettings.professional_tax_applicable ? 'Yes' : 'No'],
-                ],
+                rows: isPaidEmployee()
+                    ? [
+                        ['Annual CTC', formatCurrency(getValue('annual_ctc'))],
+                        ['Monthly Gross', formatCurrency(calculateMonthlyGross())],
+                        ['Basic', `${companyPayrollSettings.basic_salary_percent ?? 50}% (${formatCurrency(getBasicSalary())})`],
+                        ['HRA', `${companyPayrollSettings.hra_percent ?? 40}% (${formatCurrency(getHraAmount())})`],
+                        ['Special Allowance', `${companyPayrollSettings.special_allowance_percent ?? 0}% (${formatCurrency(getSpecialAllowanceAmount())})`],
+                        ['Fixed Allowances', formatCurrency(getFixedAllowancesTotal())],
+                        ['Effective From', getValue('salary_effective_from') || '—'],
+                        ['PF', companyPayrollSettings.pf_applicable ? 'Yes' : 'No'],
+                        ['ESI', companyPayrollSettings.esi_applicable ? 'Yes' : 'No'],
+                        ['Prof. Tax', companyPayrollSettings.professional_tax_applicable ? 'Yes' : 'No'],
+                    ]
+                    : [
+                        ['Compensation', 'Non-paid employee — salary not applicable'],
+                    ],
             },
             {
                 title: 'Access',
@@ -1063,6 +1089,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             gender: getValue('gender'),
             date_of_birth: getValue('date_of_birth'),
             employment_type: getValue('employment_type') || 'full_time',
+            is_paid_employee: isPaidEmployee(),
             status: getValue('status') || 'active',
             probation_applicable: isProbationApplicable(),
             probation_period_months: isProbationApplicable() ? Number(getValue('probation_period_months')) : null,
@@ -1074,8 +1101,8 @@ document.addEventListener('DOMContentLoaded', async () => {
             state: nullable(getValue('state')),
             country: nullable(getValue('country')),
             postal_code: nullable(getValue('postal_code')),
-            annual_ctc: num('annual_ctc'),
-            salary_effective_from: getValue('salary_effective_from'),
+            annual_ctc: isPaidEmployee() ? num('annual_ctc') : null,
+            salary_effective_from: isPaidEmployee() ? getValue('salary_effective_from') : null,
             salary_revision_notes: nullable(getValue('salary_revision_notes')),
         };
 
@@ -1198,6 +1225,10 @@ document.addEventListener('DOMContentLoaded', async () => {
         setInputValue('designation', employee.designation);
         setDateInput('joining_date', employee.joining_date);
         setSelectValue('employment_type', employee.employment_type || 'full_time');
+        const paidCheckbox = form.querySelector('#is_paid_employee');
+        if (paidCheckbox) {
+            paidCheckbox.checked = employee.is_paid_employee !== false;
+        }
         setStatusValue(form, employee.status || 'active');
 
         const probationCheckbox = form.querySelector('#probation_applicable');
@@ -1218,6 +1249,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         hasPortalAccess = Boolean(employee.has_portal_access);
         updateShiftPreview();
         toggleProbationFields();
+        togglePaidEmployeeUi();
         updateSalarySummary();
         updatePortalAccessUi();
     };
@@ -1341,6 +1373,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     form.querySelector('#employment_type')?.addEventListener('change', () => {
         const type = getValue('employment_type');
         const probationCheckbox = form.querySelector('#probation_applicable');
+        const paidCheckbox = form.querySelector('#is_paid_employee');
 
         if (!probationCheckbox) {
             return;
@@ -1352,8 +1385,18 @@ document.addEventListener('DOMContentLoaded', async () => {
             probationCheckbox.checked = true;
         }
 
+        if (type === 'intern' && paidCheckbox && !isUpdate) {
+            paidCheckbox.checked = false;
+        }
+
         toggleProbationFields();
+        togglePaidEmployeeUi();
         calculateProbationEndDate(true);
+    });
+
+    form.querySelector('#is_paid_employee')?.addEventListener('change', () => {
+        togglePaidEmployeeUi();
+        updateSalarySummary();
     });
 
     ['date_of_birth', 'joining_date', 'salary_effective_from', 'probation_end_date'].forEach((field) => {
@@ -1433,6 +1476,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             toggleProbationFields();
             calculateProbationEndDate(true);
             updatePortalAccessUi();
+            togglePaidEmployeeUi();
         }
     } catch (error) {
         showAlert(getErrorMessage(error));

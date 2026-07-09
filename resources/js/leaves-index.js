@@ -1,5 +1,6 @@
 import api, { getErrorMessage } from './api';
 import { composeActionGroup, renderCancelIconButton, renderViewLink } from './action-icons';
+import { bindPagination, bindPerPageSelect, getSerialNumber, readPerPage, renderListPagination } from './pagination';
 import { cancelRequest } from './request-review';
 
 const routes = () => window.HRMS_WEB_ROUTES || {};
@@ -19,7 +20,9 @@ document.addEventListener('DOMContentLoaded', async () => {
     const filterReset = document.getElementById('filterReset');
     const paginationInfo = document.getElementById('leavesPaginationInfo');
     const paginationList = document.getElementById('leavesPaginationList');
+    const perPageSelect = document.getElementById('leavesPerPage');
     let currentPage = 1;
+    let currentPerPage = readPerPage(perPageSelect);
     const currentYear = new Date().getFullYear();
 
     if (filterYear) {
@@ -35,7 +38,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     };
 
     const renderRow = (item, index, pagination) => {
-        const serial = ((pagination.current_page - 1) * pagination.per_page) + index + 1;
+        const serial = getSerialNumber(index, pagination);
         return `<tr>
             <td>${serial}</td>
             <td>${item.employee?.full_name || '—'}<div class="small text-muted">${item.employee?.employee_code || ''}</div></td>
@@ -54,7 +57,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     const loadLeaves = async (page = 1) => {
         currentPage = page;
-        const params = { page, per_page: 10, year: filterYear?.value || currentYear };
+        const params = { page, per_page: currentPerPage, year: filterYear?.value || currentYear };
         if (filterStatus?.value) params.status = filterStatus.value;
         try {
             const { data } = await api.get('/leave-requests', { params });
@@ -63,15 +66,14 @@ document.addEventListener('DOMContentLoaded', async () => {
             tableBody.innerHTML = requests.length
                 ? requests.map((item, i) => renderRow(item, i, pagination)).join('')
                 : '<tr><td colspan="7" class="text-center text-muted py-5">No leave requests found.</td></tr>';
-            paginationInfo.textContent = pagination?.total
-                ? `Showing ${pagination.from} to ${pagination.to} of ${pagination.total}`
-                : 'No leave requests found';
-            paginationList.innerHTML = pagination?.last_page
-                ? Array.from({ length: pagination.last_page }, (_, i) => {
-                    const p = i + 1;
-                    return `<li class="page-item ${p === pagination.current_page ? 'active' : ''}"><button type="button" class="page-link" data-page="${p}">${p}</button></li>`;
-                }).join('')
-                : '';
+            renderListPagination({
+                infoEl: paginationInfo,
+                listEl: paginationList,
+                perPageSelectEl: perPageSelect,
+                pagination,
+                itemLabel: 'leave requests',
+                emptyMessage: 'No leave requests found',
+            });
         } catch (error) {
             tableBody.innerHTML = `<tr><td colspan="7" class="text-center text-danger py-5">${getErrorMessage(error)}</td></tr>`;
         }
@@ -84,9 +86,10 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (filterYear) filterYear.value = String(currentYear);
         loadLeaves(1);
     });
-    paginationList?.addEventListener('click', (e) => {
-        const btn = e.target.closest('[data-page]');
-        if (btn) loadLeaves(Number(btn.dataset.page));
+    bindPagination(paginationList, loadLeaves);
+    bindPerPageSelect(perPageSelect, (perPage) => {
+        currentPerPage = perPage;
+        loadLeaves(1);
     });
 
     tableBody?.addEventListener('click', async (event) => {

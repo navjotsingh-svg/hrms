@@ -480,23 +480,22 @@ class User extends Authenticatable
 
     public function canRegularizeAttendance(): bool
     {
-        if (! $this->employee && ! $this->hasPermission('attendance.manage')) {
-            return false;
-        }
-
-        return $this->hasPermission('attendance.regularize')
-            || $this->hasPermission('attendance.manage');
+        return $this->isCompanyAdmin() || $this->isHrManager();
     }
 
     public function canApproveRegularization(): bool
     {
-        return $this->hasPermission('attendance.approve')
-            || $this->hasPermission('attendance.manage');
+        return $this->isCompanyAdmin() || $this->isHrManager();
     }
 
     public function canViewRegularizationRequests(): bool
     {
-        return $this->canApproveRegularization() || $this->canRegularizeAttendance();
+        return $this->canRegularizeAttendance();
+    }
+
+    public function canManageRegularization(): bool
+    {
+        return $this->isCompanyAdmin() || $this->isHrManager();
     }
 
     public function canReviewRegularizationRequest(AttendanceRegularizationRequest $request): bool
@@ -517,19 +516,7 @@ class User extends Authenticatable
             return $this->isCompanyAdmin();
         }
 
-        if ($this->hasPermission('attendance.manage') || $this->isHrManager() || $this->isCompanyAdmin()) {
-            return true;
-        }
-
-        if ($this->canApproveRegularization()) {
-            return true;
-        }
-
-        if ($this->hasPermission('leave.approve') || $this->hasPermission('attendance.regularize')) {
-            return $this->isDirectReportingManagerOfEmployee($request->employee);
-        }
-
-        return false;
+        return $this->canManageRegularization();
     }
 
     public function canCancelRegularizationRequest(AttendanceRegularizationRequest $request): bool
@@ -568,8 +555,6 @@ class User extends Authenticatable
             || $this->hasPermission('shifts.manage')
             || $this->hasPermission('attendance.manage')
             || $this->hasPermission('leave.manage')
-            || $this->hasPermission('roles.view')
-            || $this->hasPermission('roles.manage')
             || $this->hasPermission('settings.manage');
     }
 
@@ -670,7 +655,7 @@ class User extends Authenticatable
             return false;
         }
 
-        return $this->isDirectReportingManagerOfEmployee($request->employee);
+        return $this->isReportingManagerInHierarchy($request->employee);
     }
 
     public function canViewLeaveRequest(LeaveRequest $request): bool
@@ -1274,7 +1259,7 @@ class User extends Authenticatable
             return false;
         }
 
-        if ($this->hasPermission('projects.manage') || $this->hasPermission('attendance.manage')) {
+        if ($this->hasFullAccess()) {
             return true;
         }
 
@@ -1541,7 +1526,7 @@ class User extends Authenticatable
 
     public function canManageRoles(): bool
     {
-        return $this->hasPermission('roles.manage');
+        return $this->isCompanyAdmin();
     }
 
     public function canAssignCompanyAdmin(): bool

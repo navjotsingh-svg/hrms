@@ -140,7 +140,6 @@ class RoleSeeder extends Seeder
                     'performance.manage', 'performance.participate', 'performance.review', 'pip.manage',
                     'hiring.manage', 'hiring.requisition.create', 'hiring.requisition.approve', 'hiring.interview', 'hiring.careers.publish',
                     'logs.view',
-                    'roles.manage', 'roles.view',
                     'home.view', 'home.dashboard.view', 'home.dashboard.manage', 'home.moments.view', 'home.moments.post', 'home.moments.comment',
                     'helpdesk.apply', 'helpdesk.manage',
                 ],

@@ -1,4 +1,5 @@
 import api, { getErrorMessage } from './api';
+import { aiAdviseRole } from './ai-tools';
 
 const webRoutes = () => window.HRMS_WEB_ROUTES || {};
 
@@ -27,6 +28,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     const saveBtn = document.getElementById('saveRolePermissionsBtn');
     const resetBtn = document.getElementById('resetRolePermissionsBtn');
     const deleteBtn = document.getElementById('deleteRoleBtn');
+    const aiRoleAdviseBtn = document.getElementById('aiRoleAdviseBtn');
     const roleDetailsForm = document.getElementById('roleDetailsForm');
     const roleDetailsReadonly = document.getElementById('roleDetailsReadonly');
     const editRoleName = document.getElementById('editRoleName');
@@ -213,6 +215,10 @@ document.addEventListener('DOMContentLoaded', async () => {
 
         if (resetBtn) {
             resetBtn.classList.toggle('d-none', !isEditable || !usesCompanyOverride);
+        }
+
+        if (aiRoleAdviseBtn) {
+            aiRoleAdviseBtn.classList.toggle('d-none', !isEditable);
         }
 
         if (deleteBtn) {
@@ -472,6 +478,32 @@ document.addEventListener('DOMContentLoaded', async () => {
         } finally {
             isSaving = false;
             resetBtn.disabled = false;
+        }
+    });
+
+    aiRoleAdviseBtn?.addEventListener('click', async () => {
+        const roleName = currentRole?.name || editRoleName?.value?.trim() || 'Custom role';
+        const description = currentRole?.description || editRoleDescription?.value?.trim() || '';
+
+        aiRoleAdviseBtn.disabled = true;
+        aiRoleAdviseBtn.textContent = 'AI working…';
+
+        try {
+            const result = await aiAdviseRole({ role_name: roleName, description });
+            const slugs = result.recommended_permission_slugs || [];
+
+            slugs.forEach((slug) => {
+                selectedSlugs.add(slug);
+                syncRequiredPermissions(slug, true);
+            });
+
+            renderMatrix();
+            showAlert(result.summary || 'AI permission suggestions applied. Review and save.');
+        } catch (error) {
+            showAlert(getErrorMessage(error), 'danger');
+        } finally {
+            aiRoleAdviseBtn.disabled = false;
+            aiRoleAdviseBtn.textContent = 'AI suggest permissions';
         }
     });
 

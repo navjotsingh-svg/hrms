@@ -18,6 +18,7 @@
                 </div>
             </div>
         </div>
+        @include('partials.list-pagination-header', ['perPageId' => 'cyclesPerPage'])
         <div class="table-responsive">
             <table class="companies-table table mb-0">
                 <thead>
@@ -35,10 +36,14 @@
                 </tbody>
             </table>
         </div>
-    </div>
-
-    @if ($canManage)
-    <div class="modal fade" id="cycleModal" tabindex="-1" aria-hidden="true">
+        @include('partials.list-pagination-footer', [
+            'infoId' => 'cyclesPaginationInfo',
+            'listId' => 'cyclesPaginationList',
+            'perPageId' => 'cyclesPerPage',
+            'wrapClass' => 'content-card-body border-top',
+            'ariaLabel' => 'Review cycles pagination',
+        ])
+    </div> tabindex="-1" aria-hidden="true">
         <div class="modal-dialog modal-lg modal-dialog-scrollable">
             <div class="modal-content">
                 <div class="modal-header">

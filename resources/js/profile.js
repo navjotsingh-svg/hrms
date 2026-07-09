@@ -5,6 +5,8 @@ import { initRichTextEditor } from './rich-text-editor';
 import { renderReviewIconActionGroup, renderViewDocumentIconButton, renderDeleteDocumentIconButton, renderReviewIconActions } from './review-actions';
 import { patchProfileReviewAction } from './request-review';
 import { hasSalaryRevisionTimeline, renderSalaryRevisionTimeline } from './salary-timeline';
+import { computeIncrementEffectiveDate, todayDateInput } from './salary-dates';
+import { initEmployeeJourneyTab } from './employee-journey';
 import { compressImageFiles } from './image-compress';
 import { showErrorAlert, showInfoAlert, showProfilePhotoPendingNotice } from './swal-utils';
 
@@ -383,6 +385,7 @@ const renderWorkTab = (employee) => {
         ['Employee Code', employee.employee_code],
         ['Designation', employee.designation],
         ['Employment Type', EMPLOYMENT_LABELS[employee.employment_type] || employee.employment_type],
+        ['Paid Employee', employee.is_paid_employee_label || (employee.is_paid_employee !== false ? 'Paid' : 'Non-paid')],
         ['Joining Date', formatDate(employee.joining_date)],
         ['Status', statusBadge(employee.status)],
     ]);
@@ -413,11 +416,12 @@ const getProfileSalaryValue = (id) => document.getElementById(id)?.value?.trim()
 
 let profileSalaryFormMode = null;
 let profileCurrentSalarySnapshot = null;
+let profileEmployeeJoiningDate = null;
 
 const getProfileCtcChangeMode = () => document.querySelector('input[name="profile_ctc_mode"]:checked')?.value || 'percent';
 
 const getProfileResolvedAnnualCtc = () => {
-    if (profileSalaryFormMode === 'revise') {
+    if (profileSalaryFormMode === 'revise' || profileSalaryFormMode === 'increment') {
         if (getProfileCtcChangeMode() === 'revised') {
             return parseFloat(getProfileSalaryValue('profile_salary_revised_ctc')) || 0;
         }
@@ -506,7 +510,7 @@ const renderProfileSalaryReviewSummary = () => {
         ['Payout From', formatDate(getProfileSalaryValue('profile_salary_payout_from'))],
     ];
 
-    if (profileSalaryFormMode === 'revise' && profileCurrentSalarySnapshot?.annual_ctc) {
+    if ((profileSalaryFormMode === 'revise' || profileSalaryFormMode === 'increment') && profileCurrentSalarySnapshot?.annual_ctc) {
         rows.unshift(['Previous CTC', formatCurrency(profileCurrentSalarySnapshot.annual_ctc)]);
     }
 
@@ -539,8 +543,9 @@ const updateProfileSalaryPreview = () => {
 
 const toggleProfileCtcModeUi = () => {
     const mode = getProfileCtcChangeMode();
-    document.getElementById('profileCtcPercentWrap')?.classList.toggle('d-none', mode !== 'percent');
-    document.getElementById('profileCtcRevisedWrap')?.classList.toggle('d-none', mode !== 'revised');
+    const isIncrement = profileSalaryFormMode === 'increment';
+    document.getElementById('profileCtcPercentWrap')?.classList.toggle('d-none', !isIncrement && mode !== 'percent');
+    document.getElementById('profileCtcRevisedWrap')?.classList.toggle('d-none', isIncrement || mode !== 'revised');
     syncProfileSalaryFormFields();
     updateProfileSalaryPreview();
 };
@@ -548,6 +553,7 @@ const toggleProfileCtcModeUi = () => {
 const syncProfileSalaryFormFields = () => {
     const isAdd = profileSalaryFormMode === 'add';
     const isRevise = profileSalaryFormMode === 'revise';
+    const isIncrement = profileSalaryFormMode === 'increment';
     const ctcMode = getProfileCtcChangeMode();
     const addCtcInput = document.getElementById('profile_salary_annual_ctc');
     const revisedCtcInput = document.getElementById('profile_salary_revised_ctc');
@@ -558,23 +564,62 @@ const syncProfileSalaryFormFields = () => {
     }
 
     if (revisedCtcInput) {
-        revisedCtcInput.disabled = !isRevise || ctcMode !== 'revised';
+        revisedCtcInput.disabled = !(isRevise || isIncrement) || ctcMode !== 'revised';
     }
 
     if (increaseInput) {
-        increaseInput.disabled = !isRevise || ctcMode !== 'percent';
+        increaseInput.disabled = !(isRevise || isIncrement) || ctcMode !== 'percent';
+    }
+};
+
+const syncProfileSalaryDateFields = () => {
+    const effectiveInput = document.getElementById('profile_salary_effective_from');
+    const payoutInput = document.getElementById('profile_salary_payout_from');
+    const effectiveHint = document.getElementById('profileSalaryEffectiveDateHint');
+    const payoutHint = document.getElementById('profileSalaryPayoutDateHint');
+    const isIncrement = profileSalaryFormMode === 'increment';
+    const isRevise = profileSalaryFormMode === 'revise';
+
+    if (effectiveInput) {
+        effectiveInput.readOnly = isIncrement;
+        effectiveInput.classList.toggle('bg-light', isIncrement);
+    }
+
+    if (payoutInput) {
+        payoutInput.readOnly = isIncrement;
+        payoutInput.classList.toggle('bg-light', isIncrement);
+    }
+
+    if (effectiveHint) {
+        if (isIncrement) {
+            effectiveHint.textContent = profileEmployeeJoiningDate
+                ? 'Auto-set to the next joining-date anniversary (annual increment).'
+                : 'Auto-set to the next annual increment date.';
+        } else if (isRevise) {
+            effectiveHint.textContent = 'Salary changes from this date (e.g. correction or PIP adjustment). Defaults to today.';
+        } else {
+            effectiveHint.textContent = 'Date from which the CTC comes into effect.';
+        }
+    }
+
+    if (payoutHint) {
+        payoutHint.textContent = isIncrement
+            ? 'Matches the increment effective date.'
+            : 'Date from which the new salary is paid in payroll.';
     }
 };
 
 const closeProfileSalaryForm = () => {
     profileSalaryFormMode = null;
+    profileEmployeeJoiningDate = null;
     document.getElementById('profileSalaryFormPanel')?.classList.add('d-none');
     document.getElementById('profileSalaryStatusMsg')?.classList.add('d-none');
 };
 
-const openProfileSalaryForm = (mode, salary = {}) => {
+const openProfileSalaryForm = (mode, salary = {}, employee = {}) => {
     profileSalaryFormMode = mode;
-    profileCurrentSalarySnapshot = mode === 'revise' ? { ...salary } : null;
+    profileEmployeeJoiningDate = employee.joining_date || null;
+    profileCurrentSalarySnapshot = (mode === 'revise' || mode === 'increment') ? { ...salary } : null;
 
     const panel = document.getElementById('profileSalaryFormPanel');
     const title = document.getElementById('profileSalaryFormTitle');
@@ -583,26 +628,44 @@ const openProfileSalaryForm = (mode, salary = {}) => {
 
     panel?.classList.remove('d-none');
     document.getElementById('profileSalaryAddCtcBlock')?.classList.toggle('d-none', mode !== 'add');
-    document.getElementById('profileSalaryReviseCtcBlock')?.classList.toggle('d-none', mode !== 'revise');
-    document.getElementById('profileSalaryCurrentBlock')?.classList.toggle('d-none', mode !== 'revise');
+    document.getElementById('profileSalaryReviseCtcBlock')?.classList.toggle('d-none', mode === 'add');
+    document.getElementById('profileSalaryCurrentBlock')?.classList.toggle('d-none', mode === 'add');
+    document.querySelector('#profileSalaryReviseCtcBlock .salary-ctc-mode-toggle')
+        ?.classList.toggle('d-none', mode === 'increment');
+    document.getElementById('profileCtcRevisedWrap')?.classList.toggle('d-none', mode === 'increment' || getProfileCtcChangeMode() !== 'revised');
+
+    const titles = {
+        add: 'Add Salary',
+        revise: 'Revise Salary',
+        increment: 'Update Salary',
+    };
+    const descriptions = {
+        add: 'Enter compensation details for this employee.',
+        revise: 'Correct a wrong salary or apply a PIP-related change. The new salary takes effect from the revision date.',
+        increment: 'Record an annual increment. Effective date is set automatically from the employee joining date.',
+    };
+    const submitLabels = {
+        add: 'Submit Salary',
+        revise: 'Submit Revision',
+        increment: 'Submit Update',
+    };
 
     if (title) {
-        title.textContent = mode === 'add' ? 'Add Salary' : 'Revise Salary';
+        title.textContent = titles[mode] || 'Salary';
     }
 
     if (desc) {
-        desc.textContent = mode === 'add'
-            ? 'Enter compensation details for this employee.'
-            : 'Update CTC using increase % or revised CTC, then confirm effective and payout dates.';
+        desc.textContent = descriptions[mode] || '';
     }
 
     if (submitBtn) {
-        submitBtn.textContent = mode === 'add' ? 'Submit Salary' : 'Submit Revision';
+        submitBtn.textContent = submitLabels[mode] || 'Submit';
     }
 
-    if (mode === 'revise') {
+    if (mode === 'revise' || mode === 'increment') {
         document.getElementById('profileSalaryCurrentCtc').textContent = formatCurrency(salary.annual_ctc || 0);
-        document.getElementById('profile_ctc_mode_percent').checked = true;
+        document.getElementById('profile_ctc_mode_percent').checked = mode === 'increment';
+        document.getElementById('profile_ctc_mode_revised').checked = mode === 'revise';
         document.getElementById('profile_salary_increase_percent').value = '';
         document.getElementById('profile_salary_revised_ctc').value = salary.annual_ctc ?? '';
         toggleProfileCtcModeUi();
@@ -610,6 +673,7 @@ const openProfileSalaryForm = (mode, salary = {}) => {
 
     fillProfileSalaryForm(salary, mode);
     syncProfileSalaryFormFields();
+    syncProfileSalaryDateFields();
     panel?.scrollIntoView({ behavior: 'smooth', block: 'start' });
 };
 
@@ -639,10 +703,21 @@ const fillProfileSalaryForm = (salary = {}, mode = 'add') => {
 
     if (mode === 'add') {
         set('profile_salary_annual_ctc', salary.annual_ctc ?? '');
+        set('profile_salary_effective_from', salary.salary_effective_from ?? '');
+        set('profile_salary_payout_from', salary.salary_payout_from || salary.salary_effective_from || '');
+    } else if (mode === 'revise') {
+        const today = todayDateInput();
+        set('profile_salary_effective_from', today);
+        set('profile_salary_payout_from', today);
+    } else if (mode === 'increment') {
+        const incrementDate = computeIncrementEffectiveDate(
+            profileEmployeeJoiningDate,
+            salary.salary_effective_from,
+        );
+        set('profile_salary_effective_from', incrementDate);
+        set('profile_salary_payout_from', incrementDate);
     }
 
-    set('profile_salary_effective_from', salary.salary_effective_from ?? '');
-    set('profile_salary_payout_from', salary.salary_payout_from || salary.salary_effective_from || '');
     set('profile_salary_revision_notes', '');
 
     renderCompanyStatutoryLabels();
@@ -669,6 +744,7 @@ const renderSalaryTab = (employee) => {
     const manageSection = document.getElementById('profileSalaryManageSection');
     const actions = document.getElementById('profileSalaryActions');
     const addBtn = document.getElementById('profileSalaryAddBtn');
+    const updateBtn = document.getElementById('profileSalaryUpdateBtn');
     const reviseBtn = document.getElementById('profileSalaryReviseBtn');
 
     setVisible(
@@ -683,7 +759,7 @@ const renderSalaryTab = (employee) => {
 
     if (desc) {
         desc.textContent = profileCanManageSalary
-            ? 'View current compensation. Use Add Salary or Revise Salary to update compensation and track revision history.'
+            ? 'View current compensation. Use Update Salary for increments, or Revise Salary for corrections and PIP changes.'
             : 'View your current compensation structure as recorded by HR.';
     }
 
@@ -694,13 +770,16 @@ const renderSalaryTab = (employee) => {
     manageSection?.classList.toggle('d-none', !profileCanManageSalary);
     actions?.classList.toggle('d-none', !profileCanManageSalary);
     addBtn?.classList.toggle('d-none', hasSalary);
+    updateBtn?.classList.toggle('d-none', !hasSalary);
     reviseBtn?.classList.toggle('d-none', !hasSalary);
 
     if (profileCanManageSalary) {
         addBtn?.replaceWith(addBtn.cloneNode(true));
+        updateBtn?.replaceWith(updateBtn.cloneNode(true));
         reviseBtn?.replaceWith(reviseBtn.cloneNode(true));
-        document.getElementById('profileSalaryAddBtn')?.addEventListener('click', () => openProfileSalaryForm('add', salary));
-        document.getElementById('profileSalaryReviseBtn')?.addEventListener('click', () => openProfileSalaryForm('revise', salary));
+        document.getElementById('profileSalaryAddBtn')?.addEventListener('click', () => openProfileSalaryForm('add', salary, employee));
+        document.getElementById('profileSalaryUpdateBtn')?.addEventListener('click', () => openProfileSalaryForm('increment', salary, employee));
+        document.getElementById('profileSalaryReviseBtn')?.addEventListener('click', () => openProfileSalaryForm('revise', salary, employee));
     }
 
     closeProfileSalaryForm();
@@ -864,6 +943,7 @@ const collectProfileAssetsPayload = () => {
 };
 
 const collectProfileSalaryPayload = () => ({
+    salary_action: profileSalaryFormMode || 'add',
     annual_ctc: getProfileResolvedAnnualCtc(),
     salary_effective_from: getProfileSalaryValue('profile_salary_effective_from'),
     salary_payout_from: getProfileSalaryValue('profile_salary_payout_from') || getProfileSalaryValue('profile_salary_effective_from'),
@@ -2622,7 +2702,12 @@ document.addEventListener('DOMContentLoaded', async () => {
             return;
         }
 
-        if (profileSalaryFormMode === 'revise' && profileCurrentSalarySnapshot?.annual_ctc
+        if (profileSalaryFormMode === 'increment' && (parseFloat(getProfileSalaryValue('profile_salary_increase_percent')) || 0) <= 0) {
+            alert('Enter a valid increase % for the annual increment.');
+            return;
+        }
+
+        if ((profileSalaryFormMode === 'revise' || profileSalaryFormMode === 'increment') && profileCurrentSalarySnapshot?.annual_ctc
             && Number(payload.annual_ctc) === Number(profileCurrentSalarySnapshot.annual_ctc)
             && getProfileCtcChangeMode() === 'percent'
             && !getProfileSalaryValue('profile_salary_increase_percent')) {
@@ -3465,5 +3550,10 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (tab) {
             Tab.getOrCreateInstance(tab).show();
         }
+    });
+
+    initEmployeeJourneyTab({
+        tabId: 'profile-journey-tab',
+        endpoint: targetEmployeeId ? `/employees/${targetEmployeeId}/journey` : '/profile/journey',
     });
 });

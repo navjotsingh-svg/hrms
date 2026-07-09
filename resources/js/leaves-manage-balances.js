@@ -1,5 +1,6 @@
 import api, { getErrorMessage } from './api';
 import { debounce } from './form-utils';
+import { bindPagination, bindPerPageSelect, readPerPage, renderListPagination } from './pagination';
 import { Modal } from 'bootstrap';
 
 document.addEventListener('DOMContentLoaded', async () => {
@@ -13,6 +14,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     const paginationInfo = document.getElementById('balancesPaginationInfo');
     const paginationSummary = document.getElementById('balancesPaginationSummary');
     const paginationList = document.getElementById('balancesPaginationList');
+    const perPageSelect = document.getElementById('balancesPerPage');
     const alertBox = document.getElementById('manageBalancesAlert');
     const modalEl = document.getElementById('employeeBalanceModal');
     const modalTitle = document.getElementById('employeeBalanceModalTitle');
@@ -25,6 +27,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     const currentYear = new Date().getFullYear();
 
     let currentPage = 1;
+    let currentPerPage = readPerPage(perPageSelect, 25);
     let leaveTypes = [];
     let compOffBalanceId = null;
     let selectedEmployeeId = null;
@@ -66,7 +69,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         status: statusSelect?.value || 'active',
         search: searchInput?.value?.trim() || undefined,
         page: currentPage,
-        per_page: 25,
+        per_page: currentPerPage,
     });
 
     const formatAvailable = (cell) => {
@@ -148,7 +151,6 @@ document.addEventListener('DOMContentLoaded', async () => {
             paginationInfo.textContent = '—';
             paginationSummary.textContent = '';
             paginationList.innerHTML = '';
-
             return;
         }
 
@@ -160,19 +162,12 @@ document.addEventListener('DOMContentLoaded', async () => {
             ? `Showing ${pagination.from} to ${pagination.to} of ${pagination.total}`
             : '';
 
-        if (!pagination.last_page || pagination.last_page <= 1) {
-            paginationList.innerHTML = '';
-
-            return;
-        }
-
-        paginationList.innerHTML = Array.from({ length: pagination.last_page }, (_, index) => {
-            const page = index + 1;
-
-            return `<li class="page-item ${page === pagination.current_page ? 'active' : ''}">
-                <button type="button" class="page-link" data-page="${page}">${page}</button>
-            </li>`;
-        }).join('');
+        renderListPagination({
+            infoEl: null,
+            listEl: paginationList,
+            perPageSelectEl: perPageSelect,
+            pagination,
+        });
     };
 
     const loadOverview = async () => {
@@ -392,14 +387,13 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
     });
 
-    paginationList?.addEventListener('click', (event) => {
-        const pageBtn = event.target.closest('[data-page]');
-
-        if (!pageBtn) {
-            return;
-        }
-
-        currentPage = Number(pageBtn.dataset.page);
+    bindPagination(paginationList, (page) => {
+        currentPage = page;
+        loadOverview();
+    });
+    bindPerPageSelect(perPageSelect, (perPage) => {
+        currentPerPage = perPage;
+        currentPage = 1;
         loadOverview();
     });
 

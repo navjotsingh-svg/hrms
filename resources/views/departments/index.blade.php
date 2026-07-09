@@ -38,6 +38,7 @@
             </div>
         </div>
 
+        @include('partials.list-pagination-header', ['perPageId' => 'departmentsPerPage'])
         <div class="table-responsive">
             <table class="companies-table table mb-0">
                 <thead>
@@ -57,14 +58,14 @@
             </table>
         </div>
 
-        <div class="content-card-body border-top companies-pagination-footer" id="departmentsPagination">
-            <div class="d-flex flex-wrap align-items-center justify-content-between gap-3">
-                <div class="small text-muted" id="departmentsPaginationInfo">Loading pagination...</div>
-                <nav aria-label="Departments pagination">
-                    <ul class="pagination pagination-sm mb-0" id="departmentsPaginationList"></ul>
-                </nav>
-            </div>
-        </div>
+        @include('partials.list-pagination-footer', [
+            'infoId' => 'departmentsPaginationInfo',
+            'listId' => 'departmentsPaginationList',
+            'perPageId' => 'departmentsPerPage',
+            'wrapId' => 'departmentsPagination',
+            'ariaLabel' => 'Departments pagination',
+            'infoText' => 'Loading pagination...',
+        ])
     </div>
     @vite(['resources/js/departments-index.js'])
 @endsection

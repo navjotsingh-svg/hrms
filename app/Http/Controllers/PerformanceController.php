@@ -13,11 +13,11 @@ class PerformanceController extends Controller
 
     public function praiseRecognition(): View
     {
-        return $this->placeholder(
-            'praise-recognition',
-            'Praise & Recognition',
-            'Celebrate achievements, send kudos to colleagues, and build a culture of recognition across your organization.',
-        );
+        $user = auth()->user();
+
+        return view('performance.praise-recognition', array_merge($this->pageData('praise-recognition'), [
+            'canPostPraise' => $user->hasPermission('home.moments.post') || $user->hasPermission('performance.participate'),
+        ]));
     }
 
     public function continuousFeedback(): View
@@ -27,11 +27,11 @@ class PerformanceController extends Controller
 
     public function oneOnOne(): View
     {
-        return $this->placeholder(
-            'one-on-one',
-            'One-on-one Meetings',
-            'Schedule, track, and document manager–employee one-on-one meetings with shared agendas and action items.',
-        );
+        $user = auth()->user();
+
+        return view('performance.one-on-one', array_merge($this->pageData('one-on-one'), [
+            'canScheduleMeetings' => app(\App\Services\OneOnOneMeetingService::class)->canSchedule($user),
+        ]));
     }
 
     public function reviews(): View

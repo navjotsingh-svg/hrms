@@ -200,6 +200,7 @@
             </div>
         </div>
 
+        @include('partials.list-pagination-header', ['perPageId' => 'requestsPerPage'])
         <div class="table-responsive">
             <table class="companies-table table mb-0">
                 <thead>
@@ -217,6 +218,13 @@
                 </tbody>
             </table>
         </div>
+        @include('partials.list-pagination-footer', [
+            'infoId' => 'requestsPaginationInfo',
+            'listId' => 'requestsPaginationList',
+            'perPageId' => 'requestsPerPage',
+            'wrapId' => 'requestsPagination',
+            'ariaLabel' => 'Requests pagination',
+        ])
     </div>
 
     @include('expenses.partials.request-detail-modal')

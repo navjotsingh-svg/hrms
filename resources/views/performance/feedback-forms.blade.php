@@ -19,6 +19,7 @@
                 </div>
             </div>
         </div>
+        @include('partials.list-pagination-header', ['perPageId' => 'feedbackFormsPerPage'])
         <div class="table-responsive">
             <table class="companies-table table mb-0">
                 <thead>
@@ -35,6 +36,13 @@
                 </tbody>
             </table>
         </div>
+        @include('partials.list-pagination-footer', [
+            'infoId' => 'feedbackFormsPaginationInfo',
+            'listId' => 'feedbackFormsPaginationList',
+            'perPageId' => 'feedbackFormsPerPage',
+            'wrapClass' => 'content-card-body border-top',
+            'ariaLabel' => 'Feedback forms pagination',
+        ])
     </div>
 
     @if ($canManage)

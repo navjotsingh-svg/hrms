@@ -53,6 +53,21 @@ class WorkflowRecipientService
     }
 
     /** @return Collection<int, User> */
+    public function managersInChainRecipientsForEmployee(Employee $employee, ?User $exclude = null): Collection
+    {
+        $recipients = $this->employeeAccessService->managerChainUsersForEmployee($employee);
+        $recipients = $recipients->merge($this->usersByRole($employee->company_id, Role::SLUG_COMPANY_ADMIN));
+
+        return $recipients
+            ->filter(fn (User $user) => filled($user->email))
+            ->when($exclude, fn (Collection $collection) => $collection->filter(
+                fn (User $user) => (int) $user->id !== (int) $exclude->id,
+            ))
+            ->unique('id')
+            ->values();
+    }
+
+    /** @return Collection<int, User> */
     private function usersByRole(int $companyId, string $roleSlug): Collection
     {
         return User::query()

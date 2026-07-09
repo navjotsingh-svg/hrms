@@ -218,6 +218,13 @@
                     <div class="invalid-feedback d-block" data-error="employment_type"></div>
                 </div>
                 @include('partials.status-toggle', ['colClass' => 'col-md-4'])
+                <div class="col-md-4">
+                    <div class="form-check form-switch mt-md-4 pt-md-2">
+                        <input class="form-check-input" type="checkbox" role="switch" id="is_paid_employee" name="is_paid_employee" value="1" checked>
+                        <label class="form-check-label" for="is_paid_employee">Paid employee</label>
+                    </div>
+                    <div class="form-text">Turn off for unpaid interns or volunteers. Non-paid employees are excluded from payroll.</div>
+                </div>
             </div>
         </div>
 
@@ -354,6 +361,14 @@
             </div>
         </div>
 
+        <div class="wizard-info-banner mb-4 d-none" id="nonPaidEmployeeSalaryNotice">
+            <span class="wizard-info-banner-icon" aria-hidden="true">ℹ️</span>
+            <div>
+                <strong>Non-paid employee</strong>
+                <p class="mb-0">Salary details are optional. This employee will not be included in payroll runs.</p>
+            </div>
+        </div>
+
         <div class="salary-summary-card mb-4" id="salarySummaryCard">
             <div class="salary-summary-item">
                 <span class="salary-summary-label">Annual CTC</span>
@@ -376,12 +391,12 @@
             </div>
             <div class="wizard-form-section-body row g-3 g-md-4">
                 <div class="col-md-6">
-                    <label for="annual_ctc" class="form-label">Annual CTC (₹) <span class="text-danger">*</span></label>
+                    <label for="annual_ctc" class="form-label">Annual CTC (₹) <span class="text-danger salary-required-mark">*</span></label>
                     <input type="number" class="form-control salary-input" id="annual_ctc" name="annual_ctc" min="1" step="0.01" required placeholder="600000">
                     <div class="invalid-feedback d-block" data-error="annual_ctc"></div>
                 </div>
                 <div class="col-md-6">
-                    <label for="salary_effective_from" class="form-label">Effective From <span class="text-danger">*</span></label>
+                    <label for="salary_effective_from" class="form-label">Effective From <span class="text-danger salary-required-mark">*</span></label>
                     <input type="date" class="form-control" id="salary_effective_from" name="salary_effective_from" required>
                     <div class="invalid-feedback d-block" data-error="salary_effective_from"></div>
                 </div>

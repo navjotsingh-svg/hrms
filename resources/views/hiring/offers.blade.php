@@ -17,6 +17,7 @@
                 </div>
             </div>
         </div>
+        @include('partials.list-pagination-header', ['perPageId' => 'offersPerPage'])
         <div class="table-responsive">
             <table class="companies-table table mb-0">
                 <thead>
@@ -35,12 +36,13 @@
                 </tbody>
             </table>
         </div>
-        <div class="content-card-body border-top">
-            <div class="d-flex flex-wrap justify-content-between align-items-center gap-2">
-                <div class="text-muted small" id="offersPaginationInfo"></div>
-                <ul class="pagination pagination-sm mb-0" id="offersPaginationList"></ul>
-            </div>
-        </div>
+        @include('partials.list-pagination-footer', [
+            'infoId' => 'offersPaginationInfo',
+            'listId' => 'offersPaginationList',
+            'perPageId' => 'offersPerPage',
+            'wrapClass' => 'content-card-body border-top',
+            'ariaLabel' => 'Offers pagination',
+        ])
     </div>
 
     @if ($canManage)

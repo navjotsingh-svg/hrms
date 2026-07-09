@@ -20,6 +20,7 @@
             <p class="page-subtitle mb-0">{{ $reportDescription }}</p>
         </div>
         <div class="d-flex gap-2">
+            <button type="button" class="btn btn-outline-primary" id="analyticsAiSummarizeBtn" disabled>AI summarize</button>
             <button type="button" class="btn btn-outline-secondary" id="exportAnalyticsReportBtn" disabled>
                 {{ $exportType === 'excel' ? 'Export Excel' : 'Export CSV' }}
             </button>
@@ -34,6 +35,7 @@
     ])
 
     <div id="analyticsReportAlert" class="alert alert-dismissible fade show d-none" role="alert"></div>
+    <div id="analyticsAiSummary" class="alert alert-info d-none" role="status"></div>
 
     <div class="content-card companies-list-card">
         <div class="content-card-body border-bottom">

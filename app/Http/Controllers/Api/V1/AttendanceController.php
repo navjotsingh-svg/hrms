@@ -4,8 +4,10 @@ namespace App\Http\Controllers\Api\V1;
 
 use App\Http\Controllers\Controller;
 use App\Http\Concerns\ApiResponse;
+use App\Http\Requests\MarkEmployeeAbsentRequest;
 use App\Http\Requests\StoreAttendancePunchRequest;
 use App\Services\ActivityLogService;
+use App\Services\AttendanceCorrectionService;
 use App\Services\AttendanceNetworkService;
 use App\Services\AttendanceService;
 use Illuminate\Http\JsonResponse;
@@ -17,6 +19,7 @@ class AttendanceController extends Controller
 
     public function __construct(
         private AttendanceService $attendanceService,
+        private AttendanceCorrectionService $attendanceCorrectionService,
         private ActivityLogService $activityLogService,
         private AttendanceNetworkService $attendanceNetworkService,
     ) {}
@@ -113,12 +116,30 @@ class AttendanceController extends Controller
             'date' => ['nullable', 'date_format:Y-m-d'],
         ]);
 
-        return $this->success(
-            $this->attendanceService->todayOverview(
-                $request->user(),
-                $validated['date'] ?? null,
-            )
+        $payload = $this->attendanceService->todayOverview(
+            $request->user(),
+            $validated['date'] ?? null,
         );
+
+        $payload['capabilities'] = [
+            'can_mark_absent' => $this->attendanceCorrectionService->canMarkAbsent($request->user()),
+        ];
+
+        return $this->success($payload);
+    }
+
+    public function markAbsent(MarkEmployeeAbsentRequest $request): JsonResponse
+    {
+        $validated = $request->validated();
+
+        $result = $this->attendanceCorrectionService->markAbsent(
+            $request->user(),
+            (int) $validated['employee_id'],
+            $validated['date'],
+            $validated['reason'],
+        );
+
+        return $this->success($result, $result['message']);
     }
 
     public function monthMatrix(Request $request): JsonResponse

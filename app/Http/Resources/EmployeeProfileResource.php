@@ -25,6 +25,8 @@ class EmployeeProfileResource extends JsonResource
             'profile_photo_submission' => new EmployeeProfilePhotoResource($this->whenLoaded('profilePhotoSubmission')),
             'joining_date' => $this->joining_date?->format('Y-m-d'),
             'employment_type' => $this->employment_type,
+            'is_paid_employee' => $this->isPaidEmployee(),
+            'is_paid_employee_label' => $this->isPaidEmployee() ? 'Paid' : 'Non-paid',
             'status' => $this->status,
             'probation_applicable' => $this->probation_applicable,
             'probation_period_months' => $this->probation_period_months,

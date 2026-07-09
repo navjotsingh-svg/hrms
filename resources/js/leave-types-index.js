@@ -1,6 +1,7 @@
 import api, { getErrorMessage } from './api';
 import { renderActionGroup, renderDeleteButton, renderEditLink } from './action-icons';
 import { consumePageFlashMessage } from './form-utils';
+import { bindPagination, bindPerPageSelect, getSerialNumber, readPerPage, renderListPagination } from './pagination';
 import { confirmLeaveTypeDelete } from './swal-utils';
 
 const routes = () => window.HRMS_WEB_ROUTES || {};
@@ -10,10 +11,12 @@ document.addEventListener('DOMContentLoaded', async () => {
     const alertBox = document.getElementById('leaveTypesAlert');
     const paginationInfo = document.getElementById('leaveTypesPaginationInfo');
     const paginationList = document.getElementById('leaveTypesPaginationList');
+    const perPageSelect = document.getElementById('leaveTypesPerPage');
     const filterSearch = document.getElementById('filterSearch');
     const filterStatus = document.getElementById('filterStatus');
     const filterReset = document.getElementById('filterReset');
     let currentPage = 1;
+    let currentPerPage = readPerPage(perPageSelect);
     let searchTimeout = null;
 
     if (!tableBody) return;
@@ -26,7 +29,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     };
 
     const renderRow = (type, index, pagination) => {
-        const serial = ((pagination.current_page - 1) * pagination.per_page) + index + 1;
+        const serial = getSerialNumber(index, pagination);
         const editUrl = `${routes().leaveTypeEdit || '/masters/leave-types'}/${type.id}/edit`;
         return `<tr>
             <td>${serial}</td>
@@ -45,7 +48,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     const loadTypes = async (page = 1) => {
         currentPage = page;
-        const params = { page, per_page: 10 };
+        const params = { page, per_page: currentPerPage };
         if (filterSearch?.value.trim()) params.search = filterSearch.value.trim();
         if (filterStatus?.value) params.status = filterStatus.value;
 
@@ -56,15 +59,14 @@ document.addEventListener('DOMContentLoaded', async () => {
             tableBody.innerHTML = types.length
                 ? types.map((type, i) => renderRow(type, i, pagination)).join('')
                 : '<tr><td colspan="8" class="text-center text-muted py-5">No leave types found.</td></tr>';
-            paginationInfo.textContent = pagination?.total
-                ? `Showing ${pagination.from} to ${pagination.to} of ${pagination.total}`
-                : 'No leave types found';
-            paginationList.innerHTML = pagination?.last_page
-                ? Array.from({ length: pagination.last_page }, (_, i) => {
-                    const p = i + 1;
-                    return `<li class="page-item ${p === pagination.current_page ? 'active' : ''}"><button type="button" class="page-link" data-page="${p}">${p}</button></li>`;
-                }).join('')
-                : '';
+            renderListPagination({
+                infoEl: paginationInfo,
+                listEl: paginationList,
+                perPageSelectEl: perPageSelect,
+                pagination,
+                itemLabel: 'leave types',
+                emptyMessage: 'No leave types found',
+            });
         } catch (error) {
             tableBody.innerHTML = `<tr><td colspan="8" class="text-center text-danger py-5">${getErrorMessage(error)}</td></tr>`;
         }
@@ -80,9 +82,10 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (filterStatus) filterStatus.value = '';
         loadTypes(1);
     });
-    paginationList?.addEventListener('click', (e) => {
-        const btn = e.target.closest('[data-page]');
-        if (btn) loadTypes(Number(btn.dataset.page));
+    bindPagination(paginationList, loadTypes);
+    bindPerPageSelect(perPageSelect, (perPage) => {
+        currentPerPage = perPage;
+        loadTypes(1);
     });
     tableBody.addEventListener('click', async (e) => {
         const btn = e.target.closest('[data-delete-type]');

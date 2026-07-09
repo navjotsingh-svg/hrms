@@ -2,6 +2,7 @@
 
 @section('hiring-content')
     <div class="content-card companies-list-card">
+        @include('partials.list-pagination-header', ['perPageId' => 'templatesPerPage'])
         <div class="table-responsive">
             <table class="companies-table table mb-0">
                 <thead>
@@ -17,12 +18,13 @@
                 </tbody>
             </table>
         </div>
-        <div class="content-card-body border-top">
-            <div class="d-flex flex-wrap justify-content-between align-items-center gap-2">
-                <div class="text-muted small" id="templatesPaginationInfo"></div>
-                <ul class="pagination pagination-sm mb-0" id="templatesPaginationList"></ul>
-            </div>
-        </div>
+        @include('partials.list-pagination-footer', [
+            'infoId' => 'templatesPaginationInfo',
+            'listId' => 'templatesPaginationList',
+            'perPageId' => 'templatesPerPage',
+            'wrapClass' => 'content-card-body border-top',
+            'ariaLabel' => 'Templates pagination',
+        ])
     </div>
 
     @if ($canManage)

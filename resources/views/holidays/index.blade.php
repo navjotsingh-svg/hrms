@@ -50,6 +50,7 @@
             </div>
         </div>
 
+        @include('partials.list-pagination-header', ['perPageId' => 'holidaysPerPage'])
         <div class="table-responsive">
             <table class="companies-table table mb-0">
                 <thead>
@@ -73,14 +74,14 @@
             </table>
         </div>
 
-        <div class="content-card-body border-top companies-pagination-footer" id="holidaysPagination">
-            <div class="d-flex flex-wrap align-items-center justify-content-between gap-3">
-                <div class="small text-muted" id="holidaysPaginationInfo">Loading pagination...</div>
-                <nav aria-label="Holidays pagination">
-                    <ul class="pagination pagination-sm mb-0" id="holidaysPaginationList"></ul>
-                </nav>
-            </div>
-        </div>
+        @include('partials.list-pagination-footer', [
+            'infoId' => 'holidaysPaginationInfo',
+            'listId' => 'holidaysPaginationList',
+            'perPageId' => 'holidaysPerPage',
+            'wrapId' => 'holidaysPagination',
+            'ariaLabel' => 'Holidays pagination',
+            'infoText' => 'Loading pagination...',
+        ])
     </div>
     @vite(['resources/js/holidays-index.js'])
 @endsection

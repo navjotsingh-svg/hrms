@@ -1,4 +1,5 @@
 import api, { getErrorMessage } from './api';
+import { bindPagination, bindPerPageSelect, readPerPage, renderListPagination } from './pagination';
 
 const escapeHtml = (value) => String(value ?? '')
     .replace(/&/g, '&amp;')
@@ -50,10 +51,12 @@ document.addEventListener('DOMContentLoaded', async () => {
     const titleEl = document.getElementById('activityLogsTitle');
     const paginationInfo = document.getElementById('activityLogsPaginationInfo');
     const paginationList = document.getElementById('activityLogsPaginationList');
+    const perPageSelect = document.getElementById('activityLogsPerPage');
     const loadBtn = document.getElementById('loadActivityLogsBtn');
 
     const isSuperAdmin = Boolean(companySelect);
     let currentPage = 1;
+    let currentPerPage = readPerPage(perPageSelect, 50);
 
     dateInput.value = new Date().toISOString().slice(0, 10);
 
@@ -71,7 +74,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         const params = {
             date: dateInput.value,
             page: currentPage,
-            per_page: 50,
+            per_page: currentPerPage,
         };
 
         if (moduleSelect.value) {
@@ -94,50 +97,13 @@ document.addEventListener('DOMContentLoaded', async () => {
     };
 
     const renderPagination = (pagination) => {
-        const { current_page: page, last_page: lastPage, total, per_page: perPage } = pagination;
-
-        paginationInfo.textContent = total
-            ? `Showing page ${page} of ${lastPage} (${total} entries)`
-            : 'No entries';
-
-        paginationList.innerHTML = '';
-
-        if (lastPage <= 1) {
-            return;
-        }
-
-        const addItem = (label, targetPage, disabled = false, active = false) => {
-            const li = document.createElement('li');
-            li.className = `page-item${disabled ? ' disabled' : ''}${active ? ' active' : ''}`;
-            li.innerHTML = `<button type="button" class="page-link" data-page="${targetPage}">${label}</button>`;
-            paginationList.appendChild(li);
-        };
-
-        addItem('Prev', page - 1, page <= 1);
-
-        for (let i = 1; i <= lastPage; i += 1) {
-            if (i === 1 || i === lastPage || Math.abs(i - page) <= 1) {
-                addItem(String(i), i, false, i === page);
-            } else if (i === 2 && page > 3) {
-                addItem('…', page, true);
-            } else if (i === lastPage - 1 && page < lastPage - 2) {
-                addItem('…', page, true);
-            }
-        }
-
-        addItem('Next', page + 1, page >= lastPage);
-
-        paginationList.querySelectorAll('[data-page]').forEach((button) => {
-            button.addEventListener('click', () => {
-                const target = Number(button.dataset.page);
-
-                if (!target || target === currentPage || target < 1 || target > lastPage) {
-                    return;
-                }
-
-                currentPage = target;
-                loadLogs();
-            });
+        renderListPagination({
+            infoEl: paginationInfo,
+            listEl: paginationList,
+            perPageSelectEl: perPageSelect,
+            pagination,
+            itemLabel: 'entries',
+            emptyMessage: 'No entries',
         });
     };
 
@@ -216,6 +182,15 @@ document.addEventListener('DOMContentLoaded', async () => {
         currentPage = 1;
         loadLogs();
     };
+
+    bindPagination(paginationList, (page) => {
+        currentPage = page;
+        loadLogs();
+    });
+    bindPerPageSelect(perPageSelect, (perPage) => {
+        currentPerPage = perPage;
+        resetAndLoad();
+    });
 
     [dateInput, moduleSelect, statusSelect].forEach((element) => {
         element?.addEventListener('change', resetAndLoad);

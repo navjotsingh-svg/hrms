@@ -2,6 +2,7 @@ import { Offcanvas } from 'bootstrap';
 import './payroll-settings';
 import api, { getErrorMessage } from './api';
 import { filterEmployeeOptions, formatEmployeeLabel, initEmployeeAutocomplete } from './employee-autocomplete';
+import { bindPagination, bindPerPageSelect, paginateArray, readPerPage, renderListPagination } from './pagination';
 
 const MONTHS = [
     'January', 'February', 'March', 'April', 'May', 'June',
@@ -38,6 +39,10 @@ document.addEventListener('DOMContentLoaded', async () => {
     const summarySearch = document.getElementById('payrollSummarySearch');
     const summaryPeriodLabel = document.getElementById('payrollSummaryPeriodLabel');
     const summaryTotals = document.getElementById('payrollSummaryTotals');
+    const summaryPaginationInfo = document.getElementById('payrollSummaryPaginationInfo');
+    const summaryPaginationList = document.getElementById('payrollSummaryPaginationList');
+    const summaryPaginationWrap = document.getElementById('payrollSummaryPaginationWrap');
+    const summaryPerPageSelect = document.getElementById('payrollSummaryPerPage');
     const detailDrawerEl = document.getElementById('payrollDetailDrawer');
     const detailDrawer = detailDrawerEl ? Offcanvas.getOrCreateInstance(detailDrawerEl) : null;
     const yearSelect = document.getElementById('payrollYear');
@@ -66,6 +71,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     let employeeSearch = null;
     let summaryPayslipsAll = [];
     let summarySearchTerm = '';
+    let summaryPage = 1;
+    let summaryPerPage = readPerPage(summaryPerPageSelect);
 
     if (isManageMode && employeeInput && employeeHidden) {
         employeeSearch = initEmployeeAutocomplete({
@@ -193,6 +200,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         summaryWrap?.classList.add('d-none');
         summaryPayslipsAll = [];
         summarySearchTerm = '';
+        summaryPage = 1;
 
         if (summarySearch) {
             summarySearch.value = '';
@@ -355,7 +363,8 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
 
         const period = periods.find((item) => String(item.id) === String(periodSelect?.value));
-        const visiblePayslips = filteredSummaryPayslips();
+        const filteredPayslips = filteredSummaryPayslips();
+        const { items: visiblePayslips, pagination } = paginateArray(filteredPayslips, summaryPage, summaryPerPage);
 
         if (summaryPeriodLabel) {
             summaryPeriodLabel.textContent = period ? `— ${period.label}` : '';
@@ -367,7 +376,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             summaryTotals.textContent = `${payslips.length} employees · Gross ${formatAmount(totalGross)} · Net ${formatAmount(totalNet)}`;
         }
 
-        if (!visiblePayslips.length) {
+        if (!filteredPayslips.length) {
             if (summaryHead) {
                 summaryHead.innerHTML = `
                     <tr>
@@ -387,6 +396,14 @@ document.addEventListener('DOMContentLoaded', async () => {
                 </tr>
             `;
             summaryWrap.classList.remove('d-none');
+            renderListPagination({
+                infoEl: summaryPaginationInfo,
+                listEl: summaryPaginationList,
+                perPageSelectEl: summaryPerPageSelect,
+                pagination: { total: 0, from: 0, to: 0, current_page: 1, last_page: 1, per_page: summaryPerPage },
+                itemLabel: 'employees',
+                emptyMessage: 'No employees match your search.',
+            });
             return;
         }
 
@@ -419,6 +436,15 @@ document.addEventListener('DOMContentLoaded', async () => {
                 </td>
             </tr>
         `).join('');
+
+        renderListPagination({
+            infoEl: summaryPaginationInfo,
+            listEl: summaryPaginationList,
+            perPageSelectEl: summaryPerPageSelect,
+            pagination,
+            itemLabel: 'employees',
+            emptyMessage: 'No employees match your search.',
+        });
 
         summaryWrap.classList.remove('d-none');
     };
@@ -519,6 +545,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     };
 
     const loadPayslipsForPeriod = async (periodId) => {
+        summaryPage = 1;
+
         if (payslipsByPeriod.has(periodId)) {
             const cached = payslipsByPeriod.get(periodId);
             renderEmployeeOptions(cached);
@@ -624,6 +652,18 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     summarySearch?.addEventListener('input', () => {
         summarySearchTerm = summarySearch.value || '';
+        summaryPage = 1;
+        renderSummary(summaryPayslipsAll);
+    });
+
+    bindPagination(summaryPaginationWrap, (page) => {
+        summaryPage = page;
+        renderSummary(summaryPayslipsAll);
+    });
+
+    bindPerPageSelect(summaryPerPageSelect, (perPage) => {
+        summaryPerPage = perPage;
+        summaryPage = 1;
         renderSummary(summaryPayslipsAll);
     });
 

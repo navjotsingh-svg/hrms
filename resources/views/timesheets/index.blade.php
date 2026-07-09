@@ -18,15 +18,15 @@
 
                 @if ($canSubmitTimesheets && $canReviewTeamTimesheets)
 
-                    Submit your daily reports and review your full team — including members added to team-lead projects.
+                    Submit daily project reports and review your team’s submissions by period.
 
                 @elseif ($canReviewTeamTimesheets)
 
-                    Review your full team’s daily reports and join discussions started by team leads.
+                    Review your team’s daily reports by employee and date range.
 
                 @else
 
-                    Log your daily work by project. Submit reports for today only; past dates are view-only.
+                    Log time and status per project. Filter by period to view or submit reports.
 
                 @endif
 
@@ -46,15 +46,15 @@
 
 
 
-    @if ($canReviewTeamTimesheets)
-
     <div class="content-card mb-4">
 
         <div class="content-card-body">
 
             <div class="row g-3 align-items-end">
 
-                <div class="col-md-6">
+                @if ($canReviewTeamTimesheets)
+
+                <div class="col-md-4">
 
                     <label for="teamEmployeeSelect" class="form-label">View timesheet for</label>
 
@@ -74,17 +74,81 @@
 
                 </div>
 
+                @endif
+
+                <div class="col-md-3">
+
+                    <label for="timesheetRangePreset" class="form-label">Period</label>
+
+                    <select class="form-select" id="timesheetRangePreset">
+
+                        <option value="today" selected>Today</option>
+
+                        <option value="yesterday">Yesterday</option>
+
+                        <option value="this_week">This week</option>
+
+                        <option value="this_month">This month</option>
+
+                        <option value="custom">Custom</option>
+
+                    </select>
+
+                </div>
+
+                <div class="col-md-3 d-none" id="timesheetProjectFilterWrap">
+
+                    <label for="timesheetProjectFilter" class="form-label">Project</label>
+
+                    <select class="form-select" id="timesheetProjectFilter">
+
+                        <option value="">All projects</option>
+
+                    </select>
+
+                </div>
+
+                <div id="timesheetCustomRange" class="col-md-5 d-none">
+
+                    <div class="row g-2 align-items-end">
+
+                        <div class="col-md-4">
+
+                            <label for="timesheetFromDate" class="form-label">From</label>
+
+                            <input type="date" class="form-control" id="timesheetFromDate">
+
+                        </div>
+
+                        <div class="col-md-4">
+
+                            <label for="timesheetToDate" class="form-label">To</label>
+
+                            <input type="date" class="form-control" id="timesheetToDate">
+
+                        </div>
+
+                        <div class="col-md-4">
+
+                            <button type="button" class="btn btn-primary w-100" id="timesheetApplyRangeBtn">Apply</button>
+
+                        </div>
+
+                    </div>
+
+                </div>
+
             </div>
+
+            <p class="text-muted small mb-0 mt-3" id="timesheetRangeSummary"></p>
 
         </div>
 
     </div>
 
-    @endif
 
 
-
-    <div class="content-card mb-4">
+    <div class="content-card mb-4" id="dailyReportCard">
 
         <div class="content-card-header border-bottom">
 
@@ -96,23 +160,11 @@
 
             <form id="timesheetForm" novalidate>
 
-                <div class="row g-3 align-items-end mb-4">
+                <div class="mb-4">
 
-                    <div class="col-md-4">
+                    <div class="timesheet-day-summary" id="daySummary">
 
-                        <label for="workDate" class="form-label">Work date</label>
-
-                        <input type="date" class="form-control" id="workDate" required>
-
-                    </div>
-
-                    <div class="col-md-8">
-
-                        <div class="timesheet-day-summary" id="daySummary">
-
-                            <span class="text-muted">Select a date to view or submit your report.</span>
-
-                        </div>
+                        <span class="text-muted">Select a period to view or submit your report.</span>
 
                     </div>
 
@@ -124,62 +176,51 @@
 
                 <div id="noProjectsNotice" class="alert alert-warning d-none" role="alert">
 
-                    You are not assigned to any active projects yet. Ask your manager to add you to a project before submitting timesheets.
+                    You are not assigned to any active projects yet. You can still log time under <strong>Other</strong> for non-project work.
 
                 </div>
 
                 <div id="readOnlyNotice" class="alert alert-info d-none" role="alert">
-                    You are viewing a team member's report. Add feedback on each project submission below.
-                </div>
 
-                <div class="table-responsive">
-
-                    <table class="table align-middle mb-0" id="timesheetEntriesTable">
-
-                        <thead>
-
-                            <tr>
-
-                                <th style="min-width: 220px;">Project</th>
-
-                                <th style="min-width: 130px;">Start time</th>
-
-                                <th style="min-width: 130px;">End time</th>
-
-                                <th style="min-width: 100px;">Hours</th>
-
-                                <th style="min-width: 200px;">Notes</th>
-
-                                <th class="text-end" style="width: 60px;"></th>
-
-                            </tr>
-
-                        </thead>
-
-                        <tbody id="timesheetEntriesBody">
-
-                            <tr>
-
-                                <td colspan="6" class="text-muted py-4 text-center">Add at least one project row to submit your day report.</td>
-
-                            </tr>
-
-                        </tbody>
-
-                    </table>
+                    You are viewing a team member's report for the selected work date.
 
                 </div>
 
-                <div id="timesheetProjectDiscussions" class="mt-4 d-none">
-                    <h3 class="h6 text-uppercase text-muted mb-3">Project feedback</h3>
-                    <div id="timesheetProjectDiscussionsList"></div>
-                </div>
 
-                <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mt-3" id="timesheetFormActions">
+
+                <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3" id="timesheetRowActions">
 
                     <button type="button" class="btn btn-outline-secondary" id="addTimesheetRowBtn">+ Add project</button>
 
-                    <button type="submit" class="btn btn-primary" id="submitTimesheetBtn">Submit day report</button>
+                </div>
+
+
+
+                <div id="timesheetEntriesBody" class="timesheet-entries-list">
+
+                    <div class="text-muted py-4 text-center border rounded" data-placeholder-row="1">
+
+                        Add at least one project to submit your report for the selected date.
+
+                    </div>
+
+                </div>
+
+
+
+                <div id="timesheetProjectDiscussions" class="mt-4 d-none">
+
+                    <h3 class="h6 text-uppercase text-muted mb-3" id="timesheetDiscussionsTitle">Manager comments</h3>
+
+                    <div id="timesheetProjectDiscussionsList"></div>
+
+                </div>
+
+
+
+                <div class="d-flex flex-wrap justify-content-end gap-2 mt-4" id="timesheetFormActions">
+
+                    <button type="submit" class="btn btn-primary" id="submitTimesheetBtn">Submit report</button>
 
                 </div>
 
@@ -189,17 +230,21 @@
 
     </div>
 
-    <div class="content-card">
 
-        <div class="content-card-header border-bottom">
 
-            <h2 class="content-card-title mb-0">Recent Submissions</h2>
+    <div class="content-card d-none" id="periodReportsCard">
+
+        <div class="content-card-header border-bottom d-flex flex-wrap justify-content-between align-items-center gap-2">
+
+            <h2 class="content-card-title mb-0">Period Reports</h2>
+
+            <span class="badge text-bg-light border" id="periodReportsSummary"></span>
 
         </div>
 
-        <div class="content-card-body" id="recentTimesheetsContainer">
+        <div class="content-card-body" id="periodReportsContainer">
 
-            <div class="text-muted py-3">Loading recent timesheets...</div>
+            <div class="text-muted py-3">Loading reports...</div>
 
         </div>
 
@@ -224,5 +269,4 @@
     @vite(['resources/js/timesheets-index.js'])
 
 @endsection
-
 

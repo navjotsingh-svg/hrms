@@ -32,7 +32,8 @@
                     <button type="button" class="btn btn-primary btn-sm" id="exitSurveyCreateBtn">Add Question</button>
                 </div>
             </div>
-            <div class="table-responsive">
+        @include('partials.list-pagination-header', ['perPageId' => 'exitSurveyPerPage'])
+        <div class="table-responsive">
                 <table class="companies-table table mb-0">
                     <thead>
                         <tr>
@@ -49,6 +50,13 @@
                     </tbody>
                 </table>
             </div>
+            @include('partials.list-pagination-footer', [
+                'infoId' => 'exitSurveyPaginationInfo',
+                'listId' => 'exitSurveyPaginationList',
+                'perPageId' => 'exitSurveyPerPage',
+                'wrapClass' => 'content-card-body border-top',
+                'ariaLabel' => 'Survey questions pagination',
+            ])
         </div>
     @endif
 
@@ -68,6 +76,7 @@
         <div class="content-card-header border-bottom">
             <h2 class="content-card-title mb-0">Exit Cases</h2>
         </div>
+        @include('partials.list-pagination-header', ['perPageId' => 'exitCasesPerPage'])
         <div class="table-responsive">
             <table class="companies-table table mb-0">
                 <thead>
@@ -85,18 +94,20 @@
                 </tbody>
             </table>
         </div>
-        <div class="content-card-body border-top">
-            <div class="d-flex flex-wrap align-items-center justify-content-between gap-3">
-                <div class="small text-muted" id="exitCasesPaginationInfo"></div>
-                <ul class="pagination pagination-sm mb-0" id="exitCasesPaginationList"></ul>
-            </div>
-        </div>
+        @include('partials.list-pagination-footer', [
+            'infoId' => 'exitCasesPaginationInfo',
+            'listId' => 'exitCasesPaginationList',
+            'perPageId' => 'exitCasesPerPage',
+            'wrapClass' => 'content-card-body border-top',
+            'ariaLabel' => 'Exit cases pagination',
+        ])
     </div>
 
     <div class="content-card">
         <div class="content-card-header border-bottom">
             <h2 class="content-card-title mb-0">Resignation Requests</h2>
         </div>
+        @include('partials.list-pagination-header', ['perPageId' => 'resignationRequestsPerPage'])
         <div class="table-responsive">
             <table class="companies-table table mb-0">
                 <thead>
@@ -113,6 +124,13 @@
                 </tbody>
             </table>
         </div>
+        @include('partials.list-pagination-footer', [
+            'infoId' => 'resignationRequestsPaginationInfo',
+            'listId' => 'resignationRequestsPaginationList',
+            'perPageId' => 'resignationRequestsPerPage',
+            'wrapClass' => 'content-card-body border-top',
+            'ariaLabel' => 'Resignation requests pagination',
+        ])
     </div>
     </div>
 

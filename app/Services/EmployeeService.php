@@ -80,8 +80,14 @@ class EmployeeService
         $weeklyOffData = $this->extractWeeklyOffData($data);
         $leaveTypeIds = $this->extractLeaveTypeIds($data);
         $this->normalizeProbationData($data);
+        $this->normalizePaidEmployeeData($data);
         $plainPassword = null;
         $employeeCode = $data['employee_code'];
+        $isPaidEmployee = (bool) ($data['is_paid_employee'] ?? true);
+
+        if (! $isPaidEmployee) {
+            $salaryData = null;
+        }
 
         $employee = DB::transaction(function () use ($companyId, $data, $givePortalAccess, $salaryData, $departmentIds, $weeklyOffData, $leaveTypeIds, &$plainPassword, $employeeCode) {
             $userId = null;
@@ -179,14 +185,20 @@ class EmployeeService
         $weeklyOffData = $this->extractWeeklyOffData($data);
         $leaveTypeIds = $this->extractLeaveTypeIds($data);
         $this->normalizeProbationData($data);
+        $this->normalizePaidEmployeeData($data);
         $plainPassword = null;
         $trackedFields = [
             'first_name', 'last_name', 'email', 'employee_code', 'department_id', 'role_id',
-            'status', 'employment_type', 'designation', 'manager_id', 'shift_id', 'phone', 'date_of_joining', 'probation_status',
+            'status', 'employment_type', 'is_paid_employee', 'designation', 'manager_id', 'shift_id', 'phone', 'date_of_joining', 'probation_status',
         ];
         $before = $employee->only($trackedFields);
         $actor = request()?->user();
         $salaryWasInitialSync = false;
+        $isPaidEmployee = (bool) ($data['is_paid_employee'] ?? $employee->isPaidEmployee());
+
+        if (! $isPaidEmployee) {
+            $salaryData = null;
+        }
 
         DB::transaction(function () use ($employee, $data, $givePortalAccess, $salaryData, $salaryRevisionNotes, $departmentIds, $weeklyOffData, $leaveTypeIds, $actor, &$plainPassword, &$salaryWasInitialSync) {
             $employee->update($data);
@@ -923,6 +935,15 @@ class EmployeeService
         $employee->leaveTypes()->sync($syncData);
     }
 
+    private function normalizePaidEmployeeData(array &$data): void
+    {
+        if (! array_key_exists('is_paid_employee', $data)) {
+            return;
+        }
+
+        $data['is_paid_employee'] = filter_var($data['is_paid_employee'], FILTER_VALIDATE_BOOLEAN);
+    }
+
     private function normalizeProbationData(array &$data): void
     {
         $applicable = (bool) ($data['probation_applicable'] ?? false);
@@ -949,11 +970,35 @@ class EmployeeService
         }
     }
 
-    public function reviseSalary(Employee $employee, array $salaryData, ?User $revisedBy = null, ?string $revisionNotes = null): EmployeeSalary
+    public function computeIncrementEffectiveDate(Employee $employee, ?\Carbon\Carbon $currentEffectiveFrom = null): \Carbon\Carbon
     {
+        $joiningDate = $employee->joining_date;
+
+        if (! $joiningDate) {
+            return now()->startOfDay();
+        }
+
+        $joining = \Carbon\Carbon::parse($joiningDate)->startOfDay();
+        $reference = ($currentEffectiveFrom ?? $joining)->copy()->startOfDay();
+        $candidate = $joining->copy()->addYear();
+
+        while ($candidate->lte($reference)) {
+            $candidate->addYear();
+        }
+
+        return $candidate;
+    }
+
+    public function reviseSalary(
+        Employee $employee,
+        array $salaryData,
+        ?User $revisedBy = null,
+        ?string $revisionNotes = null,
+        ?string $revisionType = null,
+    ): EmployeeSalary {
         $normalized = $this->normalizeSalaryData($salaryData, (int) $employee->company_id);
 
-        return DB::transaction(function () use ($employee, $normalized, $revisedBy, $revisionNotes) {
+        return DB::transaction(function () use ($employee, $normalized, $revisedBy, $revisionNotes, $revisionType) {
             $existing = EmployeeSalary::query()->where('employee_id', $employee->id)->first();
 
             if ($existing && $this->salarySnapshotMatches($existing, $normalized)) {
@@ -982,6 +1027,7 @@ class EmployeeService
                     'salary_effective_from' => $existing->salary_effective_from,
                     'salary_payout_from' => $existing->salary_payout_from,
                     'revision_notes' => $revisionNotes,
+                    'revision_type' => $revisionType,
                     'revised_at' => now(),
                 ]);
             }
@@ -989,13 +1035,18 @@ class EmployeeService
             $updated = $this->persistSalary($employee, $normalized, $existing);
 
             if ($revisedBy && $existing) {
+                $activityAction = $revisionType === 'increment' ? 'salary.incremented' : 'salary.revised';
+                $activityMessage = $revisionType === 'increment'
+                    ? 'Employee salary incremented.'
+                    : 'Employee salary revised.';
+
                 $this->activityLogService->logChange(
                     $revisedBy,
                     'employees',
-                    'salary.revised',
+                    $activityAction,
                     $employee,
                     (int) $employee->id,
-                    'Employee salary revised.',
+                    $activityMessage,
                     $previousSnapshot,
                     $this->sanitizeSalaryForLog($normalized),
                     request(),

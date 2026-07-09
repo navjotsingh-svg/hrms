@@ -35,6 +35,42 @@
                     </div>
                 </div>
 
+                <div class="dash-home-card mt-4 d-none" id="dashboardMyRequestsCard">
+                    <div class="dash-home-card-header d-flex flex-wrap align-items-center justify-content-between gap-2">
+                        <h2 class="dash-home-card-title mb-0">My Requests</h2>
+                        <a href="{{ route('web.requests.index', ['tab' => 'mine']) }}" class="btn btn-sm btn-outline-primary">View all</a>
+                    </div>
+                    <div class="dash-home-card-body p-0">
+                        <div class="dash-pending-section">
+                            <div class="collapse show" id="dashboardMyRequestsCollapse">
+                                @include('partials.list-pagination-header', ['perPageId' => 'dashboardMyRequestsPerPage'])
+                                <div class="table-responsive" id="dashboardMyRequestsTableWrap">
+                                    <table class="table dash-pending-table mb-0">
+                                        <thead>
+                                            <tr>
+                                                <th>Request Type</th>
+                                                <th>Details</th>
+                                                <th>Requested On</th>
+                                                <th>Status</th>
+                                                <th class="text-end">Actions</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody id="dashboardMyRequestsBody"></tbody>
+                                    </table>
+                                </div>
+                                @include('partials.list-pagination-footer', [
+                                    'infoId' => 'dashboardMyRequestsPaginationInfo',
+                                    'listId' => 'dashboardMyRequestsPaginationList',
+                                    'perPageId' => 'dashboardMyRequestsPerPage',
+                                    'wrapId' => 'dashboardMyRequestsPaginationWrap',
+                                    'wrapClass' => 'd-flex flex-wrap align-items-center justify-content-between gap-2 px-3 py-2 border-top companies-pagination-footer',
+                                    'ariaLabel' => 'My requests pagination',
+                                ])
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
                 <div class="dash-home-card mt-4" id="dashboardPendingCard">
                     <div class="dash-home-card-header">
                         <h2 class="dash-home-card-title">Pending things to do</h2>
@@ -51,6 +87,7 @@
                                     <button type="button" class="btn btn-sm btn-success" id="dashboardPendingBulkApprove">Approve selected</button>
                                     <button type="button" class="btn btn-sm btn-outline-danger" id="dashboardPendingBulkReject">Reject selected</button>
                                 </div>
+                                @include('partials.list-pagination-header', ['perPageId' => 'dashboardPendingPerPage'])
                                 <div class="table-responsive" id="dashboardPendingTableWrap">
                                     <table class="table dash-pending-table mb-0">
                                         <thead>
@@ -68,13 +105,14 @@
                                         <tbody id="dashboardPendingBody"></tbody>
                                     </table>
                                 </div>
-                                <div class="dash-pending-empty d-none" id="dashboardPendingEmpty">
-                                    Well done. No request approvals.
-                                </div>
-                                <div class="d-flex flex-wrap align-items-center justify-content-between gap-2 px-3 py-2 border-top d-none" id="dashboardPendingPaginationWrap">
-                                    <div class="small text-muted" id="dashboardPendingPaginationInfo"></div>
-                                    <ul class="pagination pagination-sm mb-0" id="dashboardPendingPaginationList"></ul>
-                                </div>
+                                @include('partials.list-pagination-footer', [
+                                    'infoId' => 'dashboardPendingPaginationInfo',
+                                    'listId' => 'dashboardPendingPaginationList',
+                                    'perPageId' => 'dashboardPendingPerPage',
+                                    'wrapId' => 'dashboardPendingPaginationWrap',
+                                    'wrapClass' => 'd-flex flex-wrap align-items-center justify-content-between gap-2 px-3 py-2 border-top d-none companies-pagination-footer',
+                                    'ariaLabel' => 'Pending requests pagination',
+                                ])
                             </div>
                         </div>
                     </div>

@@ -1,4 +1,11 @@
 import api, { getErrorMessage } from './api';
+import {
+    buildRangeQueryParams,
+    formatDisplayDate as formatRangeDisplayDate,
+    monthStartDateInput,
+    resolveClientDateRange,
+    todayDateInput,
+} from './date-range-utils';
 
 const pageConfig = window.TIMESHEET_PAGE || {};
 
@@ -14,6 +21,25 @@ const formatToday = () => {
     const day = String(now.getDate()).padStart(2, '0');
 
     return `${now.getFullYear()}-${month}-${day}`;
+};
+
+const formatDisplayDate = (value) => {
+    if (!value) {
+        return 'selected date';
+    }
+
+    const date = new Date(`${value}T00:00:00`);
+
+    if (Number.isNaN(date.getTime())) {
+        return value;
+    }
+
+    return date.toLocaleDateString(undefined, {
+        weekday: 'short',
+        month: 'short',
+        day: 'numeric',
+        year: 'numeric',
+    });
 };
 
 const calculateHours = (startTime, endTime) => {
@@ -56,19 +82,31 @@ document.addEventListener('DOMContentLoaded', async () => {
     const alertBox = document.getElementById('timesheetsAlert');
     const form = document.getElementById('timesheetForm');
     const formAlert = document.getElementById('timesheetFormAlert');
-    const workDateInput = document.getElementById('workDate');
     const daySummary = document.getElementById('daySummary');
     const entriesBody = document.getElementById('timesheetEntriesBody');
     const addRowBtn = document.getElementById('addTimesheetRowBtn');
     const submitBtn = document.getElementById('submitTimesheetBtn');
     const formActions = document.getElementById('timesheetFormActions');
+    const rowActions = document.getElementById('timesheetRowActions');
     const noProjectsNotice = document.getElementById('noProjectsNotice');
     const readOnlyNotice = document.getElementById('readOnlyNotice');
-    const recentContainer = document.getElementById('recentTimesheetsContainer');
+    const periodReportsContainer = document.getElementById('periodReportsContainer');
+    const periodReportsCard = document.getElementById('periodReportsCard');
+    const periodReportsSummary = document.getElementById('periodReportsSummary');
+    const dailyReportCard = document.getElementById('dailyReportCard');
     const teamEmployeeSelect = document.getElementById('teamEmployeeSelect');
     const dailyReportTitle = document.getElementById('dailyReportTitle');
+    const discussionsTitle = document.getElementById('timesheetDiscussionsTitle');
     const projectDiscussionsWrap = document.getElementById('timesheetProjectDiscussions');
     const projectDiscussionsList = document.getElementById('timesheetProjectDiscussionsList');
+    const rangePresetEl = document.getElementById('timesheetRangePreset');
+    const customRangeWrap = document.getElementById('timesheetCustomRange');
+    const fromDateEl = document.getElementById('timesheetFromDate');
+    const toDateEl = document.getElementById('timesheetToDate');
+    const applyRangeBtn = document.getElementById('timesheetApplyRangeBtn');
+    const rangeSummaryEl = document.getElementById('timesheetRangeSummary');
+    const projectFilterWrap = document.getElementById('timesheetProjectFilterWrap');
+    const projectFilterEl = document.getElementById('timesheetProjectFilter');
 
     let projectOptions = [];
     let rowCounter = 0;
@@ -82,13 +120,134 @@ document.addEventListener('DOMContentLoaded', async () => {
         can_reply: false,
         is_viewing_team_member: false,
     };
+    let customRangePending = false;
+    let currentRange = resolveClientDateRange('today');
+    let selectedProjectFilter = '';
+    let loadedPeriodDays = [];
 
-    if (!form || !entriesBody || !workDateInput) {
+    if (!form || !entriesBody) {
         return;
     }
 
-    workDateInput.max = formatToday();
-    workDateInput.value = formatToday();
+    const selectedWorkDate = () => currentRange.from_date;
+
+    const isSingleDayView = () => currentRange.from_date === currentRange.to_date;
+
+    const rangeParams = () => {
+        const params = buildRangeQueryParams(currentRange);
+
+        if (selectedEmployeeId) {
+            params.employee_id = selectedEmployeeId;
+        }
+
+        return params;
+    };
+
+    const isCustomPickerActive = () => customRangePending || rangePresetEl?.value === 'custom';
+
+    const updateRangeSummary = () => {
+        if (!rangeSummaryEl) {
+            return;
+        }
+
+        if (isCustomPickerActive() && currentRange.preset !== 'custom') {
+            rangeSummaryEl.textContent = 'Select from and to dates, then click Apply.';
+            return;
+        }
+
+        const presetLabel = rangePresetEl?.selectedOptions?.[0]?.textContent?.trim() || 'Today';
+
+        rangeSummaryEl.textContent = currentRange.preset === 'custom'
+            ? `Showing reports from ${formatRangeDisplayDate(currentRange.from_date)} to ${formatRangeDisplayDate(currentRange.to_date)}`
+            : `Showing reports for ${presetLabel.toLowerCase()} (${formatRangeDisplayDate(currentRange.from_date)} – ${formatRangeDisplayDate(currentRange.to_date)})`;
+    };
+
+    const syncRangeControls = () => {
+        if (isCustomPickerActive() && currentRange.preset !== 'custom') {
+            customRangeWrap?.classList.remove('d-none');
+            updateRangeSummary();
+            return;
+        }
+
+        customRangePending = false;
+
+        if (rangePresetEl) {
+            rangePresetEl.value = currentRange.preset;
+        }
+
+        customRangeWrap?.classList.toggle('d-none', currentRange.preset !== 'custom');
+
+        if (fromDateEl) {
+            fromDateEl.value = currentRange.from_date || monthStartDateInput();
+            fromDateEl.max = todayDateInput();
+        }
+
+        if (toDateEl) {
+            toDateEl.value = currentRange.to_date || todayDateInput();
+            toDateEl.max = todayDateInput();
+        }
+
+        updateRangeSummary();
+    };
+
+    const showCustomRangePicker = () => {
+        customRangePending = true;
+
+        if (rangePresetEl) {
+            rangePresetEl.value = 'custom';
+        }
+
+        currentRange = resolveClientDateRange(
+            'custom',
+            fromDateEl?.value || currentRange.from_date || monthStartDateInput(),
+            toDateEl?.value || currentRange.to_date || todayDateInput(),
+        );
+
+        customRangeWrap?.classList.remove('d-none');
+
+        if (fromDateEl) {
+            fromDateEl.value = currentRange.from_date;
+        }
+
+        if (toDateEl) {
+            toDateEl.value = currentRange.to_date;
+        }
+
+        updateRangeSummary();
+        fromDateEl?.focus();
+    };
+
+    const applyCurrentRangeSelection = async () => {
+        const preset = rangePresetEl?.value || 'today';
+
+        if (preset === 'custom') {
+            if (!fromDateEl?.value || !toDateEl?.value) {
+                showAlert('Custom range requires from and to dates.', 'warning');
+                return;
+            }
+
+            currentRange = resolveClientDateRange('custom', fromDateEl.value, toDateEl.value);
+        } else {
+            currentRange = resolveClientDateRange(preset);
+        }
+
+        customRangePending = false;
+        selectedProjectFilter = '';
+
+        if (projectFilterEl) {
+            projectFilterEl.value = '';
+        }
+
+        syncRangeControls();
+        await reloadAll();
+    };
+
+    const updateViewLayout = () => {
+        const singleDay = isSingleDayView();
+
+        dailyReportCard?.classList.toggle('d-none', !singleDay);
+        periodReportsCard?.classList.toggle('d-none', singleDay);
+    };
 
     const showAlert = (message, type = 'success') => {
         if (!alertBox) {
@@ -110,7 +269,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     };
 
     const requestParams = () => {
-        const params = { work_date: workDateInput.value };
+        const params = { work_date: selectedWorkDate() };
 
         if (selectedEmployeeId) {
             params.employee_id = selectedEmployeeId;
@@ -119,9 +278,9 @@ document.addEventListener('DOMContentLoaded', async () => {
         return params;
     };
 
-    const isPastDate = () => Boolean(workDateInput.value) && workDateInput.value < formatToday();
+    const isPastDate = () => Boolean(selectedWorkDate()) && selectedWorkDate() < formatToday();
 
-    const isToday = () => workDateInput.value === formatToday();
+    const isFutureDate = () => Boolean(selectedWorkDate()) && selectedWorkDate() > formatToday();
 
     const isReadOnlyView = () => {
         if (capabilities.is_viewing_team_member) {
@@ -132,29 +291,38 @@ document.addEventListener('DOMContentLoaded', async () => {
             return true;
         }
 
-        return isPastDate();
+        return isFutureDate();
+    };
+
+    const updateSubmitButtonLabel = () => {
+        if (!submitBtn || isReadOnlyView()) {
+            return;
+        }
+
+        submitBtn.textContent = `Submit report for ${formatDisplayDate(selectedWorkDate())}`;
     };
 
     const applyViewMode = () => {
         const readOnly = isReadOnlyView();
 
         if (readOnlyNotice) {
-            const showNotice = readOnly && (capabilities.is_viewing_team_member || isPastDate());
+            const showNotice = readOnly && (capabilities.is_viewing_team_member || isFutureDate());
 
             readOnlyNotice.classList.toggle('d-none', !showNotice);
 
             if (capabilities.is_viewing_team_member) {
-                readOnlyNotice.textContent = 'You are viewing a team member\'s report. Add feedback on each project submission below.';
-            } else if (isPastDate()) {
-                readOnlyNotice.textContent = 'Past dates are view-only. Select today\'s date to submit or update your day report.';
+                readOnlyNotice.textContent = 'You are viewing a team member\'s report for the selected work date.';
+            } else if (isFutureDate()) {
+                readOnlyNotice.textContent = 'Future dates are view-only. Select today or a past date to submit your report.';
             }
         }
 
         formActions?.classList.toggle('d-none', readOnly);
+        rowActions?.classList.toggle('d-none', readOnly);
         addRowBtn?.classList.toggle('d-none', readOnly);
         submitBtn?.classList.toggle('d-none', readOnly);
 
-        entriesBody.querySelectorAll('input, select, button[data-remove-row]').forEach((element) => {
+        entriesBody.querySelectorAll('input, select, textarea, button[data-remove-row]').forEach((element) => {
             if (element.matches('button[data-remove-row]')) {
                 element.classList.toggle('d-none', readOnly);
             } else {
@@ -163,23 +331,30 @@ document.addEventListener('DOMContentLoaded', async () => {
         });
 
         if (dailyReportTitle) {
+            const dateLabel = formatDisplayDate(selectedWorkDate());
+
             if (capabilities.is_viewing_team_member) {
-                dailyReportTitle.textContent = 'Team Daily Report';
-            } else if (isPastDate()) {
-                dailyReportTitle.textContent = 'Past Daily Report';
+                dailyReportTitle.textContent = `Team Daily Report · ${dateLabel}`;
+            } else if (isFutureDate()) {
+                dailyReportTitle.textContent = `Upcoming Daily Report · ${dateLabel}`;
             } else {
-                dailyReportTitle.textContent = 'Daily Report';
+                dailyReportTitle.textContent = `Daily Report · ${dateLabel}`;
             }
         }
+
+        updateSubmitButtonLabel();
     };
 
     const updateDaySummary = (summary) => {
+        const dateLabel = formatDisplayDate(selectedWorkDate());
+
         if (!summary || !summary.entry_count) {
-            daySummary.innerHTML = '<span class="text-muted">No report submitted for this date yet.</span>';
+            daySummary.innerHTML = `<span class="text-muted">No report submitted for ${escapeHtml(dateLabel)} yet.</span>`;
             return;
         }
 
         daySummary.innerHTML = `
+            <span class="badge text-bg-light border me-2">${escapeHtml(dateLabel)}</span>
             <span class="badge text-bg-light border me-2">${summary.entry_count} project${summary.entry_count === 1 ? '' : 's'}</span>
             <span class="fw-semibold">Total: ${formatHoursLabel(summary.total_hours)}</span>
         `;
@@ -207,7 +382,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             <option value="">Select project</option>
             ${options.map((project) => `
                 <option value="${project.id}" ${String(project.id) === String(selectedProjectId) ? 'selected' : ''}>
-                    ${escapeHtml(project.name)}
+                    ${escapeHtml(project.name)}${project.name === 'Other' ? ' (Non-project work)' : ''}
                 </option>
             `).join('')}
         `;
@@ -241,59 +416,264 @@ document.addEventListener('DOMContentLoaded', async () => {
         });
     };
 
-    const createRow = (entry = null) => {
-        rowCounter += 1;
-        const rowId = rowCounter;
+    const renderReadOnlyValue = (label, value) => `
+        <div class="col-12">
+            <div class="small text-muted mb-1">${escapeHtml(label)}</div>
+            <div>${value ? escapeHtml(value) : '<span class="text-muted">—</span>'}</div>
+        </div>
+    `;
 
-        const safeNotes = entry?.notes
-            ? String(entry.notes).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;')
-            : '';
+    const collectProjectsFromEntries = (entries = []) => {
+        const projects = new Map();
+
+        entries.forEach((entry) => {
+            const projectId = entry.project_id ?? entry.project?.id;
+
+            if (!projectId) {
+                return;
+            }
+
+            projects.set(String(projectId), {
+                id: Number(projectId),
+                name: entry.project?.name || `Project #${projectId}`,
+            });
+        });
+
+        return [...projects.values()].sort((left, right) => left.name.localeCompare(right.name));
+    };
+
+    const collectProjectsFromDays = (days = []) => collectProjectsFromEntries(
+        days.flatMap((day) => day.entries || []),
+    );
+
+    const syncProjectFilterOptions = (projects = []) => {
+        if (!projectFilterEl || !projectFilterWrap) {
+            return;
+        }
+
+        if (!projects.length) {
+            selectedProjectFilter = '';
+            projectFilterWrap.classList.add('d-none');
+            projectFilterEl.innerHTML = '<option value="">All projects</option>';
+            return;
+        }
+
+        projectFilterWrap.classList.remove('d-none');
+
+        const options = ['<option value="">All projects</option>']
+            .concat(projects.map((project) => `
+                <option value="${project.id}" ${String(project.id) === String(selectedProjectFilter) ? 'selected' : ''}>
+                    ${escapeHtml(project.name)}
+                </option>
+            `));
+
+        projectFilterEl.innerHTML = options.join('');
+
+        if (selectedProjectFilter && !projects.some((project) => String(project.id) === String(selectedProjectFilter))) {
+            selectedProjectFilter = '';
+            projectFilterEl.value = '';
+        }
+    };
+
+    const filterEntriesByProject = (entries = []) => {
+        if (!selectedProjectFilter) {
+            return entries;
+        }
+
+        return entries.filter((entry) => String(entry.project_id ?? entry.project?.id) === String(selectedProjectFilter));
+    };
+
+    const renderReadOnlyEntryCard = (entry) => {
+        const projectId = Number(entry.project_id ?? entry.project?.id);
+        const projectName = entry.project?.name || 'Project';
+        const threads = commentsByProject[String(projectId)] || [];
 
         return `
-            <tr data-row-id="${rowId}">
-                <td>
-                    <select class="form-select" data-project-select required>
-                        ${renderProjectOptions(rowId, entry?.project_id || '')}
-                    </select>
-                </td>
-                <td>
-                    <input type="time" class="form-control" data-start-time value="${entry?.start_time || ''}" required>
-                </td>
-                <td>
-                    <input type="time" class="form-control" data-end-time value="${entry?.end_time || ''}" required>
-                </td>
-                <td>
-                    <span class="fw-semibold" data-hours-label>${formatHoursLabel(entry?.hours ?? calculateHours(entry?.start_time, entry?.end_time))}</span>
-                </td>
-                <td>
-                    <input type="text" class="form-control" data-notes maxlength="2000" value="${safeNotes}">
-                </td>
-                <td class="text-end">
-                    <button type="button" class="btn btn-sm btn-outline-danger" data-remove-row aria-label="Remove row">&times;</button>
-                </td>
-            </tr>
+            <div class="timesheet-entry-card border rounded mb-3" data-entry-project-id="${projectId}">
+                <div class="p-3">
+                    <div class="d-flex flex-wrap justify-content-between align-items-start gap-2 mb-3">
+                        <div>
+                            <div class="small text-muted mb-1">Project</div>
+                            <div class="fw-semibold">${escapeHtml(projectName)}</div>
+                        </div>
+                        <div class="text-md-end">
+                            <div class="small text-muted mb-1">Time</div>
+                            <div>${escapeHtml(entry.start_time || '—')} – ${escapeHtml(entry.end_time || '—')}</div>
+                            <div class="fw-semibold mt-1">${escapeHtml(entry.hours_label || formatHoursLabel(entry.hours))}</div>
+                        </div>
+                    </div>
+                    <div class="row g-3 border-top pt-3">
+                        ${renderReadOnlyValue('Completed on this project', entry.done_today || '')}
+                        ${renderReadOnlyValue('Blockers or issues', entry.blockers || '')}
+                        ${renderReadOnlyValue('Plan for tomorrow', entry.plan_tomorrow || '')}
+                    </div>
+                    ${capabilities.is_viewing_team_member ? `
+                        <div class="border-top pt-3 mt-3" data-project-comment-threads="${projectId}">
+                            <div class="small text-uppercase text-muted mb-2">Comments</div>
+                            ${threads.length
+                                ? threads.map((comment) => renderCommentThread(comment, projectId)).join('')
+                                : '<div class="small text-muted">No comments on this project yet.</div>'}
+                            ${renderProjectCommentForm(projectId)}
+                        </div>
+                    ` : ''}
+                </div>
+            </div>
         `;
     };
 
-    const renderRows = (entries = []) => {
-        if (!entries.length) {
-            entriesBody.innerHTML = `
-                <tr data-placeholder-row="1">
-                    <td colspan="6" class="text-muted py-4 text-center">${isReadOnlyView() ? 'No report submitted for this date.' : 'Add at least one project row to submit your day report.'}</td>
-                </tr>
+    const renderEntryReportFields = (entry = null, readOnly = false) => {
+        const doneToday = entry?.done_today || '';
+        const blockers = entry?.blockers || '';
+        const planTomorrow = entry?.plan_tomorrow || '';
+
+        if (readOnly) {
+            return `
+                <div class="row g-3 p-2">
+                    <div class="col-12">
+                        <div class="small text-muted mb-1">Completed on this project</div>
+                        <div>${doneToday ? escapeHtml(doneToday) : '<span class="text-muted">—</span>'}</div>
+                    </div>
+                    <div class="col-md-6">
+                        <div class="small text-muted mb-1">Blockers or issues</div>
+                        <div>${blockers ? escapeHtml(blockers) : '<span class="text-muted">—</span>'}</div>
+                    </div>
+                    <div class="col-md-6">
+                        <div class="small text-muted mb-1">Plan for tomorrow</div>
+                        <div>${planTomorrow ? escapeHtml(planTomorrow) : '<span class="text-muted">—</span>'}</div>
+                    </div>
+                </div>
             `;
+        }
+
+        return `
+            <div class="row g-3 p-2">
+                <div class="col-12">
+                    <label class="form-label small mb-1">Completed on this project <span class="text-danger">*</span></label>
+                    <textarea class="form-control form-control-sm" data-done-today rows="2" maxlength="5000" required placeholder="What did you complete on this project today?">${escapeHtml(doneToday)}</textarea>
+                </div>
+                <div class="col-md-6">
+                    <label class="form-label small mb-1">Blockers or issues</label>
+                    <textarea class="form-control form-control-sm" data-blockers rows="2" maxlength="5000" placeholder="Any blockers for this project...">${escapeHtml(blockers)}</textarea>
+                </div>
+                <div class="col-md-6">
+                    <label class="form-label small mb-1">Plan for tomorrow</label>
+                    <textarea class="form-control form-control-sm" data-plan-tomorrow rows="2" maxlength="5000" placeholder="What you plan to work on next for this project...">${escapeHtml(planTomorrow)}</textarea>
+                </div>
+            </div>
+        `;
+    };
+
+    const createRow = (entry = null, { canRemove = true, readOnly = false } = {}) => {
+        rowCounter += 1;
+        const rowId = rowCounter;
+
+        return `
+            <div class="timesheet-entry-card border rounded mb-3" data-row-id="${rowId}">
+                <div class="timesheet-entry-card-header row g-3 align-items-end p-3 pb-2 mb-0">
+                    <div class="col-md-4">
+                        <label class="form-label small mb-1">Project</label>
+                        <select class="form-select" data-project-select required>
+                            ${renderProjectOptions(rowId, entry?.project_id || '')}
+                        </select>
+                    </div>
+                    <div class="col-md-2">
+                        <label class="form-label small mb-1">Start time</label>
+                        <input type="time" class="form-control" data-start-time value="${entry?.start_time || ''}" required>
+                    </div>
+                    <div class="col-md-2">
+                        <label class="form-label small mb-1">End time</label>
+                        <input type="time" class="form-control" data-end-time value="${entry?.end_time || ''}" required>
+                    </div>
+                    <div class="col-md-2">
+                        <label class="form-label small mb-1">Hours</label>
+                        <div class="form-control-plaintext fw-semibold py-2" data-hours-label>${formatHoursLabel(entry?.hours ?? calculateHours(entry?.start_time, entry?.end_time))}</div>
+                    </div>
+                    <div class="col-md-2 text-end">
+                        ${canRemove ? '<button type="button" class="btn btn-sm btn-outline-danger mt-4" data-remove-row aria-label="Remove project">Remove</button>' : ''}
+                    </div>
+                </div>
+                <div class="timesheet-entry-card-body border-top px-3 pb-3 pt-2">
+                    ${renderEntryReportFields(entry, readOnly)}
+                </div>
+            </div>
+        `;
+    };
+
+    const removeRowGroup = (rowId) => {
+        entriesBody.querySelector(`[data-row-id="${rowId}"]`)?.remove();
+    };
+
+    const syncRemoveButtons = () => {
+        const rows = [...entriesBody.querySelectorAll('[data-row-id]')];
+
+        rows.forEach((row, index) => {
+            const removeButton = row.querySelector('[data-remove-row]');
+            const shouldShowRemove = rows.length > 1 && index > 0;
+
+            if (shouldShowRemove && !removeButton) {
+                const actionsCol = row.querySelector('.col-md-2.text-end');
+                if (actionsCol) {
+                    actionsCol.innerHTML = '<button type="button" class="btn btn-sm btn-outline-danger mt-4" data-remove-row aria-label="Remove project">Remove</button>';
+                }
+            } else if (!shouldShowRemove && removeButton) {
+                removeButton.remove();
+            } else if (index === 0 && removeButton) {
+                removeButton.remove();
+            }
+        });
+    };
+
+    const ensureInitialRow = () => {
+        if (isReadOnlyView() || entriesBody.querySelector('[data-row-id]')) {
+            return;
+        }
+
+        entriesBody.querySelector('[data-placeholder-row]')?.remove();
+        entriesBody.insertAdjacentHTML('beforeend', createRow(null, { canRemove: false }));
+        syncRemoveButtons();
+    };
+
+    const renderRows = (entries = []) => {
+        const readOnly = isReadOnlyView();
+        const filteredEntries = filterEntriesByProject(entries);
+
+        syncProjectFilterOptions(collectProjectsFromEntries(entries));
+
+        if (!entries.length) {
+            entriesBody.innerHTML = readOnly
+                ? `<div class="text-muted py-4 text-center border rounded" data-placeholder-row="1">No report submitted for ${escapeHtml(formatDisplayDate(selectedWorkDate()))}.</div>`
+                : '';
+            ensureInitialRow();
             applyViewMode();
             return;
         }
 
-        entriesBody.innerHTML = entries.map((entry) => createRow({
+        if (!filteredEntries.length) {
+            entriesBody.innerHTML = `<div class="text-muted py-4 text-center border rounded" data-placeholder-row="1">No entries match the selected project filter.</div>`;
+            applyViewMode();
+            return;
+        }
+
+        if (readOnly) {
+            entriesBody.innerHTML = filteredEntries
+                .map((entry) => renderReadOnlyEntryCard(entry))
+                .join('');
+            applyViewMode();
+            return;
+        }
+
+        entriesBody.innerHTML = filteredEntries.map((entry, index) => createRow({
             project_id: entry.project_id,
+            project: entry.project,
             start_time: entry.start_time,
             end_time: entry.end_time,
             hours: entry.hours,
-            notes: entry.notes,
-        })).join('');
+            done_today: entry.done_today,
+            blockers: entry.blockers,
+            plan_tomorrow: entry.plan_tomorrow,
+        }, { canRemove: index > 0 && !readOnly, readOnly })).join('');
 
+        syncRemoveButtons();
         applyViewMode();
     };
 
@@ -301,7 +681,9 @@ document.addEventListener('DOMContentLoaded', async () => {
         project_id: row.querySelector('[data-project-select]')?.value,
         start_time: row.querySelector('[data-start-time]')?.value,
         end_time: row.querySelector('[data-end-time]')?.value,
-        notes: row.querySelector('[data-notes]')?.value?.trim() || null,
+        done_today: row.querySelector('[data-done-today]')?.value?.trim() || '',
+        blockers: row.querySelector('[data-blockers]')?.value?.trim() || null,
+        plan_tomorrow: row.querySelector('[data-plan-tomorrow]')?.value?.trim() || null,
     }));
 
     const renderReply = (reply, projectId, canReply) => `
@@ -362,24 +744,43 @@ document.addEventListener('DOMContentLoaded', async () => {
         `;
     };
 
+    const renderEntryReportSummary = (entry) => `
+        <div class="timesheet-entry-report-summary small border-top pt-2 mt-2">
+            <div class="mb-2">
+                <span class="text-muted">Completed:</span>
+                <div class="mt-1">${entry.done_today ? escapeHtml(entry.done_today) : '<span class="text-muted">—</span>'}</div>
+            </div>
+            <div class="row g-2">
+                <div class="col-md-6">
+                    <span class="text-muted">Blockers:</span>
+                    <div class="mt-1">${entry.blockers ? escapeHtml(entry.blockers) : '<span class="text-muted">—</span>'}</div>
+                </div>
+                <div class="col-md-6">
+                    <span class="text-muted">Plan for tomorrow:</span>
+                    <div class="mt-1">${entry.plan_tomorrow ? escapeHtml(entry.plan_tomorrow) : '<span class="text-muted">—</span>'}</div>
+                </div>
+            </div>
+        </div>
+    `;
+
     const renderProjectDiscussionPanel = (entry) => {
         const projectId = Number(entry.project_id);
         const projectName = entry.project?.name || 'Project';
         const threads = commentsByProject[String(projectId)] || [];
         const hasThreads = threads.length > 0;
-        const canStartComment = capabilities.can_comment && capabilities.is_viewing_team_member;
+        const isManagerView = capabilities.is_viewing_team_member;
 
-        if (!canStartComment && !hasThreads) {
+        if (!isManagerView && !hasThreads) {
             return '';
         }
 
         return `
             <div class="border rounded p-3 mb-3" data-project-discussion="${projectId}">
                 <div class="d-flex flex-wrap justify-content-between align-items-start gap-2 mb-2">
-                    <div>
+                    <div class="flex-grow-1">
                         <div class="fw-semibold">${escapeHtml(projectName)}</div>
                         <div class="small text-muted">${escapeHtml(entry.start_time)} – ${escapeHtml(entry.end_time)} · ${escapeHtml(entry.hours_label || formatHoursLabel(entry.hours))}</div>
-                        ${entry.notes ? `<div class="small mt-1">Notes: ${escapeHtml(entry.notes)}</div>` : ''}
+                        ${renderEntryReportSummary(entry)}
                     </div>
                 </div>
                 <div data-project-comment-threads="${projectId}">
@@ -394,6 +795,12 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     const renderProjectDiscussions = () => {
         if (!projectDiscussionsWrap || !projectDiscussionsList) {
+            return;
+        }
+
+        if (capabilities.is_viewing_team_member) {
+            projectDiscussionsWrap.classList.add('d-none');
+            projectDiscussionsList.innerHTML = '';
             return;
         }
 
@@ -414,9 +821,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
 
         projectDiscussionsWrap.classList.remove('d-none');
-        projectDiscussionsList.innerHTML = panels.length
-            ? panels.join('')
-            : '<div class="text-muted small">Submit project entries to enable manager feedback.</div>';
+        projectDiscussionsList.innerHTML = panels.join('');
     };
 
     const clearPendingReply = () => {
@@ -425,12 +830,20 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     const loadComments = async () => {
         if (!selectedEmployeeId || !projectDiscussionsList) {
+            commentsByProject = {};
+            renderProjectDiscussions();
+            if (isReadOnlyView()) {
+                renderRows(loadedEntries);
+            }
             return;
         }
 
         if (!loadedEntries.length) {
             commentsByProject = {};
             renderProjectDiscussions();
+            if (isReadOnlyView()) {
+                renderRows(loadedEntries);
+            }
             return;
         }
 
@@ -445,14 +858,22 @@ document.addEventListener('DOMContentLoaded', async () => {
             }
 
             renderProjectDiscussions();
+
+            if (isReadOnlyView()) {
+                renderRows(loadedEntries);
+            }
         } catch (error) {
-            projectDiscussionsList.innerHTML = `<div class="text-danger py-2">${escapeHtml(getErrorMessage(error))}</div>`;
-            projectDiscussionsWrap?.classList.remove('d-none');
+            if (capabilities.is_viewing_team_member) {
+                entriesBody.innerHTML = `<div class="text-danger py-2">${escapeHtml(getErrorMessage(error))}</div>`;
+            } else {
+                projectDiscussionsList.innerHTML = `<div class="text-danger py-2">${escapeHtml(getErrorMessage(error))}</div>`;
+                projectDiscussionsWrap?.classList.remove('d-none');
+            }
         }
     };
 
     const postProjectComment = async (projectId) => {
-        const input = projectDiscussionsList?.querySelector(`[data-project-comment-input="${projectId}"]`);
+        const input = document.querySelector(`[data-project-comment-input="${projectId}"]`);
         const body = input?.value?.trim();
 
         if (!body || !selectedEmployeeId) {
@@ -461,7 +882,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
         const payload = {
             employee_id: selectedEmployeeId,
-            work_date: workDateInput.value,
+            work_date: selectedWorkDate(),
             project_id: projectId,
             body,
         };
@@ -547,17 +968,17 @@ document.addEventListener('DOMContentLoaded', async () => {
     const loadProjects = async () => {
         if (!pageConfig.canSubmit || isReadOnlyView()) {
             noProjectsNotice?.classList.add('d-none');
-            addRowBtn.disabled = true;
-            submitBtn.disabled = true;
             return;
         }
 
         try {
             const response = await api.get('/timesheets/project-options');
             projectOptions = response.data?.data?.projects || [];
-            noProjectsNotice?.classList.toggle('d-none', projectOptions.length > 0);
+            const hasAssignedProjects = projectOptions.some((project) => project.name !== 'Other');
+            noProjectsNotice?.classList.toggle('d-none', hasAssignedProjects);
             addRowBtn.disabled = projectOptions.length === 0;
             submitBtn.disabled = projectOptions.length === 0;
+            refreshProjectSelects();
         } catch (error) {
             showAlert(getErrorMessage(error), 'danger');
         }
@@ -594,69 +1015,128 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
     };
 
-    const loadRecent = async () => {
-        if (!selectedEmployeeId) {
-            recentContainer.innerHTML = '<div class="text-muted py-3">Select a team member to view recent submissions.</div>';
+    const renderPeriodDayCard = (day) => {
+        const filteredEntries = filterEntriesByProject(day.entries || []);
+
+        if (!filteredEntries.length) {
+            return '';
+        }
+
+        return `
+        <div class="border rounded p-3 mb-3 timesheet-period-day-card" data-day-project-ids="${filteredEntries.map((entry) => entry.project_id).join(',')}">
+            <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-2">
+                <button type="button" class="btn btn-link p-0 fw-semibold text-decoration-none" data-load-date="${escapeHtml(day.work_date)}">
+                    ${escapeHtml(formatDisplayDate(day.work_date))}
+                </button>
+                <span class="badge text-bg-light border">${formatHoursLabel(filteredEntries.reduce((total, entry) => total + Number(entry.hours || 0), 0))} total · ${filteredEntries.length} project${filteredEntries.length === 1 ? '' : 's'}</span>
+            </div>
+            <div class="timesheet-entries-list">
+                ${filteredEntries.map((entry) => `
+                    <div class="timesheet-entry-card border rounded mb-2" data-entry-project-id="${entry.project_id}">
+                        <div class="p-3">
+                            <div class="d-flex flex-wrap justify-content-between align-items-start gap-2 mb-2">
+                                <div>
+                                    <div class="small text-muted mb-1">Project</div>
+                                    <div class="fw-semibold">${escapeHtml(entry.project?.name || 'Project')}</div>
+                                </div>
+                                <div class="text-md-end">
+                                    <div class="small text-muted mb-1">Time</div>
+                                    <div>${escapeHtml(entry.start_time)} – ${escapeHtml(entry.end_time)}</div>
+                                    <div class="fw-semibold mt-1">${escapeHtml(entry.hours_label || formatHoursLabel(entry.hours))}</div>
+                                </div>
+                            </div>
+                            ${renderEntryReportSummary(entry)}
+                        </div>
+                    </div>
+                `).join('')}
+            </div>
+        </div>
+    `;
+    };
+
+    const renderPeriodReports = () => {
+        syncProjectFilterOptions(collectProjectsFromDays(loadedPeriodDays));
+
+        const visibleDays = loadedPeriodDays
+            .map((day) => ({
+                ...day,
+                entries: filterEntriesByProject(day.entries || []),
+            }))
+            .filter((day) => day.entries.length);
+
+        if (!visibleDays.length) {
+            periodReportsContainer.innerHTML = selectedProjectFilter
+                ? '<div class="text-muted py-3">No entries match the selected project filter.</div>'
+                : '<div class="text-muted py-3">No timesheet submissions in this period.</div>';
+            periodReportsSummary.textContent = '0 days · 0h';
             return;
         }
 
+        const totalHours = visibleDays.reduce(
+            (total, day) => total + day.entries.reduce((dayTotal, entry) => dayTotal + Number(entry.hours || 0), 0),
+            0,
+        );
+
+        periodReportsSummary.textContent = `${visibleDays.length} day${visibleDays.length === 1 ? '' : 's'} · ${formatHoursLabel(totalHours)} total`;
+        periodReportsContainer.innerHTML = visibleDays.map((day) => renderPeriodDayCard(day)).join('');
+    };
+
+    const loadPeriodReports = async () => {
+        if (isSingleDayView()) {
+            return;
+        }
+
+        if (!selectedEmployeeId) {
+            periodReportsContainer.innerHTML = '<div class="text-muted py-3">Select a team member to view reports.</div>';
+            periodReportsSummary.textContent = '';
+            return;
+        }
+
+        periodReportsContainer.innerHTML = '<div class="text-muted py-3">Loading reports...</div>';
+
         try {
-            const response = await api.get('/timesheets/recent', {
-                params: { limit: 20, employee_id: selectedEmployeeId },
-            });
-            const days = response.data?.data?.days || [];
+            const response = await api.get('/timesheets/range', { params: rangeParams() });
+            const payload = response.data?.data || {};
+            const days = payload.days || [];
+            const summary = payload.summary || {};
+
+            if (payload.capabilities) {
+                capabilities = { ...capabilities, ...payload.capabilities };
+            }
+
+            loadedPeriodDays = days;
 
             if (!days.length) {
-                recentContainer.innerHTML = '<div class="text-muted py-3">No timesheet submissions yet.</div>';
+                loadedPeriodDays = [];
+                syncProjectFilterOptions([]);
+                periodReportsContainer.innerHTML = '<div class="text-muted py-3">No timesheet submissions in this period.</div>';
+                periodReportsSummary.textContent = '0 days · 0h';
                 return;
             }
 
-            recentContainer.innerHTML = days.map((day) => `
-                <div class="border rounded p-3 mb-3">
-                    <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-2">
-                        <button type="button" class="btn btn-link p-0 fw-semibold text-decoration-none" data-load-date="${day.work_date}">
-                            ${escapeHtml(day.work_date)}
-                        </button>
-                        <span class="badge text-bg-light border">${formatHoursLabel(day.total_hours)} total</span>
-                    </div>
-                    <div class="table-responsive">
-                        <table class="table table-sm mb-0">
-                            <thead>
-                                <tr>
-                                    <th>Project</th>
-                                    <th>Time</th>
-                                    <th>Hours</th>
-                                    <th>Notes</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                ${day.entries.map((entry) => `
-                                    <tr>
-                                        <td>${escapeHtml(entry.project?.name || 'Project')}</td>
-                                        <td>${escapeHtml(entry.start_time)} – ${escapeHtml(entry.end_time)}</td>
-                                        <td>${escapeHtml(entry.hours_label || formatHoursLabel(entry.hours))}</td>
-                                        <td>${entry.notes ? escapeHtml(entry.notes) : '—'}</td>
-                                    </tr>
-                                `).join('')}
-                            </tbody>
-                        </table>
-                    </div>
-                </div>
-            `).join('');
+            renderPeriodReports();
         } catch (error) {
-            recentContainer.innerHTML = '<div class="text-danger py-3">Unable to load recent timesheets.</div>';
+            periodReportsContainer.innerHTML = `<div class="text-danger py-3">${escapeHtml(getErrorMessage(error))}</div>`;
+            periodReportsSummary.textContent = '';
         }
     };
 
     const reloadAll = async () => {
-        await loadDayEntries();
-        await loadRecent();
+        updateViewLayout();
+
+        if (isSingleDayView()) {
+            await loadDayEntries();
+            return;
+        }
+
+        await loadPeriodReports();
     };
 
     addRowBtn?.addEventListener('click', () => {
         entriesBody.querySelector('[data-placeholder-row]')?.remove();
-        entriesBody.insertAdjacentHTML('beforeend', createRow());
+        entriesBody.insertAdjacentHTML('beforeend', createRow(null, { canRemove: true }));
         refreshProjectSelects();
+        syncRemoveButtons();
     });
 
     entriesBody.addEventListener('input', (event) => {
@@ -680,39 +1160,91 @@ document.addEventListener('DOMContentLoaded', async () => {
             return;
         }
 
-        removeButton.closest('[data-row-id]')?.remove();
+        const rowId = removeButton.closest('[data-row-id]')?.dataset.rowId;
+        if (rowId) {
+            removeRowGroup(rowId);
+        }
 
         if (!entriesBody.querySelector('[data-row-id]')) {
-            renderRows([]);
+            ensureInitialRow();
         } else {
+            syncRemoveButtons();
             refreshProjectSelects();
         }
     });
 
-    recentContainer?.addEventListener('click', (event) => {
+    periodReportsContainer?.addEventListener('click', async (event) => {
         const button = event.target.closest('[data-load-date]');
 
         if (!button) {
             return;
         }
 
-        workDateInput.value = button.dataset.loadDate;
-        loadDayEntries();
-        window.scrollTo({ top: 0, behavior: 'smooth' });
+        const date = button.dataset.loadDate;
+        currentRange = resolveClientDateRange('custom', date, date);
+        customRangePending = false;
+        syncRangeControls();
+        await reloadAll();
+        dailyReportCard?.scrollIntoView({ behavior: 'smooth', block: 'start' });
     });
 
-    workDateInput.addEventListener('change', () => {
-        clearPendingReply();
-        loadDayEntries();
+    rangePresetEl?.addEventListener('change', async () => {
+        if (rangePresetEl.value === 'custom') {
+            showCustomRangePicker();
+            return;
+        }
+
+        await applyCurrentRangeSelection();
     });
+
+    applyRangeBtn?.addEventListener('click', async () => {
+        await applyCurrentRangeSelection();
+    });
+
+    fromDateEl?.addEventListener('keydown', (event) => {
+        if (event.key === 'Enter') {
+            event.preventDefault();
+            applyCurrentRangeSelection();
+        }
+    });
+
+    toDateEl?.addEventListener('keydown', (event) => {
+        if (event.key === 'Enter') {
+            event.preventDefault();
+            applyCurrentRangeSelection();
+        }
+    });
+
+    const refreshProjectDiscussionUi = () => {
+        if (capabilities.is_viewing_team_member) {
+            renderRows(loadedEntries);
+            return;
+        }
+
+        renderProjectDiscussions();
+    };
 
     teamEmployeeSelect?.addEventListener('change', async () => {
         selectedEmployeeId = teamEmployeeSelect.value ? Number(teamEmployeeSelect.value) : null;
+        selectedProjectFilter = '';
+
+        if (projectFilterEl) {
+            projectFilterEl.value = '';
+        }
+
         clearPendingReply();
         await reloadAll();
     });
 
     projectDiscussionsList?.addEventListener('click', (event) => {
+        handleProjectDiscussionClick(event);
+    });
+
+    entriesBody?.addEventListener('click', (event) => {
+        handleProjectDiscussionClick(event);
+    });
+
+    const handleProjectDiscussionClick = (event) => {
         const replyButton = event.target.closest('[data-reply-to]');
         const postButton = event.target.closest('[data-post-project-comment]');
         const cancelButton = event.target.closest('[data-cancel-project-reply]');
@@ -722,20 +1254,31 @@ document.addEventListener('DOMContentLoaded', async () => {
                 projectId: Number(replyButton.dataset.replyProject),
                 parentId: Number(replyButton.dataset.replyTo),
             };
-            renderProjectDiscussions();
-            projectDiscussionsList.querySelector(`[data-project-comment-input="${pendingReply.projectId}"]`)?.focus();
+            refreshProjectDiscussionUi();
+            document.querySelector(`[data-project-comment-input="${pendingReply.projectId}"]`)?.focus();
             return;
         }
 
         if (cancelButton) {
             clearPendingReply();
-            renderProjectDiscussions();
+            refreshProjectDiscussionUi();
             return;
         }
 
         if (postButton) {
             postProjectComment(Number(postButton.dataset.postProjectComment));
         }
+    };
+
+    projectFilterEl?.addEventListener('change', () => {
+        selectedProjectFilter = projectFilterEl.value;
+
+        if (isSingleDayView()) {
+            renderRows(loadedEntries);
+            return;
+        }
+
+        renderPeriodReports();
     });
 
     form.addEventListener('submit', async (event) => {
@@ -746,12 +1289,24 @@ document.addEventListener('DOMContentLoaded', async () => {
             return;
         }
 
-        if (!isToday()) {
-            showFormAlert('You can only submit a day report for today.');
+        if (isFutureDate()) {
+            showFormAlert('You cannot submit a report for a future date.');
             return;
         }
 
         const entries = collectRows().filter((entry) => entry.project_id && entry.start_time && entry.end_time);
+
+        const missingDone = entries.find((entry) => !entry.done_today);
+
+        if (missingDone) {
+            showFormAlert('Please describe what you completed for each project.');
+            const row = [...entriesBody.querySelectorAll('[data-row-id]')].find((element) => {
+                const doneField = element.querySelector('[data-done-today]');
+                return doneField && !doneField.value?.trim();
+            });
+            row?.querySelector('[data-done-today]')?.focus();
+            return;
+        }
 
         if (!entries.length) {
             showFormAlert('Add at least one complete project row before submitting.');
@@ -762,7 +1317,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
         try {
             const response = await api.post('/timesheets', {
-                work_date: workDateInput.value,
+                work_date: selectedWorkDate(),
                 entries,
             });
 
@@ -772,7 +1327,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             updateDaySummary(payload.summary);
             showAlert(response.data?.message || 'Timesheet submitted successfully.');
             await loadComments();
-            await loadRecent();
+            await reloadAll();
         } catch (error) {
             showFormAlert(getErrorMessage(error));
         } finally {
@@ -780,7 +1335,27 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
     });
 
+    const urlParams = new URLSearchParams(window.location.search);
+    const presetEmployeeId = urlParams.get('employee_id');
+    const presetWorkDate = urlParams.get('work_date');
+    const presetRange = urlParams.get('range');
+
+    if (presetWorkDate) {
+        currentRange = resolveClientDateRange('custom', presetWorkDate, presetWorkDate);
+    } else if (presetRange) {
+        currentRange = resolveClientDateRange(presetRange);
+    }
+
+    syncRangeControls();
+
     await loadTeamEmployees();
+
+    if (presetEmployeeId && teamEmployeeSelect) {
+        selectedEmployeeId = Number(presetEmployeeId);
+        teamEmployeeSelect.value = presetEmployeeId;
+    }
+
     await loadProjects();
     await reloadAll();
+    ensureInitialRow();
 });

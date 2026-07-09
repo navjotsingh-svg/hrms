@@ -38,6 +38,7 @@ class Employee extends Model
         'gender',
         'date_of_birth',
         'employment_type',
+        'is_paid_employee',
         'status',
         'probation_applicable',
         'probation_period_months',
@@ -74,6 +75,7 @@ class Employee extends Model
             'portal_access_date' => 'date',
             'date_of_birth' => 'date',
             'probation_applicable' => 'boolean',
+            'is_paid_employee' => 'boolean',
             'probation_end_date' => 'date',
             'profile_face_descriptor' => 'array',
         ];
@@ -198,6 +200,11 @@ class Employee extends Model
     public function restrictsPaidLeave(): bool
     {
         return $this->isOnProbation() || $this->hasActivePip();
+    }
+
+    public function isPaidEmployee(): bool
+    {
+        return (bool) ($this->is_paid_employee ?? true);
     }
 
     public function paidLeaveRestrictionLabel(): ?string

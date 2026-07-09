@@ -9,6 +9,7 @@ use App\Http\Requests\StoreTimesheetDayRequest;
 use App\Http\Resources\ProjectResource;
 use App\Http\Resources\TimesheetCommentResource;
 use App\Http\Resources\TimesheetEntryResource;
+use App\Services\DateRangePresetService;
 use App\Services\TimesheetService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -17,7 +18,10 @@ class TimesheetController extends Controller
 {
     use ApiResponse;
 
-    public function __construct(private TimesheetService $timesheetService) {}
+    public function __construct(
+        private TimesheetService $timesheetService,
+        private DateRangePresetService $dateRangePresetService,
+    ) {}
 
     public function index(Request $request): JsonResponse
     {
@@ -39,9 +43,15 @@ class TimesheetController extends Controller
 
         $totalHours = round($entries->sum('hours'), 2);
         $targetEmployeeId = $employeeId ?? (int) $request->user()->employee?->id;
+        $dayReport = $this->timesheetService->dayReportForDate(
+            $request->user(),
+            $validated['work_date'],
+            $employeeId,
+        );
 
         return $this->success([
             'entries' => TimesheetEntryResource::collection($entries),
+            'day_report' => $this->timesheetService->formatDayReport($dayReport),
             'summary' => [
                 'work_date' => $validated['work_date'],
                 'employee_id' => $targetEmployeeId,
@@ -67,15 +77,49 @@ class TimesheetController extends Controller
         $employeeId = isset($validated['employee_id']) ? (int) $validated['employee_id'] : null;
         $grouped = $this->timesheetService->recentDays($request->user(), $limit, $employeeId);
 
-        $days = $grouped->map(function ($entries, $date) {
-            return [
-                'work_date' => $date,
-                'total_hours' => round($entries->sum('hours'), 2),
-                'entries' => TimesheetEntryResource::collection($entries),
-            ];
-        })->values();
+        return $this->success([
+            'days' => $this->formatGroupedDays($grouped),
+        ]);
+    }
 
-        return $this->success(['days' => $days]);
+    public function range(Request $request): JsonResponse
+    {
+        if (! $request->user()->canAccessTimesheets()) {
+            abort(403);
+        }
+
+        $validated = $request->validate([
+            'range' => ['nullable', 'string'],
+            'date_range' => ['nullable', 'string'],
+            'from_date' => ['nullable', 'date'],
+            'to_date' => ['nullable', 'date'],
+            'employee_id' => ['nullable', 'integer'],
+        ]);
+
+        $employeeId = isset($validated['employee_id']) ? (int) $validated['employee_id'] : null;
+        $resolved = $this->dateRangePresetService->resolve($validated);
+        $grouped = $this->timesheetService->entriesForDateRange(
+            $request->user(),
+            $resolved['from_date'],
+            $resolved['to_date'],
+            $employeeId,
+        );
+
+        $days = $this->formatGroupedDays($grouped);
+        $targetEmployeeId = $employeeId ?? (int) $request->user()->employee?->id;
+
+        return $this->success([
+            'days' => $days,
+            'summary' => [
+                'preset' => $resolved['preset'],
+                'from_date' => $resolved['from_date'],
+                'to_date' => $resolved['to_date'],
+                'employee_id' => $targetEmployeeId,
+                'day_count' => $days->count(),
+                'total_hours' => round($days->sum('total_hours'), 2),
+            ],
+            'capabilities' => $this->capabilities($request, $targetEmployeeId),
+        ]);
     }
 
     public function teamEmployees(Request $request): JsonResponse
@@ -172,6 +216,17 @@ class TimesheetController extends Controller
             'Timesheet submitted successfully.',
             201,
         );
+    }
+
+    private function formatGroupedDays($grouped)
+    {
+        return $grouped->map(function ($entries, $date) {
+            return [
+                'work_date' => $date,
+                'total_hours' => round($entries->sum('hours'), 2),
+                'entries' => TimesheetEntryResource::collection($entries),
+            ];
+        })->values();
     }
 
     private function capabilities(Request $request, ?int $employeeId): array

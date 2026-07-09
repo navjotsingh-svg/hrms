@@ -1,4 +1,5 @@
 import api, { getErrorMessage } from './api';
+import { bindPagination, bindPerPageSelect, readPerPage, renderListPagination } from './pagination';
 import { applyMomentsUnreadBadges, markMomentsFeedSeen } from './moments-badges';
 
 const REACTIONS = [
@@ -73,7 +74,9 @@ document.addEventListener('DOMContentLoaded', async () => {
     const feed = document.getElementById('momentsFeed');
     const empty = document.getElementById('momentsEmpty');
     const alertBox = document.getElementById('momentsAlert');
-    const pagination = document.getElementById('momentsPagination');
+    const paginationInfo = document.getElementById('momentsPaginationInfo');
+    const paginationList = document.getElementById('momentsPagination');
+    const perPageSelect = document.getElementById('momentsPerPage');
     const postForm = document.getElementById('momentsPostForm');
     const postType = document.getElementById('momentsPostType');
     const postEmployeeWrap = document.getElementById('momentsPostEmployeeWrap');
@@ -94,6 +97,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     let currentFilter = '';
     let currentPage = 1;
+    let currentPerPage = readPerPage(perPageSelect);
     let selectedPostFiles = [];
     let momentEmployees = [];
     let momentTemplates = null;
@@ -464,24 +468,6 @@ document.addEventListener('DOMContentLoaded', async () => {
         });
     };
 
-    const renderPagination = (meta) => {
-        if (!pagination) return;
-
-        if (!meta?.last_page || meta.last_page <= 1) {
-            pagination.innerHTML = '';
-            return;
-        }
-
-        pagination.innerHTML = Array.from({ length: meta.last_page }, (_, index) => {
-            const page = index + 1;
-            return `
-                <li class="page-item ${page === meta.current_page ? 'active' : ''}">
-                    <button type="button" class="page-link" data-page="${page}">${page}</button>
-                </li>
-            `;
-        }).join('');
-    };
-
     const load = async (page = currentPage) => {
         currentPage = page;
         momentsById.clear();
@@ -489,11 +475,12 @@ document.addEventListener('DOMContentLoaded', async () => {
         commentPanelOpen.clear();
 
         try {
-            const params = { page, per_page: 10 };
+            const params = { page, per_page: currentPerPage };
             if (currentFilter) params.type = currentFilter;
 
             const { data } = await api.get('/home/moments', { params });
             const moments = data.data?.moments || [];
+            const pagination = data.data?.pagination;
 
             moments.forEach((moment) => momentsById.set(moment.id, moment));
 
@@ -505,7 +492,14 @@ document.addEventListener('DOMContentLoaded', async () => {
                 feed.innerHTML = moments.map(renderMoment).join('');
             }
 
-            renderPagination(data.data?.pagination);
+            renderListPagination({
+                infoEl: paginationInfo,
+                listEl: paginationList,
+                perPageSelectEl: perPageSelect,
+                pagination,
+                itemLabel: 'posts',
+                emptyMessage: 'No posts found',
+            });
             renderAuthorStats(data.data?.author_stats || []);
 
             if (data.data?.unread) {
@@ -746,10 +740,10 @@ document.addEventListener('DOMContentLoaded', async () => {
         closeOtherEmojiPickers();
     });
 
-    pagination?.addEventListener('click', async (event) => {
-        const button = event.target.closest('[data-page]');
-        if (!button) return;
-        await load(Number(button.dataset.page));
+    bindPagination(paginationList, (page) => load(page));
+    bindPerPageSelect(perPageSelect, (perPage) => {
+        currentPerPage = perPage;
+        load(1);
     });
 
     refreshBtn?.addEventListener('click', async () => {

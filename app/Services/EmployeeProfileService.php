@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Http\Resources\EmployeePersonalSectionResource;
 use App\Models\DocumentType;
 use App\Models\Employee;
+use App\Models\EmployeeSalaryRevision;
 use App\Models\EmployeeDocument;
 use App\Models\EmployeePaymentMethodProof;
 use App\Models\User;
@@ -112,6 +113,28 @@ class EmployeeProfileService
     {
         $employee = $this->resolveEmployeeForActor($user, $employee);
 
+        $action = $data['salary_action'] ?? 'revise';
+        unset($data['salary_action']);
+
+        $existingSalary = $employee->salary;
+        $revisionType = match ($action) {
+            'increment' => EmployeeSalaryRevision::TYPE_INCREMENT,
+            'revise' => EmployeeSalaryRevision::TYPE_CORRECTION,
+            default => null,
+        };
+
+        if ($action === 'increment') {
+            $effectiveFrom = $this->employeeService->computeIncrementEffectiveDate(
+                $employee,
+                $existingSalary?->salary_effective_from,
+            );
+            $data['salary_effective_from'] = $effectiveFrom->format('Y-m-d');
+            $data['salary_payout_from'] = $data['salary_payout_from'] ?? $data['salary_effective_from'];
+        } elseif ($action === 'revise') {
+            $data['salary_effective_from'] = $data['salary_effective_from'] ?? now()->format('Y-m-d');
+            $data['salary_payout_from'] = $data['salary_payout_from'] ?? $data['salary_effective_from'];
+        }
+
         $this->employeeService->reviseSalary(
             $employee,
             collect($data)->only([
@@ -130,6 +153,7 @@ class EmployeeProfileService
             ])->all(),
             $user,
             $data['revision_notes'] ?? null,
+            $revisionType,
         );
 
         return $this->loadProfile($employee->fresh());

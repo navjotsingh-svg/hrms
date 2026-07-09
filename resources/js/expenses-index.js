@@ -14,6 +14,7 @@ import {
     renderViewIconButton,
 } from './action-icons';
 import { renderApproveIconButton } from './review-actions';
+import { bindPagination, bindPerPageSelect, readPerPage, renderListPagination } from './pagination';
 
 const formatToday = () => new Date().toISOString().slice(0, 10);
 
@@ -219,40 +220,19 @@ document.addEventListener('DOMContentLoaded', async () => {
         status: filterApprovalStatus?.value || '',
         belongs_to: filterBelongsTo?.value || 'myself',
         search: filterSearch?.value.trim() || '',
-        per_page: Number(itemsPerPage?.value || 10),
+        per_page: readPerPage(itemsPerPage, 10),
         page: currentPage,
     });
 
-    const renderPagination = (pagination) => {
-        if (!paginationInfo || !paginationList) return;
-
-        if (!pagination?.total) {
-            paginationInfo.textContent = '0-0 of 0';
-            paginationList.innerHTML = '';
-            return;
-        }
-
-        paginationInfo.textContent = `${pagination.from}-${pagination.to} of ${pagination.total}`;
-        paginationList.innerHTML = '';
-
-        const addItem = (label, page, disabled = false, active = false) => {
-            const li = document.createElement('li');
-            li.className = `page-item${disabled ? ' disabled' : ''}${active ? ' active' : ''}`;
-            li.innerHTML = `<button type="button" class="page-link">${label}</button>`;
-            if (!disabled && !active) {
-                li.querySelector('button').addEventListener('click', () => {
-                    currentPage = page;
-                    loadActiveTab();
-                });
-            }
-            paginationList.appendChild(li);
-        };
-
-        addItem('«', 1, pagination.current_page <= 1);
-        addItem('‹', pagination.current_page - 1, pagination.current_page <= 1);
-        addItem(String(pagination.current_page), pagination.current_page, false, true);
-        addItem('›', pagination.current_page + 1, pagination.current_page >= pagination.last_page);
-        addItem('»', pagination.last_page, pagination.current_page >= pagination.last_page);
+    const renderPagination = (pagination, itemLabel = 'expenses') => {
+        renderListPagination({
+            infoEl: paginationInfo,
+            listEl: paginationList,
+            perPageSelectEl: itemsPerPage,
+            pagination,
+            itemLabel,
+            emptyMessage: `No ${itemLabel} found`,
+        });
     };
 
     const loadExpenseTypes = async () => {
@@ -466,11 +446,21 @@ document.addEventListener('DOMContentLoaded', async () => {
         button.addEventListener('click', () => setActiveTab(button.dataset.expensesTab));
     });
 
-    [filterApprovalStatus, filterBelongsTo, itemsPerPage].forEach((element) => {
+    [filterApprovalStatus, filterBelongsTo].forEach((element) => {
         element?.addEventListener('change', () => {
             currentPage = 1;
             loadActiveTab();
         });
+    });
+
+    bindPagination(paginationList, (page) => {
+        currentPage = page;
+        loadActiveTab();
+    });
+
+    bindPerPageSelect(itemsPerPage, () => {
+        currentPage = 1;
+        loadActiveTab();
     });
 
     filterSearch?.addEventListener('input', () => {

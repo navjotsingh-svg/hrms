@@ -18,6 +18,7 @@ use App\Models\JobRequisition;
 use App\Models\LeaveRequest;
 use App\Models\User;
 use App\Models\WfhRequest;
+use App\Support\ArrayPaginator;
 use Illuminate\Support\Collection;
 use Illuminate\Validation\ValidationException;
 use Symfony\Component\HttpKernel\Exception\AccessDeniedHttpException;
@@ -55,23 +56,11 @@ class RequestHubService
     /** @return array{requests: array<int, array<string, mixed>>, pagination: array<string, int|null>} */
     public function pendingForUserPaginated(User $user, int $page = 1, int $perPage = 5): array
     {
-        $all = $this->pendingForUser($user);
-        $total = count($all);
-        $perPage = max(1, min(50, $perPage));
-        $lastPage = max(1, (int) ceil($total / $perPage));
-        $page = max(1, min($page, $lastPage));
-        $offset = ($page - 1) * $perPage;
+        $paginated = ArrayPaginator::paginate($this->pendingForUser($user), $page, $perPage);
 
         return [
-            'requests' => array_slice($all, $offset, $perPage),
-            'pagination' => [
-                'current_page' => $page,
-                'last_page' => $lastPage,
-                'per_page' => $perPage,
-                'total' => $total,
-                'from' => $total ? $offset + 1 : 0,
-                'to' => min($offset + $perPage, $total),
-            ],
+            'requests' => $paginated['items'],
+            'pagination' => $paginated['pagination'],
         ];
     }
 
@@ -355,11 +344,7 @@ class RequestHubService
                 ->where('company_id', $user->company_id)
                 ->latest();
 
-            if ($user->canViewAllLeaveRequests()) {
-                if ($employeeId) {
-                    $leaveQuery->where('employee_id', $employeeId);
-                }
-            } elseif ($employeeId) {
+            if ($employeeId) {
                 $leaveQuery->where('employee_id', $employeeId);
             } else {
                 $leaveQuery->whereRaw('1 = 0');
@@ -380,11 +365,7 @@ class RequestHubService
                 ->where('company_id', $user->company_id)
                 ->latest();
 
-            if ($user->canViewAllAttendance()) {
-                if ($employeeId) {
-                    $regularizationQuery->where('employee_id', $employeeId);
-                }
-            } elseif ($employeeId) {
+            if ($employeeId) {
                 $regularizationQuery->where('employee_id', $employeeId);
             } else {
                 $regularizationQuery->whereRaw('1 = 0');
@@ -447,6 +428,38 @@ class RequestHubService
 
             $requisitionQuery->limit(50)->get()->each(function (JobRequisition $requisition) use ($user, $items) {
                 $items->push($this->normalizeJobRequisition($requisition, false, $user));
+            });
+        }
+
+        if ($user->canApplyWfh() && $employeeId) {
+            $wfhQuery = WfhRequest::query()
+                ->with(['employee', 'appliedBy'])
+                ->where('company_id', $user->company_id)
+                ->where('employee_id', $employeeId)
+                ->latest();
+
+            if ($status) {
+                $wfhQuery->where('status', $status);
+            }
+
+            $wfhQuery->limit(50)->get()->each(function (WfhRequest $request) use ($user, $items) {
+                $items->push($this->normalizeWfh($request, false, $user));
+            });
+        }
+
+        if ($user->canApplyAssets() && $employeeId) {
+            $assetQuery = AssetRequest::query()
+                ->with(['employee', 'appliedBy', 'items'])
+                ->where('company_id', $user->company_id)
+                ->where('employee_id', $employeeId)
+                ->latest();
+
+            if ($status) {
+                $assetQuery->where('status', $status);
+            }
+
+            $assetQuery->limit(50)->get()->each(function (AssetRequest $request) use ($user, $items) {
+                $items->push($this->normalizeAssetRequest($request, false, $user));
             });
         }
 
@@ -570,17 +583,11 @@ class RequestHubService
     {
         $request->loadMissing('employee');
 
-        if (! $this->canViewTeamEmployeeRequest($user, $request->employee)) {
+        if ((int) $request->company_id !== (int) $user->company_id) {
             return false;
         }
 
-        if ($user->canViewAllAttendance()) {
-            return true;
-        }
-
-        return $user->canApproveRegularization()
-            || $user->canApproveLeave()
-            || $user->hasPermission('attendance.regularize');
+        return $user->canManageRegularization();
     }
 
     private function canViewTeamDocument(User $user, EmployeeDocument $document): bool
@@ -1350,14 +1357,6 @@ class RequestHubService
         }
 
         if ($user->isCompanyAdmin() || $user->isHrManager()) {
-            return true;
-        }
-
-        if ($this->employeeAccessService->canViewAll($user)) {
-            return true;
-        }
-
-        if ($user->hasPermission('leave.manage') || $user->hasPermission('attendance.manage')) {
             return true;
         }
 

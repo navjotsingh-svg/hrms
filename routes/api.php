@@ -25,6 +25,7 @@ Route::prefix('v1')->name('api.')->group(function () {
 
         Route::get('profile', [ProfileController::class, 'show'])->name('profile.show');
         Route::get('profile/employee', [ProfileController::class, 'showEmployee'])->name('profile.employee.show');
+        Route::get('profile/journey', [ProfileController::class, 'journey'])->name('profile.journey.show');
         Route::post('profile/family-members', [ProfileController::class, 'storeFamilyMembers'])->name('profile.family-members.store');
         Route::post('profile/personal-sections', [ProfileController::class, 'storePersonalSection'])->name('profile.personal-sections.store');
         Route::post('profile/compliance-fields', [ProfileController::class, 'storeComplianceField'])->name('profile.compliance-fields.store');
@@ -267,6 +268,8 @@ Route::prefix('v1')->name('api.')->group(function () {
                     ->name('timesheets.project-options');
                 Route::get('timesheets/recent', [\App\Http\Controllers\Api\V1\TimesheetController::class, 'recent'])
                     ->name('timesheets.recent');
+                Route::get('timesheets/range', [\App\Http\Controllers\Api\V1\TimesheetController::class, 'range'])
+                    ->name('timesheets.range');
                 Route::get('timesheets', [\App\Http\Controllers\Api\V1\TimesheetController::class, 'index'])
                     ->name('timesheets.index');
                 Route::post('timesheets', [\App\Http\Controllers\Api\V1\TimesheetController::class, 'store'])
@@ -386,6 +389,16 @@ Route::prefix('v1')->name('api.')->group(function () {
             });
 
             Route::middleware('company.permission:employees.manage')->group(function () {
+                Route::get('employees/bulk-import/fields', [\App\Http\Controllers\Api\V1\EmployeeBulkImportController::class, 'fields'])
+                    ->name('employees.bulk-import.fields');
+                Route::post('employees/bulk-import/upload', [\App\Http\Controllers\Api\V1\EmployeeBulkImportController::class, 'upload'])
+                    ->name('employees.bulk-import.upload');
+                Route::get('employees/bulk-import/{bulkImport}', [\App\Http\Controllers\Api\V1\EmployeeBulkImportController::class, 'show'])
+                    ->name('employees.bulk-import.show')
+                    ->whereNumber('bulkImport');
+                Route::post('employees/bulk-import/{bulkImport}/confirm', [\App\Http\Controllers\Api\V1\EmployeeBulkImportController::class, 'confirm'])
+                    ->name('employees.bulk-import.confirm')
+                    ->whereNumber('bulkImport');
                 Route::post('employees/check-field', [\App\Http\Controllers\Api\V1\EmployeeController::class, 'checkField'])
                     ->name('employees.check-field');
                 Route::post('employees', [\App\Http\Controllers\Api\V1\EmployeeController::class, 'store'])
@@ -418,15 +431,15 @@ Route::prefix('v1')->name('api.')->group(function () {
                     ->whereNumber('employee');
             });
 
-            Route::middleware('company.permission:roles.manage,roles.view,employees.manage')->group(function () {
+            Route::middleware('company.permission:employees.manage')->group(function () {
                 Route::get('roles', [\App\Http\Controllers\Api\V1\RoleController::class, 'index'])
                     ->name('roles.index');
+            });
+
+            Route::middleware('company.admin')->group(function () {
                 Route::get('roles/{role}', [\App\Http\Controllers\Api\V1\RoleController::class, 'show'])
                     ->name('roles.show')
                     ->whereNumber('role');
-            });
-
-            Route::middleware('company.permission:roles.manage')->group(function () {
                 Route::get('permissions/catalog', [\App\Http\Controllers\Api\V1\RoleController::class, 'permissionCatalog'])
                     ->name('permissions.catalog');
                 Route::post('roles', [\App\Http\Controllers\Api\V1\RoleController::class, 'store'])
@@ -512,6 +525,26 @@ Route::prefix('v1')->name('api.')->group(function () {
                 Route::patch('attendance-regularizations/{attendance_regularization}/cancel', [\App\Http\Controllers\Api\V1\AttendanceRegularizationController::class, 'cancel'])
                     ->name('attendance-regularizations.cancel')
                     ->whereNumber('attendance_regularization');
+            });
+
+            Route::middleware('company.member')->group(function () {
+                Route::get('assistant/meta', [\App\Http\Controllers\Api\V1\EmployeeAssistantController::class, 'meta'])
+                    ->name('assistant.meta');
+                Route::post('assistant/chat', [\App\Http\Controllers\Api\V1\EmployeeAssistantController::class, 'chat'])
+                    ->name('assistant.chat');
+
+                Route::prefix('ai')->name('ai.')->group(function () {
+                    Route::post('helpdesk/suggest', [\App\Http\Controllers\Api\V1\AiController::class, 'helpdeskSuggest'])->name('helpdesk.suggest');
+                    Route::post('documents/draft', [\App\Http\Controllers\Api\V1\AiController::class, 'documentDraft'])->name('documents.draft');
+                    Route::post('hiring/generate', [\App\Http\Controllers\Api\V1\AiController::class, 'hiringGenerate'])->name('hiring.generate');
+                    Route::post('performance/review-suggest', [\App\Http\Controllers\Api\V1\AiController::class, 'performanceReviewSuggest'])->name('performance.review-suggest');
+                    Route::post('performance/one-on-one-suggest', [\App\Http\Controllers\Api\V1\AiController::class, 'oneOnOneSuggest'])->name('performance.one-on-one-suggest');
+                    Route::post('bulk-import/{bulkImport}/explain', [\App\Http\Controllers\Api\V1\AiController::class, 'bulkImportExplain'])->name('bulk-import.explain')->whereNumber('bulkImport');
+                    Route::post('analytics/summarize', [\App\Http\Controllers\Api\V1\AiController::class, 'analyticsSummarize'])->name('analytics.summarize');
+                    Route::post('roles/advise', [\App\Http\Controllers\Api\V1\AiController::class, 'roleAdvise'])->name('roles.advise');
+                    Route::post('data-quality/scan', [\App\Http\Controllers\Api\V1\AiController::class, 'dataQualityScan'])->name('data-quality.scan');
+                    Route::post('policies/ask', [\App\Http\Controllers\Api\V1\AiController::class, 'policyAsk'])->name('policies.ask');
+                });
             });
 
             Route::middleware('company.member')->group(function () {
@@ -619,6 +652,8 @@ Route::prefix('v1')->name('api.')->group(function () {
                     ->name('document-letter-templates.index');
                 Route::post('document-letter-templates', [\App\Http\Controllers\Api\V1\DocumentLetterTemplateController::class, 'store'])
                     ->name('document-letter-templates.store');
+                Route::post('document-letter-templates/preview-pdf', [\App\Http\Controllers\Api\V1\DocumentLetterTemplateController::class, 'previewPdf'])
+                    ->name('document-letter-templates.preview-pdf');
                 Route::put('document-letter-templates/{document_letter_template}', [\App\Http\Controllers\Api\V1\DocumentLetterTemplateController::class, 'update'])
                     ->name('document-letter-templates.update')
                     ->whereNumber('document_letter_template');
@@ -627,6 +662,9 @@ Route::prefix('v1')->name('api.')->group(function () {
                     ->whereNumber('document_letter_template');
                 Route::post('document-letter-templates/{document_letter_template}/preview', [\App\Http\Controllers\Api\V1\DocumentLetterTemplateController::class, 'preview'])
                     ->name('document-letter-templates.preview')
+                    ->whereNumber('document_letter_template');
+                Route::get('document-letter-templates/{document_letter_template}/pdf', [\App\Http\Controllers\Api\V1\DocumentLetterTemplateController::class, 'pdf'])
+                    ->name('document-letter-templates.pdf')
                     ->whereNumber('document_letter_template');
                 Route::post('document-letters', [\App\Http\Controllers\Api\V1\DocumentLetterController::class, 'store'])
                     ->name('document-letters.store');
@@ -803,6 +841,8 @@ Route::prefix('v1')->name('api.')->group(function () {
             });
 
             Route::middleware('company.permission:attendance.manage')->group(function () {
+                Route::post('attendance/mark-absent', [\App\Http\Controllers\Api\V1\AttendanceController::class, 'markAbsent'])
+                    ->name('attendance.mark-absent');
                 Route::put('weekly-off', [\App\Http\Controllers\Api\V1\WeeklyOffController::class, 'update'])
                     ->name('weekly-off.update');
                 Route::get('portal-start', [\App\Http\Controllers\Api\V1\PortalStartController::class, 'show'])
@@ -840,6 +880,9 @@ Route::prefix('v1')->name('api.')->group(function () {
                     ->name('employees.index');
                 Route::get('employees/{employee}/profile', [\App\Http\Controllers\Api\V1\EmployeeController::class, 'showProfile'])
                     ->name('employees.profile.show')
+                    ->whereNumber('employee');
+                Route::get('employees/{employee}/journey', [\App\Http\Controllers\Api\V1\EmployeeJourneyController::class, 'show'])
+                    ->name('employees.journey.show')
                     ->whereNumber('employee');
                 Route::get('employees/{employee}', [\App\Http\Controllers\Api\V1\EmployeeController::class, 'show'])
                     ->name('employees.show')
@@ -972,6 +1015,31 @@ Route::prefix('v1')->name('api.')->group(function () {
             });
 
             Route::middleware('company.permission:performance.participate')->group(function () {
+                Route::get('performance/praise', [\App\Http\Controllers\Api\V1\PerformancePraiseController::class, 'index'])
+                    ->name('performance.praise.index');
+                Route::post('performance/praise', [\App\Http\Controllers\Api\V1\PerformancePraiseController::class, 'store'])
+                    ->name('performance.praise.store');
+                Route::get('performance/one-on-one/meta', [\App\Http\Controllers\Api\V1\OneOnOneMeetingController::class, 'meta'])
+                    ->name('performance.one-on-one.meta');
+                Route::get('performance/one-on-one', [\App\Http\Controllers\Api\V1\OneOnOneMeetingController::class, 'index'])
+                    ->name('performance.one-on-one.index');
+                Route::post('performance/one-on-one', [\App\Http\Controllers\Api\V1\OneOnOneMeetingController::class, 'store'])
+                    ->name('performance.one-on-one.store');
+                Route::get('performance/one-on-one/{one_on_one_meeting}', [\App\Http\Controllers\Api\V1\OneOnOneMeetingController::class, 'show'])
+                    ->name('performance.one-on-one.show')
+                    ->whereNumber('one_on_one_meeting');
+                Route::put('performance/one-on-one/{one_on_one_meeting}', [\App\Http\Controllers\Api\V1\OneOnOneMeetingController::class, 'update'])
+                    ->name('performance.one-on-one.update')
+                    ->whereNumber('one_on_one_meeting');
+                Route::patch('performance/one-on-one/{one_on_one_meeting}/complete', [\App\Http\Controllers\Api\V1\OneOnOneMeetingController::class, 'complete'])
+                    ->name('performance.one-on-one.complete')
+                    ->whereNumber('one_on_one_meeting');
+                Route::patch('performance/one-on-one/{one_on_one_meeting}/cancel', [\App\Http\Controllers\Api\V1\OneOnOneMeetingController::class, 'cancel'])
+                    ->name('performance.one-on-one.cancel')
+                    ->whereNumber('one_on_one_meeting');
+                Route::patch('performance/one-on-one/{one_on_one_meeting}/meet-link', [\App\Http\Controllers\Api\V1\OneOnOneMeetingController::class, 'updateMeetLink'])
+                    ->name('performance.one-on-one.meet-link')
+                    ->whereNumber('one_on_one_meeting');
                 Route::get('goals', [\App\Http\Controllers\Api\V1\GoalController::class, 'index'])
                     ->name('goals.index');
                 Route::post('goals', [\App\Http\Controllers\Api\V1\GoalController::class, 'store'])

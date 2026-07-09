@@ -1,5 +1,6 @@
 import api, { getErrorMessage } from './api';
 import { composeActionGroup, renderEditIconButton, renderViewLink } from './action-icons';
+import { bindPagination, bindPerPageSelect, getSerialNumber, readPerPage, renderListPagination } from './pagination';
 import { renderApproveIconButton, renderRejectIconButton } from './review-actions';
 import { promptRequestReviewRemarks } from './swal-utils';
 
@@ -25,9 +26,21 @@ document.addEventListener('DOMContentLoaded', async () => {
     const resignationBody = document.getElementById('resignationRequestsTableBody');
     const exitPaginationInfo = document.getElementById('exitCasesPaginationInfo');
     const exitPaginationList = document.getElementById('exitCasesPaginationList');
+    const exitPerPageSelect = document.getElementById('exitCasesPerPage');
     let exitPage = 1;
+    let exitPerPage = readPerPage(exitPerPageSelect);
+    let resignationPage = 1;
+    const resignationPerPageSelect = document.getElementById('resignationRequestsPerPage');
+    let resignationPerPage = readPerPage(resignationPerPageSelect);
+    const resignationPaginationInfo = document.getElementById('resignationRequestsPaginationInfo');
+    const resignationPaginationList = document.getElementById('resignationRequestsPaginationList');
     let surveyMeta = null;
     let surveyModal;
+    let surveyPage = 1;
+    const surveyPaginationInfo = document.getElementById('exitSurveyPaginationInfo');
+    const surveyPaginationList = document.getElementById('exitSurveyPaginationList');
+    const surveyPerPageSelect = document.getElementById('exitSurveyPerPage');
+    let surveyPerPage = readPerPage(surveyPerPageSelect);
 
     const showAlert = (message, type = 'success') => {
         if (!alertBox) return;
@@ -91,13 +104,13 @@ document.addEventListener('DOMContentLoaded', async () => {
     const loadExitCases = async (page = 1) => {
         exitPage = page;
         try {
-            const { data } = await api.get('/exit-cases', { params: { page, per_page: 10 } });
+            const { data } = await api.get('/exit-cases', { params: { page, per_page: exitPerPage } });
             const cases = data.data.exit_cases || [];
             const pagination = data.data.pagination;
 
             exitCasesBody.innerHTML = cases.length
                 ? cases.map((item, index) => {
-                    const serial = ((pagination.current_page - 1) * pagination.per_page) + index + 1;
+                    const serial = getSerialNumber(index, pagination);
                     return `<tr>
                         <td>${serial}</td>
                         <td>${item.employee?.full_name || '—'}<div class="small text-muted">${item.employee?.employee_code || ''}</div></td>
@@ -109,39 +122,48 @@ document.addEventListener('DOMContentLoaded', async () => {
                 }).join('')
                 : '<tr><td colspan="6" class="text-center text-muted py-5">No exit cases found.</td></tr>';
 
-            exitPaginationInfo.textContent = pagination?.total
-                ? `Showing ${pagination.from} to ${pagination.to} of ${pagination.total}`
-                : 'No exit cases found';
-
-            exitPaginationList.innerHTML = pagination?.last_page
-                ? Array.from({ length: pagination.last_page }, (_, i) => {
-                    const p = i + 1;
-                    return `<li class="page-item ${p === pagination.current_page ? 'active' : ''}"><button type="button" class="page-link" data-exit-page="${p}">${p}</button></li>`;
-                }).join('')
-                : '';
+            renderListPagination({
+                infoEl: exitPaginationInfo,
+                listEl: exitPaginationList,
+                perPageSelectEl: exitPerPageSelect,
+                pagination,
+                itemLabel: 'exit cases',
+                emptyMessage: 'No exit cases found',
+            });
         } catch (error) {
             exitCasesBody.innerHTML = `<tr><td colspan="6" class="text-center text-danger py-5">${getErrorMessage(error)}</td></tr>`;
         }
     };
 
-    const loadResignations = async () => {
+    const loadResignations = async (page = 1) => {
+        resignationPage = page;
         try {
-            const params = {};
+            const params = { page, per_page: resignationPerPage };
             const urlStatus = new URLSearchParams(window.location.search).get('status');
             if (urlStatus) params.status = urlStatus;
 
-            const { data } = await api.get('/resignation-requests', { params: { ...params, per_page: 10 } });
+            const { data } = await api.get('/resignation-requests', { params });
             const items = data.data.resignation_requests || [];
+            const pagination = data.data.pagination;
 
             resignationBody.innerHTML = items.length
                 ? items.map((item, index) => `<tr>
-                    <td>${index + 1}</td>
+                    <td>${getSerialNumber(index, pagination)}</td>
                     <td>${item.employee?.full_name || '—'}</td>
                     <td>${item.proposed_last_working_date || '—'}</td>
                     <td><span class="company-status-pill ${statusClass(item.status)}">${item.status_label}</span></td>
                     <td>${item.exit_case?.id ? renderViewLink(`${routes().offboardingShow || '/offboarding/cases'}/${item.exit_case.id}`, 'View exit case') : '—'}</td>
                 </tr>`).join('')
                 : '<tr><td colspan="5" class="text-center text-muted py-5">No resignation requests found.</td></tr>';
+
+            renderListPagination({
+                infoEl: resignationPaginationInfo,
+                listEl: resignationPaginationList,
+                perPageSelectEl: resignationPerPageSelect,
+                pagination,
+                itemLabel: 'resignation requests',
+                emptyMessage: 'No resignation requests found',
+            });
         } catch (error) {
             resignationBody.innerHTML = `<tr><td colspan="5" class="text-center text-danger py-5">${getErrorMessage(error)}</td></tr>`;
         }
@@ -156,7 +178,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                 const message = await reviewResignation(approve.dataset.approveResignation, 'approve');
                 if (message) {
                     showAlert(message);
-                    await Promise.all([loadPending(), loadExitCases(exitPage), loadResignations()]);
+                    await Promise.all([loadPending(), loadExitCases(exitPage), loadResignations(resignationPage)]);
                 }
             }
 
@@ -164,7 +186,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                 const message = await reviewResignation(reject.dataset.rejectResignation, 'reject');
                 if (message) {
                     showAlert(message);
-                    await Promise.all([loadPending(), loadResignations()]);
+                    await Promise.all([loadPending(), loadResignations(resignationPage)]);
                 }
             }
         } catch (error) {
@@ -172,10 +194,24 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
     });
 
-    exitPaginationList?.addEventListener('click', (event) => {
-        const btn = event.target.closest('[data-exit-page]');
-        if (btn) loadExitCases(Number(btn.dataset.exitPage));
+    bindPagination(exitPaginationList, loadExitCases);
+    bindPerPageSelect(exitPerPageSelect, (perPage) => {
+        exitPerPage = perPage;
+        loadExitCases(1);
     });
+    bindPagination(resignationPaginationList, loadResignations);
+    bindPerPageSelect(resignationPerPageSelect, (perPage) => {
+        resignationPerPage = perPage;
+        loadResignations(1);
+    });
+
+    if (canManage) {
+        bindPagination(surveyPaginationList, loadSurveyQuestions);
+        bindPerPageSelect(surveyPerPageSelect, (perPage) => {
+            surveyPerPage = perPage;
+            loadSurveyQuestions(1);
+        });
+    }
 
     const toggleSurveyOptions = () => {
         const type = document.getElementById('exitSurveyQuestionType')?.value;
@@ -192,17 +228,22 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
     };
 
-    const loadSurveyQuestions = async () => {
+    const loadSurveyQuestions = async (page = surveyPage) => {
         const tableBody = document.getElementById('exitSurveyQuestionsBody');
         if (!canManage || !tableBody) return;
 
+        surveyPage = page;
+
         try {
-            const { data } = await api.get('/exit-survey-questions', { params: { per_page: 50 } });
+            const { data } = await api.get('/exit-survey-questions', {
+                params: { page, per_page: surveyPerPage },
+            });
             const questions = data.data.questions || [];
+            const pagination = data.data.pagination;
 
             tableBody.innerHTML = questions.length
-                ? questions.map((item) => `<tr>
-                    <td>${item.sort_order}</td>
+                ? questions.map((item, index) => `<tr>
+                    <td>${getSerialNumber(index, pagination)}</td>
                     <td>${item.question}</td>
                     <td>${item.type_label}</td>
                     <td>${item.is_required ? 'Yes' : 'No'}</td>
@@ -212,6 +253,15 @@ document.addEventListener('DOMContentLoaded', async () => {
                     })}</td>
                 </tr>`).join('')
                 : '<tr><td colspan="6" class="text-center text-muted py-5">No survey questions configured.</td></tr>';
+
+            renderListPagination({
+                infoEl: surveyPaginationInfo,
+                listEl: surveyPaginationList,
+                perPageSelectEl: surveyPerPageSelect,
+                pagination,
+                itemLabel: 'questions',
+                emptyMessage: 'No survey questions configured',
+            });
 
             tableBody.querySelectorAll('[data-edit-survey-question]').forEach((btn) => {
                 btn.addEventListener('click', () => openSurveyQuestionModal(Number(btn.dataset.editSurveyQuestion), questions));
@@ -259,7 +309,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             try {
                 const { data } = await api.post('/exit-survey-questions/reseed');
                 showAlert(data.message);
-                await loadSurveyQuestions();
+                await loadSurveyQuestions(1);
             } catch (error) {
                 showAlert(getErrorMessage(error), 'danger');
             }
@@ -292,7 +342,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                 }
                 surveyModal?.hide();
                 showAlert('Survey question saved.');
-                await loadSurveyQuestions();
+                await loadSurveyQuestions(1);
             } catch (error) {
                 showAlert(getErrorMessage(error), 'danger');
             }

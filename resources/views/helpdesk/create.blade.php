@@ -75,11 +75,11 @@
                     </div>
 
                     <div class="col-12">
-
-                        <label for="description" class="form-label">Description</label>
-
-                        <textarea class="form-control" id="description" name="description" rows="6" maxlength="5000" required placeholder="Provide details so HR can help you faster"></textarea>
-
+                        <div class="d-flex align-items-center justify-content-between gap-2 mb-1">
+                            <label for="description" class="form-label mb-0">Description</label>
+                            <button type="button" class="btn btn-sm btn-outline-primary" id="helpdeskAiSuggestBtn">AI suggest</button>
+                        </div>
+                        <textarea class="form-control" id="description" name="description" rows="6" maxlength="5000" required placeholder="Describe your issue, or click AI suggest to draft from a short note"></textarea>
                     </div>
 
                     <div class="col-12">

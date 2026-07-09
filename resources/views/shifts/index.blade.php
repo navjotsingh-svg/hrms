@@ -38,6 +38,7 @@
             </div>
         </div>
 
+        @include('partials.list-pagination-header', ['perPageId' => 'shiftsPerPage'])
         <div class="table-responsive">
             <table class="companies-table table mb-0">
                 <thead>
@@ -59,14 +60,14 @@
             </table>
         </div>
 
-        <div class="content-card-body border-top companies-pagination-footer" id="shiftsPagination">
-            <div class="d-flex flex-wrap align-items-center justify-content-between gap-3">
-                <div class="small text-muted" id="shiftsPaginationInfo">Loading pagination...</div>
-                <nav aria-label="Shifts pagination">
-                    <ul class="pagination pagination-sm mb-0" id="shiftsPaginationList"></ul>
-                </nav>
-            </div>
-        </div>
+        @include('partials.list-pagination-footer', [
+            'infoId' => 'shiftsPaginationInfo',
+            'listId' => 'shiftsPaginationList',
+            'perPageId' => 'shiftsPerPage',
+            'wrapId' => 'shiftsPagination',
+            'ariaLabel' => 'Shifts pagination',
+            'infoText' => 'Loading pagination...',
+        ])
     </div>
     @vite(['resources/js/shifts-index.js'])
 @endsection

@@ -216,4 +216,30 @@ class EmployeeAccessService
 
         return in_array($managerId, $descendants, true);
     }
+
+    /**
+     * Portal users for every manager in the employee's reporting chain (direct manager upward).
+     *
+     * @return \Illuminate\Support\Collection<int, User>
+     */
+    public function managerChainUsersForEmployee(Employee $employee): \Illuminate\Support\Collection
+    {
+        $employee->loadMissing('manager.user');
+        $users = collect();
+        $visited = [];
+        $current = $employee->manager;
+
+        while ($current && ! in_array((int) $current->id, $visited, true)) {
+            $visited[] = (int) $current->id;
+            $current->loadMissing('user', 'manager');
+
+            if ($current->user) {
+                $users->push($current->user);
+            }
+
+            $current = $current->manager;
+        }
+
+        return $users->unique('id')->values();
+    }
 }

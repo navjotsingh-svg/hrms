@@ -102,7 +102,8 @@
             </div>
         </div>
         <div class="content-card-body p-0">
-            <div class="table-responsive">
+        @include('partials.list-pagination-header', ['perPageId' => 'attendanceTodayPerPage'])
+        <div class="table-responsive">
                 <table class="table table-hover align-middle mb-0">
                     <thead>
                         <tr>
@@ -114,14 +115,47 @@
                             <th>Worked</th>
                             <th>Marked</th>
                             <th>Status</th>
+                            <th>Absent Remark</th>
+                            <th id="attendanceTodayActionsHeader" class="d-none" style="width: 5rem;">Actions</th>
                         </tr>
                     </thead>
                     <tbody id="attendanceTodayTableBody">
                         <tr>
-                            <td colspan="8" class="text-center text-muted py-4">Loading today's attendance...</td>
+                            <td colspan="10" class="text-center text-muted py-4">Loading today's attendance...</td>
                         </tr>
                     </tbody>
                 </table>
+            </div>
+        </div>
+        @include('partials.list-pagination-footer', [
+            'infoId' => 'attendanceTodayPaginationInfo',
+            'listId' => 'attendanceTodayPaginationList',
+            'perPageId' => 'attendanceTodayPerPage',
+            'wrapId' => 'attendanceTodayPagination',
+            'wrapClass' => 'content-card-body border-top companies-pagination-footer',
+            'ariaLabel' => 'Attendance pagination',
+        ])
+    </div>
+
+    <div class="modal fade" id="attendanceMarkAbsentModal" tabindex="-1" aria-labelledby="attendanceMarkAbsentModalLabel" aria-hidden="true">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="attendanceMarkAbsentModalLabel">Mark Absent</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <p class="mb-3" id="attendanceMarkAbsentSummary">Remove attendance punches and mark this employee absent for the selected date.</p>
+                    <div class="mb-3">
+                        <label for="attendanceMarkAbsentReason" class="form-label">Reason <span class="text-danger">*</span></label>
+                        <textarea class="form-control" id="attendanceMarkAbsentReason" rows="4" maxlength="1000" placeholder="Explain why this employee is being marked absent (min. 10 characters)"></textarea>
+                        <div class="invalid-feedback" id="attendanceMarkAbsentReasonError"></div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="button" class="btn btn-danger" id="attendanceMarkAbsentConfirmBtn">Mark Absent</button>
+                </div>
             </div>
         </div>
     </div>

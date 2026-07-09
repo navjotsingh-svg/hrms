@@ -106,9 +106,13 @@ class LeaveBalanceAnalyticsService
         }
 
         if ($from->year !== $to->year) {
-            throw ValidationException::withMessages([
-                'to_date' => ['Date range must fall within the same calendar year.'],
-            ]);
+            if ($filters['allow_cross_year'] ?? false) {
+                $to = $from->copy()->endOfYear()->endOfDay();
+            } else {
+                throw ValidationException::withMessages([
+                    'to_date' => ['Date range must fall within the same calendar year.'],
+                ]);
+            }
         }
 
         return [$from, $to, $from->year];

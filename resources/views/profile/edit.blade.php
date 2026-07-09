@@ -106,6 +106,20 @@
                 <li class="nav-item" role="presentation">
                     <button
                         class="nav-link"
+                        id="profile-journey-tab"
+                        data-bs-toggle="tab"
+                        data-bs-target="#profileJourneyPane"
+                        type="button"
+                        role="tab"
+                        aria-controls="profileJourneyPane"
+                        aria-selected="false"
+                    >
+                        Portal Journey
+                    </button>
+                </li>
+                <li class="nav-item" role="presentation">
+                    <button
+                        class="nav-link"
                         id="profile-other-tab"
                         data-bs-toggle="tab"
                         data-bs-target="#profileOtherPane"
@@ -138,6 +152,9 @@
             </div>
             <div class="tab-pane fade" id="profileDocumentsPane" role="tabpanel" aria-labelledby="profile-documents-tab" tabindex="0">
                 @include('profile.partials.tabs.documents')
+            </div>
+            <div class="tab-pane fade" id="profileJourneyPane" role="tabpanel" aria-labelledby="profile-journey-tab" tabindex="0">
+                @include('profile.partials.tabs.journey')
             </div>
             <div class="tab-pane fade" id="profileOtherPane" role="tabpanel" aria-labelledby="profile-other-tab" tabindex="0">
                 @include('profile.partials.tabs.other')

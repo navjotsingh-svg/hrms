@@ -47,8 +47,8 @@
     <div class="content-card">
         <div class="content-card-header border-bottom d-flex flex-wrap justify-content-between align-items-center gap-2">
             <h2 class="content-card-title mb-0" id="balancesOverviewTitle">Leave balance overview</h2>
-            <div class="text-muted small" id="balancesPaginationInfo">—</div>
         </div>
+        @include('partials.list-pagination-header', ['perPageId' => 'balancesPerPage'])
         <div class="companies-table-wrap leave-balance-matrix-wrap">
             <table class="companies-table leave-balance-matrix mb-0">
                 <thead id="leaveBalanceMatrixHead">
@@ -59,9 +59,16 @@
                 <tbody id="leaveBalanceMatrixBody"></tbody>
             </table>
         </div>
-        <div class="content-card-body border-top d-flex flex-wrap justify-content-between align-items-center gap-2">
-            <div class="text-muted small" id="balancesPaginationSummary"></div>
-            <ul class="pagination pagination-sm mb-0" id="balancesPaginationList"></ul>
+        <div class="content-card-body border-top">
+            <div class="text-muted small mb-2" id="balancesPaginationSummary"></div>
+            @include('partials.list-pagination-footer', [
+                'infoId' => 'balancesPaginationInfo',
+                'listId' => 'balancesPaginationList',
+                'perPageId' => 'balancesPerPage',
+                'wrapClass' => 'pt-0 border-0 companies-pagination-footer',
+                'ariaLabel' => 'Leave balances pagination',
+                'infoText' => '—',
+            ])
         </div>
     </div>
 

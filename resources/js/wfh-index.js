@@ -6,11 +6,9 @@ import { renderApproveIconButton, renderRejectIconButton } from './review-action
 
 import { cancelRequest, reviewSingleRequest } from './request-review';
 
-
+import { bindPagination, bindPerPageSelect, getSerialNumber, readPerPage, renderListPagination } from './pagination';
 
 const routes = () => window.HRMS_WEB_ROUTES || {};
-
-
 
 const statusClass = (status) => ({
 
@@ -42,6 +40,8 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     const paginationList = document.getElementById('wfhPaginationList');
 
+    const perPageSelect = document.getElementById('wfhPerPage');
+
     const pendingContainer = document.getElementById('wfhPendingContainer');
 
     const pendingBadge = document.getElementById('wfhPendingBadge');
@@ -49,6 +49,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     const pendingCard = document.getElementById('wfhPendingCard');
 
     let currentPage = 1;
+
+    let currentPerPage = readPerPage(perPageSelect);
 
     const currentYear = new Date().getFullYear();
 
@@ -80,7 +82,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     const renderRow = (item, index, pagination) => {
 
-        const serial = ((pagination.current_page - 1) * pagination.per_page) + index + 1;
+        const serial = getSerialNumber(index, pagination);
 
         return `<tr>
 
@@ -226,7 +228,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
             page,
 
-            per_page: 10,
+            per_page: currentPerPage,
 
             year: filterYear?.value || currentYear,
 
@@ -260,25 +262,21 @@ document.addEventListener('DOMContentLoaded', async () => {
 
 
 
-            paginationInfo.textContent = pagination?.total
+            renderListPagination({
 
-                ? `Showing ${pagination.from} to ${pagination.to} of ${pagination.total}`
+                infoEl: paginationInfo,
 
-                : 'No WFH requests found';
+                listEl: paginationList,
 
+                perPageSelectEl: perPageSelect,
 
+                pagination,
 
-            paginationList.innerHTML = pagination?.last_page
+                itemLabel: 'requests',
 
-                ? Array.from({ length: pagination.last_page }, (_, i) => {
+                emptyMessage: 'No WFH requests found',
 
-                    const p = i + 1;
-
-                    return `<li class="page-item ${p === pagination.current_page ? 'active' : ''}"><button type="button" class="page-link" data-page="${p}">${p}</button></li>`;
-
-                }).join('')
-
-                : '';
+            });
 
         } catch (error) {
 
@@ -356,11 +354,13 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     });
 
-    paginationList?.addEventListener('click', (e) => {
+    bindPagination(paginationList, loadRequests);
 
-        const btn = e.target.closest('[data-page]');
+    bindPerPageSelect(perPageSelect, (perPage) => {
 
-        if (btn) loadRequests(Number(btn.dataset.page));
+        currentPerPage = perPage;
+
+        loadRequests(1);
 
     });
 

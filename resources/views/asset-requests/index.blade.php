@@ -50,6 +50,7 @@
                 </div>
             </div>
         </div>
+        @include('partials.list-pagination-header', ['perPageId' => 'assetRequestsPerPage'])
         <div class="table-responsive">
             <table class="companies-table table mb-0">
                 <thead>
@@ -66,12 +67,13 @@
                 </tbody>
             </table>
         </div>
-        <div class="content-card-body border-top">
-            <div class="d-flex flex-wrap align-items-center justify-content-between gap-3">
-                <div class="small text-muted" id="assetRequestsPaginationInfo"></div>
-                <ul class="pagination pagination-sm mb-0" id="assetRequestsPaginationList"></ul>
-            </div>
-        </div>
+        @include('partials.list-pagination-footer', [
+            'infoId' => 'assetRequestsPaginationInfo',
+            'listId' => 'assetRequestsPaginationList',
+            'perPageId' => 'assetRequestsPerPage',
+            'wrapClass' => 'content-card-body border-top',
+            'ariaLabel' => 'Asset requests pagination',
+        ])
     </div>
     @vite(['resources/js/assets-requests-index.js'])
 @endsection

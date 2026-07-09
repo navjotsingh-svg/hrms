@@ -80,7 +80,8 @@
                             </div>
                         </div>
                     </div>
-                    <div class="table-responsive">
+        @include('partials.list-pagination-header', ['perPageId' => 'docLettersPerPage'])
+        <div class="table-responsive">
                         <table class="companies-table table mb-0">
                             <thead>
                                 <tr>
@@ -99,12 +100,13 @@
                             </tbody>
                         </table>
                     </div>
-                    <div class="content-card-body border-top">
-                        <div class="d-flex flex-wrap align-items-center justify-content-between gap-3">
-                            <div class="small text-muted" id="docLettersPaginationInfo"></div>
-                            <ul class="pagination pagination-sm mb-0" id="docLettersPaginationList"></ul>
-                        </div>
-                    </div>
+                    @include('partials.list-pagination-footer', [
+                        'infoId' => 'docLettersPaginationInfo',
+                        'listId' => 'docLettersPaginationList',
+                        'perPageId' => 'docLettersPerPage',
+                        'wrapClass' => 'content-card-body border-top',
+                        'ariaLabel' => 'Document letters pagination',
+                    ])
                 </div>
             </div>
 
@@ -139,7 +141,8 @@
                                 </div>
                             </div>
                         </div>
-                        <div class="table-responsive">
+        @include('partials.list-pagination-header', ['perPageId' => 'docTemplatesPerPage'])
+        <div class="table-responsive">
                             <table class="companies-table table mb-0">
                                 <thead>
                                     <tr>
@@ -156,12 +159,13 @@
                                 </tbody>
                             </table>
                         </div>
-                        <div class="content-card-body border-top">
-                            <div class="d-flex flex-wrap align-items-center justify-content-between gap-3">
-                                <div class="small text-muted" id="docTemplatesPaginationInfo"></div>
-                                <ul class="pagination pagination-sm mb-0" id="docTemplatesPaginationList"></ul>
-                            </div>
-                        </div>
+                        @include('partials.list-pagination-footer', [
+                            'infoId' => 'docTemplatesPaginationInfo',
+                            'listId' => 'docTemplatesPaginationList',
+                            'perPageId' => 'docTemplatesPerPage',
+                            'wrapClass' => 'content-card-body border-top',
+                            'ariaLabel' => 'Document templates pagination',
+                        ])
                     </div>
                 </div>
 
@@ -307,7 +311,10 @@
                                     <button type="button" class="btn btn-outline-secondary btn-sm" data-sample-template="offer_letter">Use Offer Letter Sample</button>
                                 </div>
                                 <div class="col-12">
-                                    <label class="form-label">Letter body</label>
+                                    <div class="d-flex flex-wrap gap-2 align-items-center justify-content-between mb-1">
+                                        <label class="form-label mb-0">Letter body</label>
+                                        <button type="button" class="btn btn-sm btn-outline-primary" id="docLettersAiDraftBtn">AI draft</button>
+                                    </div>
                                     <div id="templateBodyEditor" class="doc-letter-editor"></div>
                                     <textarea class="d-none" id="templateBodyHtml" required aria-hidden="true"></textarea>
                                     <div class="form-text mt-2" id="templatePlaceholderHelp"></div>
@@ -322,9 +329,18 @@
                                         <label class="form-check-label" for="templateIsDefault">Default template for this category</label>
                                     </div>
                                 </div>
+                                <div class="col-md-6">
+                                    @include('partials.employee-search-select', [
+                                        'inputId' => 'templatePreviewEmployeeSearch',
+                                        'hiddenId' => 'templatePreviewEmployeeId',
+                                        'label' => 'Preview PDF with employee (optional)',
+                                        'placeholder' => 'Sample employee for placeholders',
+                                    ])
+                                </div>
                             </div>
                         </div>
                         <div class="modal-footer">
+                            <button type="button" class="btn btn-outline-secondary" id="templatePreviewPdfBtn">Preview PDF</button>
                             <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
                             <button type="submit" class="btn btn-primary">Save Template</button>
                         </div>

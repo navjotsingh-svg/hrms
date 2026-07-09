@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Models\Employee;
+use App\Models\Role;
 use App\Models\User;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Collection;
@@ -36,7 +37,7 @@ class PeopleDirectoryService
         $user->loadMissing('company');
 
         $employees = $this->baseQuery($user)
-            ->with(['department'])
+            ->with(['department', 'role', 'user.role'])
             ->orderedByName()
             ->get();
 
@@ -44,52 +45,12 @@ class PeopleDirectoryService
             fn (Employee $employee) => (string) ($employee->manager_id ?? 'none'),
         );
 
-        $byDepartment = $employees->groupBy(
-            fn (Employee $employee) => (string) ($employee->department_id ?? 'unassigned'),
-        );
+        $roots = $this->orgChartRoots($employees, $byManager);
+        $rootIds = $roots->pluck('id');
 
-        $departmentNodes = $byDepartment
-            ->map(function (Collection $departmentEmployees, string $departmentKey) use ($byManager) {
-                $departmentId = $departmentKey === 'unassigned' ? null : (int) $departmentKey;
-                $departmentName = $departmentId
-                    ? ($departmentEmployees->first()->department?->name ?? 'Department')
-                    : 'Unassigned';
-
-                $departmentEmployeeIds = $departmentEmployees->pluck('id')->flip();
-
-                $roots = $departmentEmployees->filter(function (Employee $employee) use ($departmentEmployeeIds) {
-                    if (! $employee->manager_id) {
-                        return true;
-                    }
-
-                    return ! $departmentEmployeeIds->has($employee->manager_id);
-                });
-
-                $departmentHeads = $this->departmentHeadRoots($roots, $byManager, $departmentEmployeeIds);
-
-                if ($departmentHeads->isEmpty()) {
-                    $departmentHeads = $roots->isNotEmpty()
-                        ? $roots
-                        : $departmentEmployees;
-                }
-
-                if ($departmentHeads->isEmpty()) {
-                    return null;
-                }
-
-                return [
-                    'type' => 'department',
-                    'id' => $departmentId,
-                    'name' => $departmentName,
-                    'direct_reports_count' => $departmentHeads->count(),
-                    'children' => $departmentHeads
-                        ->map(fn (Employee $employee) => $this->buildOrgNode($employee, $byManager, $departmentEmployeeIds))
-                        ->values()
-                        ->all(),
-                ];
-            })
-            ->filter()
-            ->sortBy('name', SORT_NATURAL | SORT_FLAG_CASE)
+        $nodes = $roots
+            ->map(fn (Employee $employee) => $this->buildOrgNode($employee, $byManager, $rootIds))
+            ->filter(fn (array $node) => ! empty($node['children']))
             ->values()
             ->all();
 
@@ -97,7 +58,7 @@ class PeopleDirectoryService
             'company' => [
                 'name' => $user->company?->name ?? 'Company',
             ],
-            'nodes' => $departmentNodes,
+            'nodes' => $nodes,
         ];
     }
 
@@ -122,9 +83,18 @@ class PeopleDirectoryService
             ->where('status', 'active');
     }
 
-    private function buildOrgNode(Employee $employee, Collection $byManager, Collection $departmentEmployeeIds): array
+    /**
+     * Build a node for the org chart tree. Leaf employees are included under their manager.
+     * Root-level filtering (admins without teams) is handled separately.
+     *
+     * @return array<string, mixed>
+     */
+    private function buildOrgNode(Employee $employee, Collection $byManager, Collection $rootIds): array
     {
-        $children = $this->directReportsInDepartment($employee, $byManager, $departmentEmployeeIds);
+        $children = $this->directReports($employee, $byManager)
+            ->reject(fn (Employee $child) => $rootIds->contains($child->id))
+            ->map(fn (Employee $child) => $this->buildOrgNode($child, $byManager, $rootIds))
+            ->values();
 
         return [
             'type' => 'employee',
@@ -135,55 +105,66 @@ class PeopleDirectoryService
             'employee_code' => $employee->employee_code,
             'designation' => $employee->designation ?: '—',
             'department' => $this->departmentName($employee),
+            'is_company_admin' => $employee->role?->slug === Role::SLUG_COMPANY_ADMIN,
             'direct_reports_count' => $children->count(),
             'profile_url' => route('web.employees.show', $employee),
-            'children' => $children
-                ->map(fn (Employee $child) => $this->buildOrgNode($child, $byManager, $departmentEmployeeIds))
-                ->values()
-                ->all(),
+            'children' => $children->all(),
         ];
     }
 
-    private function directReportsInDepartment(
-        Employee $employee,
-        Collection $byManager,
-        Collection $departmentEmployeeIds,
-    ): Collection {
+    private function directReports(Employee $employee, Collection $byManager): Collection
+    {
         return $byManager
             ->get((string) $employee->id, collect())
-            ->filter(fn (Employee $report) => $departmentEmployeeIds->has($report->id))
             ->sortBy(fn (Employee $report) => strtolower($report->full_name))
             ->values();
     }
 
-    /**
-     * Skip company-wide team heads (no manager) and surface their in-department reports as roots.
-     */
-    private function departmentHeadRoots(
-        Collection $roots,
-        Collection $byManager,
-        Collection $departmentEmployeeIds,
-    ): Collection {
-        $departmentHeads = collect();
-
-        foreach ($roots as $root) {
-            if (! $root->manager_id) {
-                $reports = $this->directReportsInDepartment($root, $byManager, $departmentEmployeeIds);
-
-                if ($reports->isNotEmpty()) {
-                    $departmentHeads = $departmentHeads->merge($reports);
-
-                    continue;
-                }
+    /** @return Collection<int, Employee> */
+    private function orgChartRoots(Collection $employees, Collection $byManager): Collection
+    {
+        $employeeById = $employees->keyBy('id');
+        $hasDirectReports = fn (Employee $employee) => $this->directReports($employee, $byManager)->isNotEmpty();
+        $isTopLevel = function (Employee $employee) use ($employeeById): bool {
+            if (! $employee->manager_id) {
+                return true;
             }
 
-            $departmentHeads->push($root);
+            return ! $employeeById->has($employee->manager_id);
+        };
+
+        $withTeams = $employees->filter(fn (Employee $employee) => $hasDirectReports($employee));
+        $adminWithTeams = $withTeams->filter(fn (Employee $employee) => $this->isCompanyAdmin($employee));
+
+        if ($adminWithTeams->count() >= 2) {
+            return $adminWithTeams
+                ->sortBy(fn (Employee $employee) => strtolower($employee->full_name))
+                ->values();
         }
 
-        return $departmentHeads
-            ->unique('id')
-            ->sortBy(fn (Employee $employee) => strtolower($employee->full_name))
-            ->values();
+        $topLevelWithTeams = $withTeams->filter(fn (Employee $employee) => $isTopLevel($employee));
+
+        if ($topLevelWithTeams->count() >= 2) {
+            return $topLevelWithTeams
+                ->sortBy(fn (Employee $employee) => strtolower($employee->full_name))
+                ->values();
+        }
+
+        if ($topLevelWithTeams->isNotEmpty()) {
+            return $topLevelWithTeams->values();
+        }
+
+        if ($adminWithTeams->isNotEmpty()) {
+            return $adminWithTeams->values();
+        }
+
+        return collect();
+    }
+
+    private function isCompanyAdmin(Employee $employee): bool
+    {
+        return $employee->role?->slug === Role::SLUG_COMPANY_ADMIN
+            || $employee->user?->role?->slug === Role::SLUG_COMPANY_ADMIN;
     }
 
     private function departmentName(Employee $employee): string

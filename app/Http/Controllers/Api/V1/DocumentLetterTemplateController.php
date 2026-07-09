@@ -6,16 +6,21 @@ use App\Http\Concerns\ApiResponse;
 use App\Http\Controllers\Controller;
 use App\Http\Resources\DocumentLetterTemplateResource;
 use App\Models\DocumentLetterTemplate;
+use App\Services\DocumentLetterTemplatePdfService;
 use App\Services\DocumentLetterTemplateService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
+use Symfony\Component\HttpFoundation\Response;
 
 class DocumentLetterTemplateController extends Controller
 {
     use ApiResponse;
 
-    public function __construct(private DocumentLetterTemplateService $templateService) {}
+    public function __construct(
+        private DocumentLetterTemplateService $templateService,
+        private DocumentLetterTemplatePdfService $templatePdfService,
+    ) {}
 
     public function meta(): JsonResponse
     {
@@ -121,5 +126,46 @@ class DocumentLetterTemplateController extends Controller
         );
 
         return $this->success(['preview' => $preview]);
+    }
+
+    public function pdf(Request $request, DocumentLetterTemplate $document_letter_template): Response
+    {
+        if ((int) $document_letter_template->company_id !== (int) $request->user()->company_id) {
+            abort(404);
+        }
+
+        $validated = $request->validate([
+            'employee_id' => ['nullable', 'integer', 'exists:employees,id'],
+            'salary' => ['nullable', 'string', 'max:100'],
+            'joining_date' => ['nullable', 'string', 'max:100'],
+        ]);
+
+        return $this->templatePdfService->inline(
+            $request->user(),
+            $document_letter_template,
+            isset($validated['employee_id']) ? (int) $validated['employee_id'] : null,
+            $validated,
+        );
+    }
+
+    public function previewPdf(Request $request): Response
+    {
+        $validated = $request->validate([
+            'body_html' => ['required', 'string'],
+            'title' => ['nullable', 'string', 'max:255'],
+            'subject' => ['nullable', 'string', 'max:255'],
+            'employee_id' => ['nullable', 'integer', 'exists:employees,id'],
+            'salary' => ['nullable', 'string', 'max:100'],
+            'joining_date' => ['nullable', 'string', 'max:100'],
+        ]);
+
+        return $this->templatePdfService->inlineDraft(
+            $request->user(),
+            $validated['body_html'],
+            $validated['title'] ?? null,
+            $validated['subject'] ?? null,
+            isset($validated['employee_id']) ? (int) $validated['employee_id'] : null,
+            $validated,
+        );
     }
 }

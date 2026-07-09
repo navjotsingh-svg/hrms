@@ -7,6 +7,10 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class EmployeeSalaryRevision extends Model
 {
+    public const TYPE_CORRECTION = 'correction';
+
+    public const TYPE_INCREMENT = 'increment';
+
     protected $fillable = [
         'company_id',
         'employee_id',
@@ -26,6 +30,7 @@ class EmployeeSalaryRevision extends Model
         'salary_effective_from',
         'salary_payout_from',
         'revision_notes',
+        'revision_type',
         'revised_at',
     ];
 

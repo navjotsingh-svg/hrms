@@ -1,6 +1,7 @@
 import api, { getErrorMessage } from './api';
 import { consumePageFlashMessage } from './form-utils';
 import { bindEmployeeSearchSelect } from './employee-autocomplete';
+import { bindPagination, bindPerPageSelect, getSerialNumber, readPerPage, renderListPagination } from './pagination';
 
 const webRoutes = () => window.HRMS_WEB_ROUTES || {};
 
@@ -54,6 +55,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     const alertBox = document.getElementById('employeesAlert');
     const paginationInfo = document.getElementById('employeesPaginationInfo');
     const paginationList = document.getElementById('employeesPaginationList');
+    const perPageSelect = document.getElementById('employeesPerPage');
     const filterDepartment = document.getElementById('filterDepartment');
     const filterStatus = document.getElementById('filterStatus');
     const filterReset = document.getElementById('filterReset');
@@ -61,6 +63,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     const routes = webRoutes();
 
     let currentPage = 1;
+    let currentPerPage = readPerPage(perPageSelect);
     let currentLayout = localStorage.getItem(LAYOUT_STORAGE_KEY) === 'cards' ? 'cards' : 'table';
     let canManage = false;
     let canViewProfile = false;
@@ -202,8 +205,14 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     const columnCount = () => (canManage || canViewProfile || canAssignAdmin ? 7 : 6);
 
+    const nonPaidBadge = (employee) => (
+        employee.is_paid_employee === false
+            ? ' <span class="badge text-bg-secondary ms-1">Non-paid</span>'
+            : ''
+    );
+
     const renderRow = (employee, index, pagination) => {
-        const serial = ((pagination.current_page - 1) * pagination.per_page) + index + 1;
+        const serial = getSerialNumber(index, pagination);
         const roleName = employee.is_company_admin
             ? `${escapeHtml(employee.role?.name || 'Company Admin')} <span class="badge text-bg-primary ms-1">Admin</span>`
             : escapeHtml(employee.role?.name || '—');
@@ -213,7 +222,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                 <td class="companies-td-serial"><span class="companies-serial">${serial}</span></td>
                 <td>
                     <div class="companies-company-info">
-                        <span class="companies-company-name">${escapeHtml(employee.full_name)}</span>
+                        <span class="companies-company-name">${escapeHtml(employee.full_name)}${nonPaidBadge(employee)}</span>
                         <span class="companies-company-meta">${escapeHtml(employee.email)}${employee.designation ? ` · ${escapeHtml(employee.designation)}` : ''}</span>
                         <span class="companies-company-meta">${escapeHtml(employee.employee_code || '—')}</span>
                     </div>
@@ -254,7 +263,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                     ${canViewProfile
                         ? `<a href="${profileUrl}" class="employees-card-name">${escapeHtml(employee.full_name)}</a>`
                         : `<div class="employees-card-name">${escapeHtml(employee.full_name)}</div>`}
-                    <div class="employees-card-designation">${escapeHtml(designation)}</div>
+                    <div class="employees-card-designation">${escapeHtml(designation)}${nonPaidBadge(employee)}</div>
                     <div class="employees-card-code">${escapeHtml(employee.employee_code || '—')} · ${escapeHtml(departmentLabel(employee))}</div>
                     <div class="employees-card-contacts">
                         <div class="employees-card-contact">
@@ -298,29 +307,14 @@ document.addEventListener('DOMContentLoaded', async () => {
     };
 
     const renderPagination = (pagination) => {
-        if (!paginationList || !paginationInfo) {
-            return;
-        }
-
-        if (!pagination?.total) {
-            paginationInfo.textContent = 'No employees found';
-            paginationList.innerHTML = '';
-            return;
-        }
-
-        paginationInfo.textContent = `Showing ${pagination.from || 0} to ${pagination.to || 0} of ${pagination.total} employees`;
-
-        const pages = Array.from({ length: pagination.last_page }, (_, index) => {
-            const page = index + 1;
-
-            return `
-                <li class="page-item ${page === pagination.current_page ? 'active' : ''}">
-                    <button type="button" class="page-link" data-page="${page}">${page}</button>
-                </li>
-            `;
-        }).join('');
-
-        paginationList.innerHTML = pages;
+        renderListPagination({
+            infoEl: paginationInfo,
+            listEl: paginationList,
+            perPageSelectEl: perPageSelect,
+            pagination,
+            itemLabel: 'employees',
+            emptyMessage: 'No employees found',
+        });
     };
 
     const applyCapabilities = (capabilities = {}) => {
@@ -388,7 +382,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
         const params = {
             page,
-            per_page: currentLayout === 'cards' ? 12 : 10,
+            per_page: currentPerPage,
         };
 
         if (selectedEmployee?.employee?.employee_code) {
@@ -472,14 +466,10 @@ document.addEventListener('DOMContentLoaded', async () => {
         loadEmployees(1);
     });
 
-    paginationList?.addEventListener('click', (event) => {
-        const button = event.target.closest('[data-page]');
-
-        if (!button) {
-            return;
-        }
-
-        loadEmployees(Number(button.dataset.page));
+    bindPagination(paginationList, loadEmployees);
+    bindPerPageSelect(perPageSelect, (perPage) => {
+        currentPerPage = perPage;
+        loadEmployees(1);
     });
 
     listContainer?.addEventListener('change', async (event) => {

@@ -35,4 +35,11 @@ return [
         ],
     ],
 
+    'google' => [
+        'calendar_enabled' => (bool) env('GOOGLE_CALENDAR_ENABLED', false),
+        'service_account_json' => env('GOOGLE_SERVICE_ACCOUNT_JSON'),
+        'calendar_id' => env('GOOGLE_CALENDAR_ID', 'primary'),
+        'impersonate_email' => env('GOOGLE_CALENDAR_IMPERSONATE'),
+    ],
+
 ];

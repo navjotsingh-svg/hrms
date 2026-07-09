@@ -44,6 +44,9 @@
     </div>
 
     @auth
+        @if (Auth::user()->company_id && ! Auth::user()->isSuperAdmin() && config('hrms.assistant.enabled', true))
+            @include('layouts.partials.assistant-chat-widget')
+        @endif
         @if (Auth::user()->canViewAllLeaveRequests())
             @include('layouts.partials.leave-calendar-modal')
         @endif

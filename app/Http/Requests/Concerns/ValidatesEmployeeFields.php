@@ -111,6 +111,7 @@ trait ValidatesEmployeeFields
                 'after:'.now()->subYears(100)->format('Y-m-d'),
             ],
             'employment_type' => ['required', Rule::in(['full_time', 'part_time', 'contract', 'intern'])],
+            'is_paid_employee' => ['sometimes', 'boolean'],
             'status' => ['required', Rule::in(['active', 'inactive'])],
             'probation_applicable' => ['sometimes', 'boolean'],
             'probation_period_months' => ['nullable', 'required_if:probation_applicable,true', 'integer', 'min:1', 'max:24'],

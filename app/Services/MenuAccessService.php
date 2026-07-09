@@ -71,6 +71,8 @@ class MenuAccessService
     private function evaluateRule(User $user, string $rule): bool
     {
         return match ($rule) {
+            'company_member' => true,
+            'company_admin' => $user->isCompanyAdmin(),
             'attendance_calendar' => $user->canViewAttendance(),
             'attendance_team' => $user->canViewTeamAttendance(),
             'timesheets_access' => $user->canAccessTimesheets(),

@@ -6,6 +6,7 @@ import { setSubmitLoading, showAutoDismissAlert } from './form-utils';
 import { bindEmployeeSearchSelect } from './employee-autocomplete';
 import { formatOriginalPunchLine, formatRequestedPunchLine, renderEmployeeNameBlock } from './request-display';
 import { reviewSingleRequest } from './request-review';
+import { bindPagination, bindPerPageSelect, readPerPage, renderListPagination } from './pagination';
 
 const pad = (value) => String(value).padStart(2, '0');
 
@@ -60,6 +61,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     const paginationList = document.getElementById('regularizePaginationList');
     const myRequestsPaginationInfo = document.getElementById('myRequestsPaginationInfo');
     const myRequestsPaginationList = document.getElementById('myRequestsPaginationList');
+    const myRequestsPerPageSelect = document.getElementById('myRequestsPerPage');
+    const regularizePerPageSelect = document.getElementById('regularizePerPage');
     const tabButtons = Array.from(document.querySelectorAll('[data-regularize-tab]'));
     const tabPanels = {
         'my-requests': document.getElementById('regularizeTabMyRequests'),
@@ -95,6 +98,8 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     let currentPage = 1;
     let myRequestsPage = 1;
+    let myRequestsPerPage = readPerPage(myRequestsPerPageSelect);
+    let regularizePerPage = readPerPage(regularizePerPageSelect);
     let activeTab = pageConfig.defaultTab || 'my-requests';
     let eligibleDatesByKey = {};
     let employeeSearch = null;
@@ -698,61 +703,14 @@ const formatEligiblePunchMeta = (item) => {
         }
     };
 
-    const renderPagination = (pagination, infoEl, listEl, onPage) => {
-        if (!infoEl || !listEl) {
-            return;
-        }
-
-        if (!pagination?.total) {
-            infoEl.textContent = 'No requests found';
-            listEl.innerHTML = '';
-            return;
-        }
-
-        const page = pagination.current_page;
-        const lastPage = pagination.last_page;
-
-        infoEl.textContent = lastPage > 1
-            ? `Showing ${pagination.from} to ${pagination.to} of ${pagination.total}`
-            : `${pagination.total} request(s)`;
-
-        listEl.innerHTML = '';
-
-        if (lastPage <= 1) {
-            return;
-        }
-
-        const addItem = (label, targetPage, disabled = false, active = false) => {
-            listEl.insertAdjacentHTML('beforeend', `
-                <li class="page-item${disabled ? ' disabled' : ''}${active ? ' active' : ''}">
-                    <button type="button" class="page-link" data-page="${targetPage}" ${disabled ? 'disabled' : ''}>${label}</button>
-                </li>
-            `);
-        };
-
-        addItem('Prev', page - 1, page <= 1);
-
-        for (let i = 1; i <= lastPage; i += 1) {
-            if (i === 1 || i === lastPage || Math.abs(i - page) <= 1) {
-                addItem(String(i), i, false, i === page);
-            } else if (i === 2 && page > 3) {
-                addItem('…', page, true);
-            } else if (i === lastPage - 1 && page < lastPage - 2) {
-                addItem('…', page, true);
-            }
-        }
-
-        addItem('Next', page + 1, page >= lastPage);
-
-        listEl.querySelectorAll('[data-page]').forEach((btn) => {
-            btn.addEventListener('click', () => {
-                const targetPage = Number(btn.dataset.page);
-                if (!targetPage || targetPage === page) {
-                    return;
-                }
-
-                onPage(targetPage);
-            }, { once: true });
+    const renderPagination = (pagination, infoEl, listEl, perPageSelectEl, itemLabel = 'requests') => {
+        renderListPagination({
+            infoEl,
+            listEl,
+            perPageSelectEl,
+            pagination,
+            itemLabel,
+            emptyMessage: 'No requests found',
         });
     };
 
@@ -764,8 +722,7 @@ const formatEligiblePunchMeta = (item) => {
         myRequestsPage = page;
         const params = {
             page,
-            per_page: 10,
-            scope: 'mine',
+            per_page: myRequestsPerPage,
         };
 
         if (filterMonth?.value) {
@@ -781,7 +738,7 @@ const formatEligiblePunchMeta = (item) => {
                 ? renderHistoryRows(requests, pagination)
                 : '<tr><td colspan="8" class="text-center text-muted py-5">No requests found.</td></tr>';
 
-            renderPagination(pagination, myRequestsPaginationInfo, myRequestsPaginationList, loadMyRequests);
+            renderPagination(pagination, myRequestsPaginationInfo, myRequestsPaginationList, myRequestsPerPageSelect);
         } catch (error) {
             myRequestsTableBody.innerHTML = `<tr><td colspan="8" class="text-center text-danger py-5">${getErrorMessage(error)}</td></tr>`;
         }
@@ -831,7 +788,7 @@ const formatEligiblePunchMeta = (item) => {
         }
 
         currentPage = page;
-        const params = { page, per_page: 10, ...filterParams() };
+        const params = { page, per_page: regularizePerPage, ...filterParams() };
 
         if (isHrView) {
             params.scope = 'history';
@@ -848,7 +805,7 @@ const formatEligiblePunchMeta = (item) => {
             tableBody.innerHTML = requests.length
                 ? renderHistoryRows(requests, pagination)
                 : '<tr><td colspan="8" class="text-center text-muted py-5">No regularization requests found.</td></tr>';
-            renderPagination(pagination, paginationInfo, paginationList, loadRequests);
+            renderPagination(pagination, paginationInfo, paginationList, regularizePerPageSelect);
         } catch (error) {
             tableBody.innerHTML = `<tr><td colspan="8" class="text-center text-danger py-5">${getErrorMessage(error)}</td></tr>`;
         }
@@ -1113,9 +1070,16 @@ const formatEligiblePunchMeta = (item) => {
         if (filterMonth) filterMonth.value = currentMonthValue();
         reloadDashboard(1);
     });
-    paginationList?.addEventListener('click', (e) => {
-        const btn = e.target.closest('[data-page]');
-        if (btn) loadRequests(Number(btn.dataset.page));
+    bindPagination(myRequestsPaginationList, (page) => loadMyRequests(page));
+    bindPerPageSelect(myRequestsPerPageSelect, (perPage) => {
+        myRequestsPerPage = perPage;
+        loadMyRequests(1);
+    });
+
+    bindPagination(paginationList, (page) => loadRequests(page));
+    bindPerPageSelect(regularizePerPageSelect, (perPage) => {
+        regularizePerPage = perPage;
+        loadRequests(1);
     });
 
     if (urlDate && eligibleDatesByKey[urlDate]) {

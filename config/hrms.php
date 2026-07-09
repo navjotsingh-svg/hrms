@@ -29,6 +29,21 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | HR Assistant
+    |--------------------------------------------------------------------------
+    */
+
+    'assistant' => [
+        'enabled' => filter_var(env('HRMS_ASSISTANT_ENABLED', true), FILTER_VALIDATE_BOOL),
+        'use_ai' => filter_var(env('HRMS_ASSISTANT_USE_AI', true), FILTER_VALIDATE_BOOL),
+        'openai_api_key' => env('OPENAI_API_KEY'),
+        'model' => env('OPENAI_MODEL', 'gpt-4o-mini'),
+        'max_tokens' => (int) env('HRMS_ASSISTANT_MAX_TOKENS', 700),
+        'rate_limit_per_hour' => (int) env('HRMS_ASSISTANT_RATE_LIMIT', 30),
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
     | Attendance
     |--------------------------------------------------------------------------
     */
@@ -336,9 +351,10 @@ return [
         'experience.polls' => ['permissions' => ['home.moments.view', 'home.moments.post', 'home.dashboard.view', 'home.dashboard.manage']],
         'experience.public_praise' => ['permissions' => ['home.moments.view', 'home.moments.post', 'performance.participate']],
         'experience.helpdesk' => ['permissions' => ['helpdesk.apply', 'helpdesk.manage']],
+        'experience.assistant' => ['rule' => 'company_member', 'feature' => 'assistant.enabled'],
 
         'core_hr.documents_letters' => ['permissions' => ['documents.view', 'documents.manage', 'documents.sign']],
-        'core_hr.org_structure' => ['permissions' => ['departments.view', 'departments.manage', 'shifts.view', 'shifts.manage', 'roles.view', 'roles.manage', 'settings.manage']],
+        'org_chart' => ['permissions' => ['employees.view', 'employees.manage']],
 
         'masters.departments' => ['permissions' => ['departments.view', 'departments.manage']],
         'masters.documents' => ['permissions' => ['documents.view', 'documents.manage']],
@@ -349,7 +365,7 @@ return [
         'masters.portal_start' => ['permissions' => ['attendance.manage']],
         'masters.leave_types' => ['permissions' => ['leave.manage']],
         'masters.leave_balances' => ['permissions' => ['leave.manage']],
-        'masters.roles' => ['permissions' => ['roles.view', 'roles.manage', 'settings.manage']],
+        'masters.roles' => ['rule' => 'company_admin'],
 
         'people' => ['permissions' => ['employees.view', 'employees.manage'], 'feature' => 'people_menu_enabled'],
 

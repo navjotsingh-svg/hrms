@@ -19,6 +19,7 @@
                 </div>
             </div>
         </div>
+        @include('partials.list-pagination-header', ['perPageId' => 'kpiPerPage'])
         <div class="table-responsive">
             <table class="companies-table table mb-0">
                 <thead>
@@ -38,12 +39,13 @@
                 </tbody>
             </table>
         </div>
-        <div class="content-card-body border-top">
-            <div class="d-flex flex-wrap justify-content-between align-items-center gap-2">
-                <div class="text-muted small" id="kpiPaginationInfo"></div>
-                <ul class="pagination pagination-sm mb-0" id="kpiPaginationList"></ul>
-            </div>
-        </div>
+            @include('partials.list-pagination-footer', [
+                'infoId' => 'kpiPaginationInfo',
+                'listId' => 'kpiPaginationList',
+                'perPageId' => 'kpiPerPage',
+                'wrapClass' => 'content-card-body border-top',
+                'ariaLabel' => 'KPI pagination',
+            ])
     </div>
 
     @if ($canManage)

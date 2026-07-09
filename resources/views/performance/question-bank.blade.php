@@ -14,6 +14,7 @@
                 </div>
             </div>
         </div>
+        @include('partials.list-pagination-header', ['perPageId' => 'questionBankPerPage'])
         <div class="table-responsive">
             <table class="companies-table table mb-0">
                 <thead>
@@ -31,6 +32,13 @@
                 </tbody>
             </table>
         </div>
+        @include('partials.list-pagination-footer', [
+            'infoId' => 'questionBankPaginationInfo',
+            'listId' => 'questionBankPaginationList',
+            'perPageId' => 'questionBankPerPage',
+            'wrapClass' => 'content-card-body border-top',
+            'ariaLabel' => 'Question bank pagination',
+        ])
     </div>
 
     @if ($canManage)

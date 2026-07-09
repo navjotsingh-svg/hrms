@@ -90,9 +90,15 @@ class EmployeeProfileController extends Controller
             $request->validated()
         );
 
+        $message = match ($request->input('salary_action')) {
+            'increment' => 'Salary updated successfully.',
+            'revise' => 'Salary revised successfully.',
+            default => 'Salary saved successfully.',
+        };
+
         return $this->success(
             ['employee' => new EmployeeProfileResource($employee)],
-            'Salary revised successfully.'
+            $message
         );
     }
 

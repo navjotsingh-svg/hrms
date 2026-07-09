@@ -98,7 +98,8 @@
                     <button type="button" class="btn btn-primary" id="openGroupModalBtn">+ Add Expense Group</button>
                 @endif
             </div>
-            <div class="table-responsive">
+        @include('partials.list-pagination-header', ['perPageId' => 'itemsPerPage', 'perPageOptions' => [5, 10, 25], 'defaultPerPage' => 10])
+        <div class="table-responsive">
                 <table class="companies-table table mb-0">
                     <thead>
                         <tr>
@@ -120,20 +121,15 @@
             </div>
         </div>
 
-        <div class="content-card-body border-top">
-            <div class="d-flex flex-wrap align-items-center justify-content-between gap-3">
-                <div class="d-flex align-items-center gap-2">
-                    <label for="itemsPerPage" class="small text-muted mb-0">Items per page</label>
-                    <select class="form-select form-select-sm" id="itemsPerPage" style="width: auto;">
-                        <option value="5">5</option>
-                        <option value="10" selected>10</option>
-                        <option value="25">25</option>
-                    </select>
-                </div>
-                <div class="small text-muted" id="expensesPaginationInfo"></div>
-                <ul class="pagination pagination-sm mb-0" id="expensesPaginationList"></ul>
-            </div>
-        </div>
+        @include('partials.list-pagination-footer', [
+            'infoId' => 'expensesPaginationInfo',
+            'listId' => 'expensesPaginationList',
+            'perPageId' => 'itemsPerPage',
+            'wrapClass' => 'content-card-body border-top companies-pagination-footer',
+            'ariaLabel' => 'Expenses pagination',
+            'perPageOptions' => [5, 10, 25],
+            'defaultPerPage' => 10,
+        ])
     </div>
 
     @include('expenses.partials.request-detail-modal')

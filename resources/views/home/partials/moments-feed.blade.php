@@ -98,9 +98,14 @@
         </div>
     </div>
 
+    @include('partials.list-pagination-header', ['perPageId' => 'momentsPerPage'])
     <div id="momentsFeed" class="moments-feed"></div>
     <div id="momentsEmpty" class="text-center text-muted py-5 d-none">No posts yet. Share the first update on your social wall.</div>
-    <div class="d-flex justify-content-center mt-3">
-        <ul class="pagination pagination-sm mb-0" id="momentsPagination"></ul>
-    </div>
+    @include('partials.list-pagination-footer', [
+        'infoId' => 'momentsPaginationInfo',
+        'listId' => 'momentsPagination',
+        'perPageId' => 'momentsPerPage',
+        'wrapClass' => 'mt-3 companies-pagination-footer',
+        'ariaLabel' => 'Moments pagination',
+    ])
 </div>

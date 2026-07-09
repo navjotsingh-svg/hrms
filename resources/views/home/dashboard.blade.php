@@ -3,15 +3,39 @@
 @section('title', 'Dashboard - ' . config('app.name', 'HRMS'))
 
 @section('header')
-    <div class="d-flex flex-wrap align-items-center justify-content-between gap-2">
+    <div class="d-flex flex-wrap align-items-center justify-content-between gap-3">
         <div>
             <h1 class="page-title mb-1">Dashboard</h1>
-            <p class="page-subtitle mb-0">Analytics widgets for employees, leave, attendance, and requests.</p>
+            <p class="page-subtitle mb-0">Analytics widgets for employees, leave, attendance, expenses, hiring, and performance.</p>
         </div>
-        @if (Auth::user()->hasPermission('home.dashboard.manage'))
-            <button type="button" class="btn btn-outline-primary" id="homeDashboardManageBtn">Manage Widgets</button>
-        @endif
+        <div class="d-flex flex-wrap align-items-end gap-2">
+            <div class="home-dashboard-range-filter">
+                <label for="homeDashboardRangePreset" class="form-label small mb-1">Period</label>
+                <select class="form-select form-select-sm" id="homeDashboardRangePreset">
+                    <option value="today">Today</option>
+                    <option value="yesterday">Yesterday</option>
+                    <option value="this_week">This Week</option>
+                    <option value="this_month" selected>This Month</option>
+                    <option value="custom">Custom</option>
+                </select>
+            </div>
+            <div id="homeDashboardCustomRange" class="d-none d-flex flex-wrap align-items-end gap-2">
+                <div>
+                    <label for="homeDashboardFromDate" class="form-label small mb-1">From</label>
+                    <input type="date" class="form-control form-control-sm" id="homeDashboardFromDate">
+                </div>
+                <div>
+                    <label for="homeDashboardToDate" class="form-label small mb-1">To</label>
+                    <input type="date" class="form-control form-control-sm" id="homeDashboardToDate">
+                </div>
+                <button type="button" class="btn btn-primary btn-sm" id="homeDashboardApplyRangeBtn">Apply</button>
+            </div>
+            @if (Auth::user()->hasPermission('home.dashboard.manage'))
+                <button type="button" class="btn btn-outline-primary btn-sm" id="homeDashboardManageBtn">Manage Widgets</button>
+            @endif
+        </div>
     </div>
+    <p class="text-muted small mb-0 mt-2" id="homeDashboardRangeSummary"></p>
 @endsection
 
 @section('content')

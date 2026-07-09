@@ -45,6 +45,12 @@ class UserNotification extends Model
 
     public const TYPE_PROFILE_PHOTO_DECISION = 'profile_photo_decision';
 
+    public const TYPE_ONE_ON_ONE_SCHEDULED = 'one_on_one_scheduled';
+
+    public const TYPE_TIMESHEET_SUBMITTED = 'timesheet_submitted';
+
+    public const TYPE_TIMESHEET_COMMENT = 'timesheet_comment';
+
     protected $fillable = [
         'company_id',
         'user_id',

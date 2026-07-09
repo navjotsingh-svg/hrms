@@ -14,6 +14,11 @@ class EmployeeController extends Controller
         return view('employees.create');
     }
 
+    public function bulkImport()
+    {
+        return view('employees.bulk-import');
+    }
+
     public function show(int $employee)
     {
         return view('employees.show', ['employeeId' => $employee]);

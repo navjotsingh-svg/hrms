@@ -141,7 +141,8 @@
                     <h2 class="content-card-title mb-0">My Requests</h2>
                     <p class="small text-muted mb-0">Requests you submitted for yourself or on behalf of employees.</p>
                 </div>
-                <div class="table-responsive">
+        @include('partials.list-pagination-header', ['perPageId' => 'myRequestsPerPage'])
+        <div class="table-responsive">
                     <table class="companies-table table mb-0">
                         <thead>
                             <tr>
@@ -160,10 +161,14 @@
                         </tbody>
                     </table>
                 </div>
-                <div class="content-card-body border-top d-flex flex-wrap justify-content-between align-items-center gap-2">
-                    <div class="small text-muted" id="myRequestsPaginationInfo">—</div>
-                    <ul class="pagination mb-0" id="myRequestsPaginationList"></ul>
-                </div>
+                @include('partials.list-pagination-footer', [
+                    'infoId' => 'myRequestsPaginationInfo',
+                    'listId' => 'myRequestsPaginationList',
+                    'perPageId' => 'myRequestsPerPage',
+                    'wrapClass' => 'content-card-body border-top companies-pagination-footer',
+                    'ariaLabel' => 'My requests pagination',
+                    'infoText' => '—',
+                ])
             </div>
         </div>
 
@@ -201,7 +206,8 @@
                         </div>
                     </div>
                 </div>
-                <div class="table-responsive">
+        @include('partials.list-pagination-header', ['perPageId' => 'regularizePerPage'])
+        <div class="table-responsive">
                     <table class="companies-table table mb-0">
                         <thead>
                             <tr>
@@ -220,10 +226,14 @@
                         </tbody>
                     </table>
                 </div>
-                <div class="content-card-body border-top d-flex flex-wrap justify-content-between align-items-center gap-2">
-                    <div class="small text-muted" id="regularizePaginationInfo">—</div>
-                    <ul class="pagination mb-0" id="regularizePaginationList"></ul>
-                </div>
+                @include('partials.list-pagination-footer', [
+                    'infoId' => 'regularizePaginationInfo',
+                    'listId' => 'regularizePaginationList',
+                    'perPageId' => 'regularizePerPage',
+                    'wrapClass' => 'content-card-body border-top companies-pagination-footer',
+                    'ariaLabel' => 'Regularization history pagination',
+                    'infoText' => '—',
+                ])
             </div>
         </div>
     @else
@@ -280,7 +290,8 @@
                     </div>
                 </div>
             </div>
-            <div class="table-responsive">
+        @include('partials.list-pagination-header', ['perPageId' => 'regularizePerPage'])
+        <div class="table-responsive">
                 <table class="companies-table table mb-0">
                     <thead>
                         <tr>
@@ -299,10 +310,14 @@
                     </tbody>
                 </table>
             </div>
-            <div class="content-card-body border-top d-flex flex-wrap justify-content-between align-items-center gap-2">
-                <div class="small text-muted" id="regularizePaginationInfo">—</div>
-                <ul class="pagination mb-0" id="regularizePaginationList"></ul>
-            </div>
+            @include('partials.list-pagination-footer', [
+                'infoId' => 'regularizePaginationInfo',
+                'listId' => 'regularizePaginationList',
+                'perPageId' => 'regularizePerPage',
+                'wrapClass' => 'content-card-body border-top companies-pagination-footer',
+                'ariaLabel' => 'Regularization history pagination',
+                'infoText' => '—',
+            ])
         </div>
     @endif
 

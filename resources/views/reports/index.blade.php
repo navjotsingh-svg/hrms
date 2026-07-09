@@ -97,8 +97,8 @@
                 <h2 class="h6 mb-0" id="reportPreviewTitle">Report Preview</h2>
                 <p class="small text-muted mb-0" id="reportGeneratedAt">Select a report and click Load Report.</p>
             </div>
-            <div class="text-muted small" id="reportsPaginationInfo"></div>
         </div>
+        @include('partials.list-pagination-header', ['perPageId' => 'reportsPerPage'])
         <div class="table-responsive">
             <table class="companies-table table mb-0">
                 <thead id="reportsTableHead">
@@ -109,9 +109,13 @@
                 </tbody>
             </table>
         </div>
-        <div class="content-card-body border-top">
-            <ul class="pagination pagination-sm mb-0 justify-content-end" id="reportsPaginationList"></ul>
-        </div>
+        @include('partials.list-pagination-footer', [
+            'infoId' => 'reportsPaginationInfo',
+            'listId' => 'reportsPaginationList',
+            'perPageId' => 'reportsPerPage',
+            'wrapClass' => 'content-card-body border-top',
+            'ariaLabel' => 'Reports pagination',
+        ])
     </div>
 @endsection
 

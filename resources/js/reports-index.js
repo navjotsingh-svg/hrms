@@ -1,5 +1,6 @@
 import api, { getErrorMessage } from './api';
 import { bindEmployeeSearchSelect } from './employee-autocomplete';
+import { bindPagination, bindPerPageSelect, readPerPage, renderListPagination } from './pagination';
 
 const escapeHtml = (value) => String(value ?? '')
     .replace(/&/g, '&amp;')
@@ -15,6 +16,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     const tableBody = document.getElementById('reportsTableBody');
     const paginationInfo = document.getElementById('reportsPaginationInfo');
     const paginationList = document.getElementById('reportsPaginationList');
+    const perPageSelect = document.getElementById('reportsPerPage');
     const generatedAtEl = document.getElementById('reportGeneratedAt');
     const previewTitle = document.getElementById('reportPreviewTitle');
     const loadBtn = document.getElementById('loadReportBtn');
@@ -23,6 +25,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     let catalog = [];
     let currentType = '';
     let currentPage = 1;
+    let currentPerPage = readPerPage(perPageSelect, 25);
     let optionsLoaded = false;
 
     const today = new Date();
@@ -81,7 +84,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     };
 
     const collectFilters = (page = 1) => {
-        const params = { page, per_page: 25 };
+        const params = { page, per_page: currentPerPage };
 
         const fromDate = document.getElementById('filterFromDate')?.value;
         const toDate = document.getElementById('filterToDate')?.value;
@@ -127,28 +130,13 @@ document.addEventListener('DOMContentLoaded', async () => {
         `).join('');
     };
 
-    const renderPagination = (pagination, onPage) => {
-        if (!pagination) {
-            paginationInfo.textContent = '';
-            paginationList.innerHTML = '';
-            return;
-        }
-
-        paginationInfo.textContent = pagination.total
-            ? `Showing ${pagination.from}–${pagination.to} of ${pagination.total}`
-            : 'No records';
-
-        paginationList.innerHTML = '';
-        for (let p = 1; p <= pagination.last_page; p += 1) {
-            paginationList.insertAdjacentHTML('beforeend', `
-                <li class="page-item ${p === pagination.current_page ? 'active' : ''}">
-                    <button type="button" class="page-link" data-page="${p}">${p}</button>
-                </li>
-            `);
-        }
-
-        paginationList.querySelectorAll('[data-page]').forEach((btn) => {
-            btn.addEventListener('click', () => onPage(Number(btn.dataset.page)));
+    const renderPagination = (pagination) => {
+        renderListPagination({
+            infoEl: paginationInfo,
+            listEl: paginationList,
+            perPageSelectEl: perPageSelect,
+            pagination,
+            emptyMessage: 'No records',
         });
     };
 
@@ -205,7 +193,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                 : '';
 
             renderTable(payload.headings, payload.rows);
-            renderPagination(payload.pagination, loadReport);
+            renderPagination(payload.pagination);
             exportBtn.disabled = false;
         } catch (error) {
             showAlert(getErrorMessage(error), 'danger');
@@ -266,6 +254,12 @@ document.addEventListener('DOMContentLoaded', async () => {
         } finally {
             exportBtn.disabled = false;
         }
+    });
+
+    bindPagination(paginationList, loadReport);
+    bindPerPageSelect(perPageSelect, (perPage) => {
+        currentPerPage = perPage;
+        loadReport(1);
     });
 
     try {

@@ -1,5 +1,6 @@
 import api, { getErrorMessage } from './api';
 import { consumePageFlashMessage } from './form-utils';
+import { bindPagination, bindPerPageSelect, getSerialNumber, readPerPage, renderListPagination } from './pagination';
 
 const webRoutes = () => window.HRMS_WEB_ROUTES || {};
 
@@ -8,12 +9,14 @@ document.addEventListener('DOMContentLoaded', async () => {
     const alertBox = document.getElementById('documentsAlert');
     const paginationInfo = document.getElementById('documentsPaginationInfo');
     const paginationList = document.getElementById('documentsPaginationList');
+    const perPageSelect = document.getElementById('documentsPerPage');
     const filterSearch = document.getElementById('filterSearch');
     const filterStatus = document.getElementById('filterStatus');
     const filterReset = document.getElementById('filterReset');
     const routes = webRoutes();
 
     let currentPage = 1;
+    let currentPerPage = readPerPage(perPageSelect);
     let searchTimeout = null;
 
     if (!tableBody) {
@@ -60,7 +63,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     };
 
     const renderRow = (documentType, index, pagination) => {
-        const serial = ((pagination.current_page - 1) * pagination.per_page) + index + 1;
+        const serial = getSerialNumber(index, pagination);
         const editUrl = `${routes.documentEdit || '/masters/documents'}/${documentType.id}/edit`;
         const requiredBadge = documentType.is_required
             ? '<span class="badge text-bg-primary">Required</span>'
@@ -97,35 +100,20 @@ document.addEventListener('DOMContentLoaded', async () => {
     };
 
     const renderPagination = (pagination) => {
-        if (!paginationList || !paginationInfo) {
-            return;
-        }
-
-        if (!pagination?.total) {
-            paginationInfo.textContent = 'No document types found';
-            paginationList.innerHTML = '';
-            return;
-        }
-
-        paginationInfo.textContent = `Showing ${pagination.from || 0} to ${pagination.to || 0} of ${pagination.total} document types`;
-
-        const pages = Array.from({ length: pagination.last_page }, (_, index) => {
-            const page = index + 1;
-
-            return `
-                <li class="page-item ${page === pagination.current_page ? 'active' : ''}">
-                    <button type="button" class="page-link" data-page="${page}">${page}</button>
-                </li>
-            `;
-        }).join('');
-
-        paginationList.innerHTML = pages;
+        renderListPagination({
+            infoEl: paginationInfo,
+            listEl: paginationList,
+            perPageSelectEl: perPageSelect,
+            pagination,
+            itemLabel: 'document types',
+            emptyMessage: 'No document types found',
+        });
     };
 
     const loadDocuments = async (page = 1) => {
         currentPage = page;
 
-        const params = { page, per_page: 10 };
+        const params = { page, per_page: currentPerPage };
 
         if (filterSearch?.value.trim()) {
             params.search = filterSearch.value.trim();
@@ -171,14 +159,10 @@ document.addEventListener('DOMContentLoaded', async () => {
         loadDocuments(1);
     });
 
-    paginationList?.addEventListener('click', (event) => {
-        const button = event.target.closest('[data-page]');
-
-        if (!button) {
-            return;
-        }
-
-        loadDocuments(Number(button.dataset.page));
+    bindPagination(paginationList, loadDocuments);
+    bindPerPageSelect(perPageSelect, (perPage) => {
+        currentPerPage = perPage;
+        loadDocuments(1);
     });
 
     tableBody.addEventListener('change', async (event) => {

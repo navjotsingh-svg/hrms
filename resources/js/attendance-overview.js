@@ -1,6 +1,7 @@
 import api, { getErrorMessage } from './api';
 import { renderAttendancePunchCard } from './attendance-punch-display';
 import { debounce } from './form-utils';
+import { bindPagination, bindPerPageSelect, readPerPage, renderListPagination } from './pagination';
 import { Modal } from 'bootstrap';
 
 const pad = (value) => String(value).padStart(2, '0');
@@ -82,6 +83,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     const paginationInfo = document.getElementById('attendanceOverviewPaginationInfo');
     const paginationSummary = document.getElementById('attendanceOverviewPaginationSummary');
     const paginationList = document.getElementById('attendanceOverviewPaginationList');
+    const perPageSelect = document.getElementById('attendanceOverviewPerPage');
     const dayModalEl = document.getElementById('attendanceOverviewDayModal');
     const dayModalTitle = document.getElementById('attendanceOverviewDayModalTitle');
     const dayModalSubtitle = document.getElementById('attendanceOverviewDayModalSubtitle');
@@ -103,6 +105,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     let currentMonth = monthKey();
     let currentPage = 1;
+    let currentPerPage = readPerPage(perPageSelect, 25);
     let dayColumns = [];
     let dayModal = dayModalEl ? Modal.getOrCreateInstance(dayModalEl) : null;
     let selectedEmployeeId = null;
@@ -123,7 +126,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         status: statusSelect?.value || 'active',
         search: searchInput?.value?.trim() || undefined,
         page: currentPage,
-        per_page: 25,
+        per_page: currentPerPage,
     });
 
     const renderSummary = (summary, scope) => {
@@ -214,7 +217,6 @@ document.addEventListener('DOMContentLoaded', async () => {
             paginationInfo.textContent = '—';
             paginationSummary.textContent = '';
             paginationList.innerHTML = '';
-
             return;
         }
 
@@ -226,39 +228,12 @@ document.addEventListener('DOMContentLoaded', async () => {
             ? `Showing ${pagination.from} to ${pagination.to} of ${pagination.total}`
             : '';
 
-        if (!pagination.last_page || pagination.last_page <= 1) {
-            paginationList.innerHTML = '';
-
-            return;
-        }
-
-        const pages = [];
-        const { current_page: current, last_page: last } = pagination;
-        const pushPage = (page) => {
-            pages.push(`<li class="page-item ${page === current ? 'active' : ''}">
-                <button type="button" class="page-link" data-page="${page}">${page}</button>
-            </li>`);
-        };
-
-        pushPage(1);
-
-        if (current > 3) {
-            pages.push('<li class="page-item disabled"><span class="page-link">…</span></li>');
-        }
-
-        for (let page = Math.max(2, current - 1); page <= Math.min(last - 1, current + 1); page += 1) {
-            pushPage(page);
-        }
-
-        if (current < last - 2) {
-            pages.push('<li class="page-item disabled"><span class="page-link">…</span></li>');
-        }
-
-        if (last > 1) {
-            pushPage(last);
-        }
-
-        paginationList.innerHTML = pages.join('');
+        renderListPagination({
+            infoEl: null,
+            listEl: paginationList,
+            perPageSelectEl: perPageSelect,
+            pagination,
+        });
     };
 
     const renderDayModal = (payload) => {
@@ -435,14 +410,13 @@ document.addEventListener('DOMContentLoaded', async () => {
         reload();
     });
 
-    paginationList?.addEventListener('click', (event) => {
-        const button = event.target.closest('[data-page]');
-
-        if (!button) {
-            return;
-        }
-
-        currentPage = Number(button.dataset.page);
+    bindPagination(paginationList, (page) => {
+        currentPage = page;
+        reload();
+    });
+    bindPerPageSelect(perPageSelect, (perPage) => {
+        currentPerPage = perPage;
+        currentPage = 1;
         reload();
     });
 

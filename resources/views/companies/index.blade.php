@@ -73,6 +73,8 @@
             </div>
         </div>
 
+        @include('partials.list-pagination-header', ['perPageId' => 'companiesPerPage'])
+
         <div class="companies-table-wrap" id="companiesTableWrap">
             <table class="companies-table table mb-0">
                 <thead>
@@ -101,24 +103,14 @@
             </table>
         </div>
 
-        <div class="content-card-body border-top companies-pagination-footer" id="companiesPagination">
-            <div class="d-flex flex-wrap align-items-center justify-content-between gap-3">
-                <div class="small text-muted" id="companiesPaginationInfo">Loading pagination...</div>
-                <div class="d-flex flex-wrap align-items-center gap-3">
-                    <div class="companies-per-page">
-                        <label for="companiesPerPage" class="companies-per-page-label">Per page</label>
-                        <select id="companiesPerPage" class="form-select form-select-sm companies-per-page-select">
-                            <option value="10" selected>10</option>
-                            <option value="25">25</option>
-                            <option value="50">50</option>
-                        </select>
-                    </div>
-                    <nav aria-label="Companies pagination">
-                        <ul class="pagination pagination-sm mb-0" id="companiesPaginationList"></ul>
-                    </nav>
-                </div>
-            </div>
-        </div>
+        @include('partials.list-pagination-footer', [
+            'infoId' => 'companiesPaginationInfo',
+            'listId' => 'companiesPaginationList',
+            'perPageId' => 'companiesPerPage',
+            'wrapId' => 'companiesPagination',
+            'ariaLabel' => 'Companies pagination',
+            'infoText' => 'Loading pagination...',
+        ])
     </div>
     @vite(['resources/js/companies-index.js'])
 @endsection

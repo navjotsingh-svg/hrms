@@ -108,6 +108,7 @@ class PayrollService
         $employees = Employee::query()
             ->where('company_id', $companyId)
             ->where('status', 'active')
+            ->where('is_paid_employee', true)
             ->whereHas('salary')
             ->with(['salary', 'department', 'departments', 'company'])
             ->orderedByName()

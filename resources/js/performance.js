@@ -1,11 +1,19 @@
 import { Modal } from 'bootstrap';
 import api, { getErrorMessage } from './api';
+import { aiSuggestReview } from './ai-tools';
 import { bindEmployeeSearchSelect, formatEmployeeLabel } from './employee-autocomplete';
 import {
     renderActionGroup,
     renderDeleteButton,
     renderEditIconButton,
 } from './action-icons';
+import {
+    bindPagination,
+    bindPerPageSelect,
+    paginateArray,
+    readPerPage,
+    renderListPagination,
+} from './pagination';
 
 const cfg = window.HRMS_PERFORMANCE || {};
 const page = cfg.page || 'overview';
@@ -46,30 +54,25 @@ const setHeaderAction = (html) => {
     if (el) el.innerHTML = html;
 };
 
+const paginationBoundPrefixes = new Set();
+
 const renderPagination = (prefix, pagination, onPage) => {
-    const info = document.getElementById(`${prefix}PaginationInfo`);
     const list = document.getElementById(`${prefix}PaginationList`);
+    const perPageSelectEl = document.getElementById(`${prefix}PerPage`);
 
-    if (info && pagination) {
-        info.textContent = pagination.total
-            ? `Showing ${pagination.from}–${pagination.to} of ${pagination.total}`
-            : 'No records';
-    }
-
-    if (!list || !pagination) return;
-
-    list.innerHTML = '';
-    for (let p = 1; p <= pagination.last_page; p += 1) {
-        list.insertAdjacentHTML('beforeend', `
-            <li class="page-item ${p === pagination.current_page ? 'active' : ''}">
-                <button type="button" class="page-link" data-page="${p}">${p}</button>
-            </li>
-        `);
-    }
-
-    list.querySelectorAll('[data-page]').forEach((btn) => {
-        btn.addEventListener('click', () => onPage(Number(btn.dataset.page)));
+    renderListPagination({
+        infoEl: document.getElementById(`${prefix}PaginationInfo`),
+        listEl: list,
+        perPageSelectEl,
+        pagination,
+        emptyMessage: 'No records',
     });
+
+    if (!paginationBoundPrefixes.has(prefix)) {
+        paginationBoundPrefixes.add(prefix);
+        bindPagination(list, onPage);
+        bindPerPageSelect(perPageSelectEl, () => onPage(1));
+    }
 };
 
 const bindReviewModal = () => {
@@ -102,6 +105,31 @@ const bindReviewModal = () => {
 
         reviewModal.show();
     };
+
+    document.getElementById('reviewAiSuggestBtn')?.addEventListener('click', async () => {
+        const button = document.getElementById('reviewAiSuggestBtn');
+        const employeeName = document.getElementById('reviewMeta')?.textContent?.split('—')[0]?.trim() || '';
+        const notes = Array.from(document.querySelectorAll('#reviewQuestionsContainer textarea, #reviewQuestionsContainer input'))
+            .map((field) => field.value?.trim())
+            .filter(Boolean)
+            .join('\n');
+
+        button.disabled = true;
+        button.textContent = 'AI working…';
+
+        try {
+            const result = await aiSuggestReview({
+                employee_name: employeeName,
+                prompt: notes || document.getElementById('reviewSummaryNotes')?.value || 'General performance review',
+            });
+            document.getElementById('reviewSummaryNotes').value = result.comments || '';
+        } catch (error) {
+            window.alert(getErrorMessage(error));
+        } finally {
+            button.disabled = false;
+            button.textContent = 'AI suggest';
+        }
+    });
 
     document.getElementById('reviewForm')?.addEventListener('submit', async (e) => {
         e.preventDefault();
@@ -177,39 +205,67 @@ const initReviewCycles = async () => {
 
     let cycles = [];
 
+    const paginationInfo = document.getElementById('cyclesPaginationInfo');
+    const paginationList = document.getElementById('cyclesPaginationList');
+    const perPageSelect = document.getElementById('cyclesPerPage');
+    let cyclesPaginationBound = false;
+
+    const renderCycleRow = (cycle) => {
+        const actions = [];
+        if (cfg.canManage) {
+            actions.push(renderEditIconButton('data-edit-cycle', cycle.id, 'Edit'));
+            if (cycle.status === 'draft') {
+                actions.push(`<button type="button" class="table-action-btn table-action-btn--approve" title="Activate" data-activate-cycle="${cycle.id}">&#9654;</button>`);
+            }
+            if (cycle.status === 'active') {
+                actions.push(`<button type="button" class="table-action-btn" title="${cycle.reviews_open ? 'Close reviews' : 'Open reviews'}" data-toggle-reviews="${cycle.id}" data-open="${cycle.reviews_open ? '1' : '0'}">${cycle.reviews_open ? '&#128274;' : '&#128275;'}</button>`);
+                actions.push(`<button type="button" class="table-action-btn table-action-btn--reject" title="Close cycle" data-close-cycle="${cycle.id}">&#9632;</button>`);
+            }
+        }
+        return `
+            <tr>
+                <td>${escapeHtml(cycle.name)}</td>
+                <td>${escapeHtml(cycle.period_start)} – ${escapeHtml(cycle.period_end)}</td>
+                <td>${statusPill(cycle.status)}</td>
+                <td>${cycle.reviews_open ? 'Yes' : 'No'}</td>
+                <td>${cycle.pairs_count ?? '—'}</td>
+                <td class="text-end">${renderActionGroup(actions)}</td>
+            </tr>
+        `;
+    };
+
+    const renderCyclesPage = (pageNum = 1) => {
+        const { items, pagination } = paginateArray(cycles, pageNum, readPerPage(perPageSelect));
+
+        if (!items.length) {
+            body.innerHTML = '<tr><td colspan="6" class="text-center text-muted py-4">No review cycles found.</td></tr>';
+        } else {
+            body.innerHTML = items.map(renderCycleRow).join('');
+        }
+
+        if (paginationInfo || paginationList || perPageSelect) {
+            renderListPagination({
+                infoEl: paginationInfo,
+                listEl: paginationList,
+                perPageSelectEl: perPageSelect,
+                pagination,
+                itemLabel: 'cycles',
+                emptyMessage: 'No review cycles found',
+            });
+        }
+
+        if (!cyclesPaginationBound && paginationList) {
+            cyclesPaginationBound = true;
+            bindPagination(paginationList, renderCyclesPage);
+            bindPerPageSelect(perPageSelect, () => renderCyclesPage(1));
+        }
+    };
+
     const loadCycles = async () => {
         const status = document.getElementById('cycleStatusFilter')?.value || '';
         const { data } = await api.get('/performance-review-cycles');
         cycles = (data.data.cycles || []).filter((c) => !status || c.status === status);
-
-        if (!cycles.length) {
-            body.innerHTML = '<tr><td colspan="6" class="text-center text-muted py-4">No review cycles found.</td></tr>';
-            return;
-        }
-
-        body.innerHTML = cycles.map((cycle) => {
-            const actions = [];
-            if (cfg.canManage) {
-                actions.push(renderEditIconButton('data-edit-cycle', cycle.id, 'Edit'));
-                if (cycle.status === 'draft') {
-                    actions.push(`<button type="button" class="table-action-btn table-action-btn--approve" title="Activate" data-activate-cycle="${cycle.id}">&#9654;</button>`);
-                }
-                if (cycle.status === 'active') {
-                    actions.push(`<button type="button" class="table-action-btn" title="${cycle.reviews_open ? 'Close reviews' : 'Open reviews'}" data-toggle-reviews="${cycle.id}" data-open="${cycle.reviews_open ? '1' : '0'}">${cycle.reviews_open ? '&#128274;' : '&#128275;'}</button>`);
-                    actions.push(`<button type="button" class="table-action-btn table-action-btn--reject" title="Close cycle" data-close-cycle="${cycle.id}">&#9632;</button>`);
-                }
-            }
-            return `
-                <tr>
-                    <td>${escapeHtml(cycle.name)}</td>
-                    <td>${escapeHtml(cycle.period_start)} – ${escapeHtml(cycle.period_end)}</td>
-                    <td>${statusPill(cycle.status)}</td>
-                    <td>${cycle.reviews_open ? 'Yes' : 'No'}</td>
-                    <td>${cycle.pairs_count ?? '—'}</td>
-                    <td class="text-end">${renderActionGroup(actions)}</td>
-                </tr>
-            `;
-        }).join('');
+        renderCyclesPage(1);
     };
 
     const renderQuestionRows = (container, questions = []) => {
@@ -356,32 +412,61 @@ const initQuestionBank = async () => {
     const modalEl = document.getElementById('questionBankModal');
     const modal = modalEl ? Modal.getOrCreateInstance(modalEl) : null;
 
+    let questions = [];
+    const paginationInfo = document.getElementById('questionBankPaginationInfo');
+    const paginationList = document.getElementById('questionBankPaginationList');
+    const perPageSelect = document.getElementById('questionBankPerPage');
+    let questionBankPaginationBound = false;
+
+    const renderQuestionRow = (q) => `
+        <tr>
+            <td>${escapeHtml(q.category || '—')}</td>
+            <td>${escapeHtml(q.question)}</td>
+            <td>${escapeHtml(q.question_type)}</td>
+            <td>${q.default_weight}</td>
+            <td>${q.is_active ? 'Yes' : 'No'}</td>
+            <td class="text-end">${cfg.canManage ? renderActionGroup([
+                renderEditIconButton('data-edit-qb', q.id),
+                renderDeleteButton('data-delete-qb', q.id),
+            ]) : '—'}</td>
+        </tr>
+    `;
+
+    const renderQuestionsPage = (pageNum = 1) => {
+        const { items, pagination } = paginateArray(questions, pageNum, readPerPage(perPageSelect));
+
+        if (!items.length) {
+            body.innerHTML = '<tr><td colspan="6" class="text-center text-muted py-4">No questions in bank.</td></tr>';
+        } else {
+            body.innerHTML = items.map(renderQuestionRow).join('');
+        }
+
+        if (paginationInfo || paginationList || perPageSelect) {
+            renderListPagination({
+                infoEl: paginationInfo,
+                listEl: paginationList,
+                perPageSelectEl: perPageSelect,
+                pagination,
+                itemLabel: 'questions',
+                emptyMessage: 'No questions in bank',
+            });
+        }
+
+        if (!questionBankPaginationBound && paginationList) {
+            questionBankPaginationBound = true;
+            bindPagination(paginationList, renderQuestionsPage);
+            bindPerPageSelect(perPageSelect, () => renderQuestionsPage(1));
+        }
+    };
+
     const load = async () => {
         const params = {
             category: document.getElementById('qbCategoryFilter')?.value || undefined,
             search: document.getElementById('qbSearchFilter')?.value || undefined,
         };
         const { data } = await api.get('/performance-question-bank', { params });
-        const questions = data.data.questions || [];
-
-        if (!questions.length) {
-            body.innerHTML = '<tr><td colspan="6" class="text-center text-muted py-4">No questions in bank.</td></tr>';
-            return;
-        }
-
-        body.innerHTML = questions.map((q) => `
-            <tr>
-                <td>${escapeHtml(q.category || '—')}</td>
-                <td>${escapeHtml(q.question)}</td>
-                <td>${escapeHtml(q.question_type)}</td>
-                <td>${q.default_weight}</td>
-                <td>${q.is_active ? 'Yes' : 'No'}</td>
-                <td class="text-end">${cfg.canManage ? renderActionGroup([
-                    renderEditIconButton('data-edit-qb', q.id),
-                    renderDeleteButton('data-delete-qb', q.id),
-                ]) : '—'}</td>
-            </tr>
-        `).join('');
+        questions = data.data.questions || [];
+        renderQuestionsPage(1);
     };
 
     if (cfg.canManage) {
@@ -465,6 +550,12 @@ const initFeedbackForms = async () => {
     const modalEl = document.getElementById('feedbackFormModal');
     const modal = modalEl ? Modal.getOrCreateInstance(modalEl) : null;
 
+    let forms = [];
+    const paginationInfo = document.getElementById('feedbackFormsPaginationInfo');
+    const paginationList = document.getElementById('feedbackFormsPaginationList');
+    const perPageSelect = document.getElementById('feedbackFormsPerPage');
+    let feedbackFormsPaginationBound = false;
+
     const renderQuestionRows = (container, questions = []) => {
         container.innerHTML = questions.map((q, i) => `
             <div class="border rounded p-2" data-fq-index="${i}">
@@ -491,31 +582,54 @@ const initFeedbackForms = async () => {
         question_type: row.querySelector('[data-fq-field="question_type"]')?.value || 'rating',
     })).filter((q) => q.question);
 
+    const renderFormRow = (form) => `
+        <tr>
+            <td>${escapeHtml(form.name)}</td>
+            <td>${statusPill(form.status)}</td>
+            <td>${form.questions_count ?? 0}</td>
+            <td>${escapeHtml(form.updated_at?.slice(0, 10) || '—')}</td>
+            <td class="text-end">${cfg.canManage ? renderActionGroup([
+                renderEditIconButton('data-edit-form', form.id),
+                renderDeleteButton('data-delete-form', form.id),
+            ]) : '—'}</td>
+        </tr>
+    `;
+
+    const renderFormsPage = (pageNum = 1) => {
+        const { items, pagination } = paginateArray(forms, pageNum, readPerPage(perPageSelect));
+
+        if (!items.length) {
+            body.innerHTML = '<tr><td colspan="5" class="text-center text-muted py-4">No feedback forms found.</td></tr>';
+        } else {
+            body.innerHTML = items.map(renderFormRow).join('');
+        }
+
+        if (paginationInfo || paginationList || perPageSelect) {
+            renderListPagination({
+                infoEl: paginationInfo,
+                listEl: paginationList,
+                perPageSelectEl: perPageSelect,
+                pagination,
+                itemLabel: 'forms',
+                emptyMessage: 'No feedback forms found',
+            });
+        }
+
+        if (!feedbackFormsPaginationBound && paginationList) {
+            feedbackFormsPaginationBound = true;
+            bindPagination(paginationList, renderFormsPage);
+            bindPerPageSelect(perPageSelect, () => renderFormsPage(1));
+        }
+    };
+
     const load = async () => {
         const params = {
             status: document.getElementById('formStatusFilter')?.value || undefined,
             search: document.getElementById('formSearchFilter')?.value || undefined,
         };
         const { data } = await api.get('/performance-feedback-forms', { params });
-        const forms = data.data.forms || [];
-
-        if (!forms.length) {
-            body.innerHTML = '<tr><td colspan="5" class="text-center text-muted py-4">No feedback forms found.</td></tr>';
-            return;
-        }
-
-        body.innerHTML = forms.map((form) => `
-            <tr>
-                <td>${escapeHtml(form.name)}</td>
-                <td>${statusPill(form.status)}</td>
-                <td>${form.questions_count ?? 0}</td>
-                <td>${escapeHtml(form.updated_at?.slice(0, 10) || '—')}</td>
-                <td class="text-end">${cfg.canManage ? renderActionGroup([
-                    renderEditIconButton('data-edit-form', form.id),
-                    renderDeleteButton('data-delete-form', form.id),
-                ]) : '—'}</td>
-            </tr>
-        `).join('');
+        forms = data.data.forms || [];
+        renderFormsPage(1);
     };
 
     if (cfg.canManage) {
@@ -639,7 +753,7 @@ const initGoals = async () => {
         currentPage = pageNum;
         const params = {
             page: pageNum,
-            per_page: 10,
+            per_page: readPerPage(document.getElementById('goalsPerPage')),
             status: document.getElementById('goalStatusFilter')?.value || undefined,
             search: document.getElementById('goalSearchFilter')?.value || undefined,
         };
@@ -767,7 +881,7 @@ const initKpi = async () => {
         currentPage = pageNum;
         const params = {
             page: pageNum,
-            per_page: 10,
+            per_page: readPerPage(document.getElementById('kpiPerPage')),
             status: document.getElementById('kpiStatusFilter')?.value || undefined,
             search: document.getElementById('kpiSearchFilter')?.value || undefined,
         };
@@ -924,7 +1038,7 @@ const initPip = async () => {
         currentPage = pageNum;
         const params = {
             page: pageNum,
-            per_page: 10,
+            per_page: readPerPage(document.getElementById('pipPerPage')),
             status: document.getElementById('pipStatusFilter')?.value || undefined,
             search: document.getElementById('pipSearchFilter')?.value || undefined,
         };

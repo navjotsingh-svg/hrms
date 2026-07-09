@@ -1,5 +1,6 @@
 import api, { getErrorMessage } from './api';
 import { showAutoDismissAlert } from './form-utils';
+import { bindPagination, bindPerPageSelect, getSerialNumber, readPerPage, renderListPagination } from './pagination';
 import {
     bindAssetItemReviewHandlers,
     renderAssetItemsTable,
@@ -24,10 +25,12 @@ document.addEventListener('DOMContentLoaded', async () => {
     const filterReset = document.getElementById('filterReset');
     const paginationInfo = document.getElementById('assetRequestsPaginationInfo');
     const paginationList = document.getElementById('assetRequestsPaginationList');
+    const perPageSelect = document.getElementById('assetRequestsPerPage');
     const pendingContainer = document.getElementById('assetPendingContainer');
     const pendingBadge = document.getElementById('assetPendingBadge');
     const pendingCard = document.getElementById('assetPendingCard');
     let currentPage = 1;
+    let currentPerPage = readPerPage(perPageSelect);
 
     const showAlert = (message, type = 'success') => {
         if (!alertBox) return;
@@ -35,7 +38,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     };
 
     const renderRow = (item, index, pagination) => {
-        const serial = ((pagination.current_page - 1) * pagination.per_page) + index + 1;
+        const serial = getSerialNumber(index, pagination);
         return `<tr>
             <td>${serial}</td>
             <td>${item.employee?.full_name || '—'}<div class="small text-muted">${item.employee?.employee_code || ''}</div></td>
@@ -100,7 +103,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     const loadRequests = async (page = 1) => {
         currentPage = page;
-        const params = { page, per_page: 10 };
+        const params = { page, per_page: currentPerPage };
 
         if (filterStatus?.value) {
             params.status = filterStatus.value;
@@ -115,16 +118,14 @@ document.addEventListener('DOMContentLoaded', async () => {
                 ? requests.map((item, i) => renderRow(item, i, pagination)).join('')
                 : '<tr><td colspan="5" class="text-center text-muted py-5">No asset requests found.</td></tr>';
 
-            paginationInfo.textContent = pagination?.total
-                ? `Showing ${pagination.from} to ${pagination.to} of ${pagination.total}`
-                : 'No asset requests found';
-
-            paginationList.innerHTML = pagination?.last_page
-                ? Array.from({ length: pagination.last_page }, (_, i) => {
-                    const p = i + 1;
-                    return `<li class="page-item ${p === pagination.current_page ? 'active' : ''}"><button type="button" class="page-link" data-page="${p}">${p}</button></li>`;
-                }).join('')
-                : '';
+            renderListPagination({
+                infoEl: paginationInfo,
+                listEl: paginationList,
+                perPageSelectEl: perPageSelect,
+                pagination,
+                itemLabel: 'requests',
+                emptyMessage: 'No asset requests found',
+            });
         } catch (error) {
             tableBody.innerHTML = `<tr><td colspan="5" class="text-center text-danger py-5">${getErrorMessage(error)}</td></tr>`;
         }
@@ -147,9 +148,10 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (filterStatus) filterStatus.value = '';
         loadRequests(1);
     });
-    paginationList?.addEventListener('click', (e) => {
-        const btn = e.target.closest('[data-page]');
-        if (btn) loadRequests(Number(btn.dataset.page));
+    bindPagination(paginationList, loadRequests);
+    bindPerPageSelect(perPageSelect, (perPage) => {
+        currentPerPage = perPage;
+        loadRequests(1);
     });
     tableBody?.addEventListener('click', async (event) => {
         const cancel = event.target.closest('[data-cancel-asset]');

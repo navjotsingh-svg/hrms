@@ -87,9 +87,12 @@
                     <span class="attendance-period-nav-label-text" id="attendanceOverviewMonthLabel">—</span>
                     <button type="button" class="btn btn-outline-secondary btn-sm attendance-period-nav-btn" id="attendanceOverviewNextMonth" aria-label="Next month">&rarr;</button>
                 </div>
-                <div class="text-muted small" id="attendanceOverviewPaginationInfo">—</div>
             </div>
         </div>
+        @include('partials.list-pagination-header', [
+            'perPageId' => 'attendanceOverviewPerPage',
+            'defaultPerPage' => 25,
+        ])
         <div class="companies-table-wrap attendance-matrix-wrap">
             <table class="companies-table attendance-matrix mb-0">
                 <thead id="attendanceMatrixHead">
@@ -100,8 +103,8 @@
                 <tbody id="attendanceMatrixBody"></tbody>
             </table>
         </div>
-        <div class="content-card-body border-top d-flex flex-wrap justify-content-between align-items-center gap-2">
-            <div class="attendance-matrix-legend">
+        <div class="content-card-body border-top">
+            <div class="attendance-matrix-legend mb-3">
                 <span class="attendance-matrix-legend-item attendance-matrix-cell--present">P Present</span>
                 <span class="attendance-matrix-legend-item attendance-matrix-cell--half-day">HD Half</span>
                 <span class="attendance-matrix-legend-item attendance-matrix-cell--absent">A Absent</span>
@@ -110,7 +113,15 @@
                 <span class="attendance-matrix-legend-item attendance-matrix-cell--weekly-off">WO Off</span>
                 <span class="attendance-matrix-legend-item attendance-matrix-cell--regularization-pending">RP Pending</span>
             </div>
-            <ul class="pagination pagination-sm mb-0" id="attendanceOverviewPaginationList"></ul>
+            @include('partials.list-pagination-footer', [
+                'infoId' => 'attendanceOverviewPaginationInfo',
+                'listId' => 'attendanceOverviewPaginationList',
+                'perPageId' => 'attendanceOverviewPerPage',
+                'wrapClass' => 'pt-0 border-0 companies-pagination-footer',
+                'ariaLabel' => 'Attendance overview pagination',
+                'infoText' => '—',
+                'defaultPerPage' => 25,
+            ])
         </div>
         <div class="content-card-body border-top pt-2 pb-3">
             <div class="text-muted small text-end" id="attendanceOverviewPaginationSummary"></div>

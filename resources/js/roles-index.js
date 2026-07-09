@@ -1,5 +1,6 @@
 import api, { getErrorMessage } from './api';
 import { Modal } from 'bootstrap';
+import { bindPagination, bindPerPageSelect, getSerialNumber, readPerPage, renderListPagination } from './pagination';
 import { renderDeleteButton, renderEditLink, renderActionGroup, DELETE_ICON } from './action-icons';
 
 const webRoutes = () => window.HRMS_WEB_ROUTES || {};
@@ -13,6 +14,10 @@ const escapeHtml = (value) => String(value ?? '')
 document.addEventListener('DOMContentLoaded', async () => {
     const alertBox = document.getElementById('rolesAlert');
     const tableBody = document.getElementById('rolesTableBody');
+    const paginationWrap = document.getElementById('rolesPagination');
+    const paginationInfo = document.getElementById('rolesPaginationInfo');
+    const paginationList = document.getElementById('rolesPaginationList');
+    const perPageSelect = document.getElementById('rolesPerPage');
     const createRoleBtn = document.getElementById('createRoleBtn');
     const createRoleModalEl = document.getElementById('createRoleModal');
     const createRoleForm = document.getElementById('createRoleForm');
@@ -21,6 +26,9 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (!tableBody) {
         return;
     }
+
+    let currentPage = 1;
+    let currentPerPage = readPerPage(perPageSelect);
 
     const createRoleModal = createRoleModalEl ? Modal.getOrCreateInstance(createRoleModalEl) : null;
 
@@ -65,10 +73,17 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
     };
 
-    const renderTable = (roles) => {
+    const renderTable = (roles, pagination) => {
         if (roles.length === 0) {
             tableBody.innerHTML = '<tr><td colspan="6" class="text-center text-muted py-5">No roles found.</td></tr>';
-
+            renderListPagination({
+                infoEl: paginationInfo,
+                listEl: paginationList,
+                perPageSelectEl: perPageSelect,
+                pagination,
+                itemLabel: 'roles',
+                emptyMessage: 'No roles found',
+            });
             return;
         }
 
@@ -94,7 +109,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
             return `
                 <tr class="companies-data-row">
-                    <td class="companies-td-serial"><span class="companies-serial">${index + 1}</span></td>
+                    <td class="companies-td-serial"><span class="companies-serial">${getSerialNumber(index, pagination)}</span></td>
                     <td>
                         <div class="companies-company-info">
                             <a href="${showUrl}" class="companies-company-name">${escapeHtml(role.name)}</a>
@@ -110,18 +125,34 @@ document.addEventListener('DOMContentLoaded', async () => {
                 </tr>
             `;
         }).join('');
+
+        renderListPagination({
+            infoEl: paginationInfo,
+            listEl: paginationList,
+            perPageSelectEl: perPageSelect,
+            pagination,
+            itemLabel: 'roles',
+            emptyMessage: 'No roles found',
+        });
     };
 
-    const loadRoles = async () => {
+    const loadRoles = async (page = 1) => {
+        currentPage = page;
         tableBody.innerHTML = '<tr><td colspan="6" class="text-center text-muted py-5">Loading roles...</td></tr>';
 
         try {
-            const { data } = await api.get('/roles');
-            renderTable(data.data.roles || []);
+            const { data } = await api.get('/roles', { params: { page, per_page: currentPerPage } });
+            renderTable(data.data.roles || [], data.data.pagination);
         } catch (error) {
             tableBody.innerHTML = `<tr><td colspan="6" class="text-center text-danger py-5">${escapeHtml(getErrorMessage(error))}</td></tr>`;
         }
     };
+
+    bindPagination(paginationWrap, (page) => loadRoles(page));
+    bindPerPageSelect(perPageSelect, (perPage) => {
+        currentPerPage = perPage;
+        loadRoles(1);
+    });
 
     createRoleBtn?.addEventListener('click', () => {
         createRoleModal?.show();
@@ -154,7 +185,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             if (roleId) {
                 window.location.href = showUrl;
             } else {
-                loadRoles();
+                loadRoles(currentPage);
             }
         } catch (error) {
             showAlert(getErrorMessage(error), 'danger');
@@ -206,7 +237,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         try {
             const { data } = await api.delete(`/roles/${roleId}`);
             showAlert(data.message || 'Role deleted successfully.');
-            loadRoles();
+            loadRoles(currentPage);
         } catch (error) {
             showAlert(getErrorMessage(error), 'danger');
             button.disabled = false;

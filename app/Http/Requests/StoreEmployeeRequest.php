@@ -23,7 +23,7 @@ class StoreEmployeeRequest extends FormRequest
                 null,
                 $this->boolean('give_portal_access')
             ),
-            $this->employeeSalaryRules()
+            $this->employeeSalaryRulesForRequest()
         );
     }
 

@@ -23,6 +23,37 @@ class AnalyticsReportService
         private AttendanceService $attendanceService,
     ) {}
 
+    /** @return array{labels: array<int, string>, series: array<int, float>, meta: array<string, mixed>} */
+    public function chartDataForWidget(User $user, string $reportKey, array $filters = [], int $sectionIndex = 0): array
+    {
+        $filters['page'] = 1;
+        $filters['per_page'] = 100000;
+
+        $payload = $this->run($user, $reportKey, $filters);
+        $sections = $payload['charts']['sections'] ?? [];
+        $section = $sections[$sectionIndex] ?? $sections[0] ?? null;
+
+        if (! $section || empty($section['items'])) {
+            return [
+                'labels' => [],
+                'series' => [],
+                'meta' => [
+                    'chart_title' => $section['title'] ?? null,
+                    'empty' => true,
+                ],
+            ];
+        }
+
+        return [
+            'labels' => collect($section['items'])->pluck('label')->all(),
+            'series' => collect($section['items'])->pluck('value')->map(fn ($value) => (float) $value)->all(),
+            'meta' => [
+                'chart_title' => $section['title'] ?? null,
+                'report_key' => $reportKey,
+            ],
+        ];
+    }
+
     public function run(User $user, string $reportKey, array $filters = []): array
     {
         if (! $this->catalogService->canAccessReport($user, $reportKey)) {
@@ -575,7 +606,7 @@ class AnalyticsReportService
         $from = Carbon::parse($filters['from_date'])->startOfDay();
         $to = Carbon::parse($filters['to_date'])->endOfDay();
 
-        if ($from->year !== $to->year) {
+        if ($from->year !== $to->year && ! ($filters['allow_cross_year'] ?? false)) {
             throw ValidationException::withMessages([
                 'to_date' => ['Date range must be within the same calendar year.'],
             ]);

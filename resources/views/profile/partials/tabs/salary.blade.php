@@ -6,7 +6,8 @@
         </div>
         <div id="profileSalaryActions" class="d-none d-flex flex-wrap gap-2">
             <button type="button" class="btn btn-primary btn-sm" id="profileSalaryAddBtn">Add Salary</button>
-            <button type="button" class="btn btn-primary btn-sm d-none" id="profileSalaryReviseBtn">Revise Salary</button>
+            <button type="button" class="btn btn-outline-primary btn-sm d-none" id="profileSalaryUpdateBtn">Update Salary</button>
+            <button type="button" class="btn btn-outline-secondary btn-sm d-none" id="profileSalaryReviseBtn">Revise Salary</button>
         </div>
     </div>
 
@@ -99,13 +100,13 @@
                         <div class="col-md-6">
                             <label for="profile_salary_effective_from" class="form-label">Effective Date <span class="text-danger">*</span></label>
                             <input type="date" class="form-control" id="profile_salary_effective_from">
-                            <div class="form-text">Date from which the revised CTC comes into effect.</div>
+                            <div class="form-text" id="profileSalaryEffectiveDateHint">Date from which the revised CTC comes into effect.</div>
                             <div class="invalid-feedback d-block" data-error="salary_effective_from"></div>
                         </div>
                         <div class="col-md-6">
                             <label for="profile_salary_payout_from" class="form-label">Payout From <span class="text-danger">*</span></label>
                             <input type="date" class="form-control" id="profile_salary_payout_from">
-                            <div class="form-text">Date from which the new salary is paid in payroll.</div>
+                            <div class="form-text" id="profileSalaryPayoutDateHint">Date from which the new salary is paid in payroll.</div>
                             <div class="invalid-feedback d-block" data-error="salary_payout_from"></div>
                         </div>
                     </div>

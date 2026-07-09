@@ -10,6 +10,7 @@
     ];
     $peopleKeys = ['people', 'employees'];
     $coreHrKeys = [
+        'org_chart',
         'masters.departments', 'masters.shifts', 'masters.roles',
         'core_hr.documents_letters',
     ];
@@ -50,9 +51,10 @@
     $companyKeys = ['masters.departments', 'masters.shifts', 'masters.roles', 'activity_logs'];
 
     $isHomeOpen = request()->routeIs('web.home.index', 'web.home.dashboard', 'web.dashboard');
-    $isEmployeeExperienceOpen = request()->routeIs('web.employee-experience.*', 'web.home.moments', 'web.helpdesk.*');
+    $isEmployeeExperienceOpen = request()->routeIs('web.employee-experience.*', 'web.home.moments', 'web.helpdesk.*', 'web.assistant.*');
     $isPeopleOpen = request()->routeIs('web.people.*') || request()->routeIs('web.employees.*');
     $isCoreHrOpen = request()->routeIs(
+        'web.org-chart.index',
         'web.masters.departments.*',
         'web.masters.shifts.*',
         'web.masters.roles.*',
@@ -190,7 +192,11 @@
                                 </a>
                             </li>
                             <li class="nav-item">
-                                <a class="nav-link sidebar-people-link" href="{{ route('web.people.index') }}#org-chart" id="sidebarPeopleOrgChartLink">
+                                <a
+                                    class="nav-link sidebar-people-link {{ request()->routeIs('web.org-chart.index') ? 'active' : '' }}"
+                                    href="{{ route('web.org-chart.index') }}"
+                                    id="sidebarPeopleOrgChartLink"
+                                >
                                     <span class="sidebar-icon">@include('layouts.partials.sidebar-icon', ['name' => 'org-chart'])</span>
                                     <span class="sidebar-link-label">Org Chart</span>
                                 </a>
@@ -214,49 +220,37 @@
                         'icon' => 'documents',
                         'open' => $isCoreHrOpen,
                     ])
-                        @if ($user->canSeeMenu('masters.departments') || $user->canSeeMenu('masters.shifts') || $user->canSeeMenu('masters.roles'))
-                            <li class="nav-item sidebar-group sidebar-group--nested">
-                                <button
-                                    class="nav-link sidebar-submenu-toggle {{ request()->routeIs('web.masters.departments.*', 'web.masters.shifts.*', 'web.masters.roles.*') ? 'active' : '' }}"
-                                    type="button"
-                                    data-bs-toggle="collapse"
-                                    data-bs-target="#sidebarOrgStructureMenu"
-                                    aria-expanded="{{ request()->routeIs('web.masters.departments.*', 'web.masters.shifts.*', 'web.masters.roles.*') ? 'true' : 'false' }}"
-                                    aria-controls="sidebarOrgStructureMenu"
-                                >
-                                    <span class="sidebar-icon">@include('layouts.partials.sidebar-icon', ['name' => 'org-chart'])</span>
-                                    <span class="sidebar-link-label">Org Structure</span>
-                                    <span class="sidebar-chevron" aria-hidden="true">&#8963;</span>
-                                </button>
-                                <div class="collapse {{ request()->routeIs('web.masters.departments.*', 'web.masters.shifts.*', 'web.masters.roles.*') ? 'show' : '' }}" id="sidebarOrgStructureMenu">
-                                    <ul class="nav flex-column sidebar-submenu">
-                                        @if ($user->canSeeMenu('masters.departments'))
-                                            @include('layouts.partials.sidebar-link', [
-                                                'href' => route('web.masters.departments.index'),
-                                                'label' => 'Departments',
-                                                'icon' => 'departments',
-                                                'active' => request()->routeIs('web.masters.departments.*'),
-                                            ])
-                                        @endif
-                                        @if ($user->canSeeMenu('masters.shifts'))
-                                            @include('layouts.partials.sidebar-link', [
-                                                'href' => route('web.masters.shifts.index'),
-                                                'label' => 'Shifts',
-                                                'icon' => 'clock',
-                                                'active' => request()->routeIs('web.masters.shifts.*'),
-                                            ])
-                                        @endif
-                                        @if ($user->canSeeMenu('masters.roles'))
-                                            @include('layouts.partials.sidebar-link', [
-                                                'href' => route('web.masters.roles.index'),
-                                                'label' => 'Roles',
-                                                'icon' => 'roles',
-                                                'active' => request()->routeIs('web.masters.roles.*'),
-                                            ])
-                                        @endif
-                                    </ul>
-                                </div>
-                            </li>
+                        @if ($user->canSeeMenu('org_chart'))
+                            @include('layouts.partials.sidebar-link', [
+                                'href' => route('web.org-chart.index'),
+                                'label' => 'Org Chart',
+                                'icon' => 'org-chart',
+                                'active' => request()->routeIs('web.org-chart.index'),
+                            ])
+                        @endif
+                        @if ($user->canSeeMenu('masters.departments'))
+                            @include('layouts.partials.sidebar-link', [
+                                'href' => route('web.masters.departments.index'),
+                                'label' => 'Departments',
+                                'icon' => 'departments',
+                                'active' => request()->routeIs('web.masters.departments.*'),
+                            ])
+                        @endif
+                        @if ($user->canSeeMenu('masters.shifts'))
+                            @include('layouts.partials.sidebar-link', [
+                                'href' => route('web.masters.shifts.index'),
+                                'label' => 'Shifts',
+                                'icon' => 'clock',
+                                'active' => request()->routeIs('web.masters.shifts.*'),
+                            ])
+                        @endif
+                        @if ($user->canSeeMenu('masters.roles'))
+                            @include('layouts.partials.sidebar-link', [
+                                'href' => route('web.masters.roles.index'),
+                                'label' => 'Roles',
+                                'icon' => 'roles',
+                                'active' => request()->routeIs('web.masters.roles.*'),
+                            ])
                         @endif
                         @if ($user->canSeeMenu('core_hr.documents_letters'))
                             @include('layouts.partials.sidebar-link', [

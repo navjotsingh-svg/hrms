@@ -739,6 +739,9 @@ class AttendanceService
 
         $holiday = $this->attendancePolicyService->holidayOnDate($companyId, $date);
 
+        $correctionService = app(AttendanceCorrectionService::class);
+        $absentRemarksByEmployee = $correctionService->absentRemarksForEmployeesOnDate($companyId, $employeeIds, $date);
+
         $summary = [
             'total' => 0,
             'marked' => 0,
@@ -754,6 +757,7 @@ class AttendanceService
         ];
 
         $rows = [];
+        $canMarkAbsent = $correctionService->canMarkAbsent($user);
 
         foreach ($employees as $employee) {
             $punches = $punchesByEmployee->get($employee->id, collect());
@@ -838,6 +842,15 @@ class AttendanceService
                 'leave_session_label' => $dayMeta['leave_session_label'] ?? null,
                 'awaiting_punch_out' => (bool) ($dayMeta['awaiting_punch_out'] ?? false),
                 'punch_count' => $punches->count(),
+                'can_mark_absent' => $canMarkAbsent && $correctionService->canMarkEmployeeAbsent(
+                    $user,
+                    $employee,
+                    $date,
+                    $status,
+                    $punches->count(),
+                    $pendingRegularizations->has($employee->id),
+                ),
+                'absent_remark' => $absentRemarksByEmployee[$employee->id] ?? null,
             ];
         }
 

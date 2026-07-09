@@ -35,7 +35,8 @@
                     </div>
                 </div>
 
-                <div class="table-responsive">
+        @include('partials.list-pagination-header', ['perPageId' => 'peoplePerPage'])
+        <div class="table-responsive">
                     <table class="table people-summary-table mb-0">
                         <thead>
                             <tr>
@@ -50,10 +51,14 @@
                     </table>
                 </div>
 
-                <div class="people-pagination-bar">
-                    <div class="text-muted small" id="peoplePaginationInfo">—</div>
-                    <ul class="pagination pagination-sm mb-0" id="peoplePaginationList"></ul>
-                </div>
+                @include('partials.list-pagination-footer', [
+                    'infoId' => 'peoplePaginationInfo',
+                    'listId' => 'peoplePaginationList',
+                    'perPageId' => 'peoplePerPage',
+                    'wrapClass' => 'people-pagination-bar',
+                    'ariaLabel' => 'People pagination',
+                    'infoText' => '—',
+                ])
             </div>
 
             <div class="tab-pane fade" id="peopleOrgChartPane" role="tabpanel">

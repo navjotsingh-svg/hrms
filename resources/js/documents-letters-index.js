@@ -1,8 +1,10 @@
 import { Modal } from 'bootstrap';
 import api, { getErrorMessage } from './api';
+import { aiDraftDocument } from './ai-tools';
 import { bindEmployeeSearchSelect } from './employee-autocomplete';
-import { composeActionGroup, renderEditIconButton, renderViewLink } from './action-icons';
+import { composeActionGroup, renderEditIconButton, renderViewIconButton, renderViewLink } from './action-icons';
 import { initRichTextEditor, isEmptyEditorContent } from './rich-text-editor';
+import { bindPagination, bindPerPageSelect, readPerPage, renderListPagination } from './pagination';
 
 const statusClass = (status) => ({
     draft: 'company-status-pill--inactive',
@@ -21,7 +23,48 @@ const setEditorHtml = (editor, html) => {
     editor.sync?.();
 };
 
-const syncEditor = (editor) => editor?.sync?.();
+    const syncEditor = (editor) => editor?.sync?.();
+
+    const openPdfBlob = (blob, filename = 'template.pdf') => {
+        const url = URL.createObjectURL(new Blob([blob], { type: 'application/pdf' }));
+        const popup = window.open(url, '_blank');
+        if (!popup) {
+            const link = document.createElement('a');
+            link.href = url;
+            link.download = filename;
+            document.body.appendChild(link);
+            link.click();
+            link.remove();
+        }
+        setTimeout(() => URL.revokeObjectURL(url), 60_000);
+    };
+
+    const openTemplatePdf = async (templateId, params = {}) => {
+        const response = await api.get(`/document-letter-templates/${templateId}/pdf`, {
+            params,
+            responseType: 'blob',
+        });
+        openPdfBlob(response.data, `template-${templateId}.pdf`);
+    };
+
+    const openDraftTemplatePdf = async () => {
+        syncEditor(templateBodyEditor);
+        const bodyHtml = document.getElementById('templateBodyHtml')?.value || '';
+
+        if (isEmptyEditorContent(bodyHtml)) {
+            showAlert('Please enter letter body content before previewing PDF.', 'danger');
+            return;
+        }
+
+        const response = await api.post('/document-letter-templates/preview-pdf', {
+            body_html: bodyHtml,
+            title: document.getElementById('templateName')?.value?.trim() || 'Document Preview',
+            subject: document.getElementById('templateSubject')?.value?.trim() || undefined,
+            employee_id: document.getElementById('templatePreviewEmployeeId')?.value || undefined,
+        }, { responseType: 'blob' });
+
+        openPdfBlob(response.data, 'template-preview.pdf');
+    };
 
 document.addEventListener('DOMContentLoaded', async () => {
     const pageRoot = document.getElementById('docLettersPageRoot');
@@ -40,6 +83,10 @@ document.addEventListener('DOMContentLoaded', async () => {
     let templateBodyEditor = null;
     let templateDescriptionEditor = null;
     let issueBodyEditor = null;
+    const docLettersPerPageSelect = document.getElementById('docLettersPerPage');
+    const docTemplatesPerPageSelect = document.getElementById('docTemplatesPerPage');
+    let lettersPerPage = readPerPage(docLettersPerPageSelect);
+    let templatesPerPage = readPerPage(docTemplatesPerPageSelect);
 
     const showAlert = (message, type = 'success') => {
         if (!alertBox) return;
@@ -166,7 +213,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
         const params = {
             page,
-            per_page: 10,
+            per_page: lettersPerPage,
             status: document.getElementById('filterLetterStatus')?.value || undefined,
             category: document.getElementById('filterLetterCategory')?.value || undefined,
             search: document.getElementById('filterLetterSearch')?.value?.trim() || undefined,
@@ -198,25 +245,14 @@ document.addEventListener('DOMContentLoaded', async () => {
             }).join('');
         }
 
-        if (paginationInfo && pagination) {
-            paginationInfo.textContent = pagination.total
-                ? `Showing ${pagination.from}–${pagination.to} of ${pagination.total}`
-                : 'No records';
-        }
-
-        if (paginationList && pagination) {
-            paginationList.innerHTML = '';
-            for (let p = 1; p <= pagination.last_page; p += 1) {
-                paginationList.insertAdjacentHTML('beforeend', `
-                    <li class="page-item ${p === pagination.current_page ? 'active' : ''}">
-                        <button type="button" class="page-link" data-page="${p}">${p}</button>
-                    </li>
-                `);
-            }
-            paginationList.querySelectorAll('[data-page]').forEach((btn) => {
-                btn.addEventListener('click', () => loadLetters(Number(btn.dataset.page)).catch((e) => showAlert(getErrorMessage(e), 'danger')));
-            });
-        }
+        renderListPagination({
+            infoEl: paginationInfo,
+            listEl: paginationList,
+            perPageSelectEl: docLettersPerPageSelect,
+            pagination,
+            itemLabel: 'documents',
+            emptyMessage: 'No records',
+        });
     };
 
     const loadTemplates = async (page = 1) => {
@@ -227,7 +263,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
         const params = {
             page,
-            per_page: 10,
+            per_page: templatesPerPage,
             category: document.getElementById('filterTemplateCategory')?.value || undefined,
             status: document.getElementById('filterTemplateStatus')?.value || undefined,
             search: document.getElementById('filterTemplateSearch')?.value?.trim() || undefined,
@@ -248,6 +284,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                 <td><span class="company-status-pill ${item.status === 'active' ? 'company-status-pill--active' : 'company-status-pill--inactive'}">${item.status === 'active' ? 'Active' : 'Inactive'}</span></td>
                 <td>${item.updated_at_label || '—'}</td>
                 <td>${composeActionGroup({
+                    view: renderViewIconButton('data-pdf-template', item.id, 'Preview PDF'),
                     edit: renderEditIconButton('data-edit-template', item.id, 'Edit template'),
                 })}</td>
             </tr>`).join('');
@@ -255,27 +292,22 @@ document.addEventListener('DOMContentLoaded', async () => {
             tableBody.querySelectorAll('[data-edit-template]').forEach((btn) => {
                 btn.addEventListener('click', () => openTemplateModal(Number(btn.dataset.editTemplate)));
             });
-        }
 
-        if (paginationInfo && pagination) {
-            paginationInfo.textContent = pagination.total
-                ? `Showing ${pagination.from}–${pagination.to} of ${pagination.total}`
-                : 'No records';
-        }
-
-        if (paginationList && pagination) {
-            paginationList.innerHTML = '';
-            for (let p = 1; p <= pagination.last_page; p += 1) {
-                paginationList.insertAdjacentHTML('beforeend', `
-                    <li class="page-item ${p === pagination.current_page ? 'active' : ''}">
-                        <button type="button" class="page-link" data-template-page="${p}">${p}</button>
-                    </li>
-                `);
-            }
-            paginationList.querySelectorAll('[data-template-page]').forEach((btn) => {
-                btn.addEventListener('click', () => loadTemplates(Number(btn.dataset.templatePage)).catch((e) => showAlert(getErrorMessage(e), 'danger')));
+            tableBody.querySelectorAll('[data-pdf-template]').forEach((btn) => {
+                btn.addEventListener('click', () => {
+                    openTemplatePdf(Number(btn.dataset.pdfTemplate)).catch((e) => showAlert(getErrorMessage(e), 'danger'));
+                });
             });
         }
+
+        renderListPagination({
+            infoEl: paginationInfo,
+            listEl: paginationList,
+            perPageSelectEl: docTemplatesPerPageSelect,
+            pagination,
+            itemLabel: 'templates',
+            emptyMessage: 'No records',
+        });
 
         refreshIssueTemplateSelect();
     };
@@ -447,6 +479,10 @@ document.addEventListener('DOMContentLoaded', async () => {
             onSelect: () => previewIssueDocument(),
             onClear: () => previewIssueDocument(),
         });
+        bindEmployeeSearchSelect({
+            inputId: 'templatePreviewEmployeeSearch',
+            hiddenId: 'templatePreviewEmployeeId',
+        });
 
         document.getElementById('docLettersPageRoot')?.addEventListener('click', (event) => {
             const placeholderBtn = event.target.closest('.doc-letter-placeholder-btn');
@@ -465,6 +501,10 @@ document.addEventListener('DOMContentLoaded', async () => {
             document.getElementById('issuePreviewBox').innerHTML = '<span class="text-muted">Select an employee and template to preview.</span>';
             await refreshIssueTemplateSelect();
             issueModal?.show();
+        });
+
+        document.getElementById('templatePreviewPdfBtn')?.addEventListener('click', () => {
+            openDraftTemplatePdf().catch((e) => showAlert(getErrorMessage(e), 'danger'));
         });
 
         document.getElementById('docLettersCreateTemplateBtn')?.addEventListener('click', () => {
@@ -490,6 +530,37 @@ document.addEventListener('DOMContentLoaded', async () => {
                     }
                 }
             });
+        });
+
+        document.getElementById('docLettersAiDraftBtn')?.addEventListener('click', async () => {
+            const button = document.getElementById('docLettersAiDraftBtn');
+            const prompt = window.prompt(
+                'Describe the document letter you want AI to draft:',
+                document.getElementById('templateName')?.value?.trim() || 'HR document letter',
+            );
+
+            if (!prompt) {
+                return;
+            }
+
+            button.disabled = true;
+            button.textContent = 'AI working…';
+
+            try {
+                ensureTemplateEditors();
+                const result = await aiDraftDocument({
+                    category: document.getElementById('templateCategory')?.value || 'other',
+                    prompt,
+                    employee_id: document.getElementById('templatePreviewEmployeeId')?.value || undefined,
+                });
+                setEditorHtml(templateBodyEditor, result.body_html || '');
+                showAlert('AI draft inserted. Review placeholders and edit before saving.');
+            } catch (error) {
+                showAlert(getErrorMessage(error), 'danger');
+            } finally {
+                button.disabled = false;
+                button.textContent = 'AI draft';
+            }
         });
 
         document.getElementById('docLettersIssueForm')?.addEventListener('submit', async (event) => {
@@ -620,6 +691,21 @@ document.addEventListener('DOMContentLoaded', async () => {
             loadUploads().catch((e) => showAlert(getErrorMessage(e), 'danger'));
         });
     }
+
+    bindPagination(document.getElementById('docLettersPaginationList'), (page) => {
+        loadLetters(page).catch((e) => showAlert(getErrorMessage(e), 'danger'));
+    });
+    bindPerPageSelect(docLettersPerPageSelect, (perPage) => {
+        lettersPerPage = perPage;
+        loadLetters(1).catch((e) => showAlert(getErrorMessage(e), 'danger'));
+    });
+    bindPagination(document.getElementById('docTemplatesPaginationList'), (page) => {
+        loadTemplates(page).catch((e) => showAlert(getErrorMessage(e), 'danger'));
+    });
+    bindPerPageSelect(docTemplatesPerPageSelect, (perPage) => {
+        templatesPerPage = perPage;
+        loadTemplates(1).catch((e) => showAlert(getErrorMessage(e), 'danger'));
+    });
 
     try {
         await loadMeta();

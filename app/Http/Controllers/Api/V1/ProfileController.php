@@ -24,6 +24,7 @@ use App\Http\Resources\UserResource;
 use App\Models\EmployeeDocument;
 use App\Models\EmployeePaymentMethodProof;
 use App\Services\EmployeeProfileService;
+use App\Services\EmployeeJourneyService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
@@ -36,6 +37,7 @@ class ProfileController extends Controller
 
     public function __construct(
         private EmployeeProfileService $employeeProfileService,
+        private EmployeeJourneyService $employeeJourneyService,
     ) {}
 
     public function show(Request $request): JsonResponse
@@ -68,6 +70,29 @@ class ProfileController extends Controller
                 'can_manage_assets' => $request->user()->canEditEmployeeProfileWithoutApproval($employee),
             ],
         ]);
+    }
+
+    public function journey(Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'range' => ['nullable', 'string', 'max:30'],
+            'from_date' => ['nullable', 'date_format:Y-m-d'],
+            'to_date' => ['nullable', 'date_format:Y-m-d', 'after_or_equal:from_date'],
+            'page' => ['nullable', 'integer', 'min:1'],
+            'per_page' => ['nullable', 'integer', 'min:5', 'max:50'],
+        ]);
+
+        $employee = $this->employeeProfileService->resolveEmployee($request->user());
+
+        return $this->success(
+            $this->employeeJourneyService->forEmployee(
+                $request->user(),
+                $employee,
+                $validated,
+                (int) ($validated['page'] ?? 1),
+                (int) ($validated['per_page'] ?? 10),
+            )
+        );
     }
 
     public function storeFamilyMembers(StoreEmployeeFamilyMemberRequest $request): JsonResponse

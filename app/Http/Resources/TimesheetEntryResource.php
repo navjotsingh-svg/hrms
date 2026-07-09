@@ -27,6 +27,9 @@ class TimesheetEntryResource extends JsonResource
             'hours' => (float) $this->hours,
             'hours_label' => $this->formatHoursLabel((float) $this->hours),
             'notes' => $this->notes,
+            'done_today' => $this->done_today,
+            'blockers' => $this->blockers,
+            'plan_tomorrow' => $this->plan_tomorrow,
             'project' => $this->whenLoaded('project', fn () => [
                 'id' => $this->project?->id,
                 'name' => $this->project?->name,

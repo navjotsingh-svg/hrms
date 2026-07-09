@@ -52,6 +52,11 @@ class MomentService
             $query->where('type', $filters['type']);
         }
 
+        if (! empty($filters['praise'])) {
+            $query->where('type', CompanyMoment::TYPE_POST)
+                ->where('metadata->is_praise', true);
+        }
+
         $paginator = $query->paginate(max(1, min(50, $perPage)), ['*'], 'page', max(1, $page));
         $postCountByUser = $this->authorPostCountMap((int) $user->company_id);
 
@@ -64,6 +69,68 @@ class MomentService
             'unread' => $unread,
             'pagination' => $this->paginationMeta($paginator),
         ];
+    }
+
+    public function praiseFeedForUser(User $user, int $page = 1, int $perPage = 15): array
+    {
+        if (! $user->hasPermission('performance.participate') && ! $user->hasPermission('home.moments.view')) {
+            throw new AccessDeniedHttpException('You are not allowed to view praise.');
+        }
+
+        return $this->feedForUser($user, ['praise' => true], $page, $perPage);
+    }
+
+    public function createPraise(User $user, int $employeeId, string $content): array
+    {
+        if (! $user->hasPermission('home.moments.post') && ! $user->hasPermission('performance.participate')) {
+            throw new AccessDeniedHttpException('You are not allowed to send praise.');
+        }
+
+        if (! $user->company_id) {
+            throw ValidationException::withMessages([
+                'content' => ['You must belong to a company to send praise.'],
+            ]);
+        }
+
+        $content = trim($content);
+
+        if ($content === '') {
+            throw ValidationException::withMessages([
+                'content' => ['Write a message to recognize your colleague.'],
+            ]);
+        }
+
+        $employee = Employee::query()
+            ->where('company_id', $user->company_id)
+            ->where('status', 'active')
+            ->find($employeeId);
+
+        if (! $employee) {
+            throw ValidationException::withMessages([
+                'employee_id' => ['The selected employee is invalid.'],
+            ]);
+        }
+
+        $moment = CompanyMoment::query()->create([
+            'company_id' => $user->company_id,
+            'type' => CompanyMoment::TYPE_POST,
+            'author_user_id' => $user->id,
+            'content' => $content,
+            'metadata' => [
+                'is_praise' => true,
+                'employee_id' => $employee->id,
+                'employee_name' => $employee->full_name,
+                'employee_code' => $employee->employee_code,
+            ],
+            'published_at' => now(),
+        ]);
+
+        $moment->load(['author.employee', 'reactions.user.employee', 'attachments', 'comments.user.employee']);
+        $moment->loadCount('comments');
+
+        $this->notifyCompanyAboutMoment($moment, $user);
+
+        return $this->transformMoment($moment, $user);
     }
 
     public function summaryForUser(User $user): array
@@ -544,22 +611,34 @@ class MomentService
         $metadata = $moment->metadata ?? [];
         $celebratedName = $metadata['employee_name'] ?? null;
         $authorName = $moment->author?->employee?->full_name ?: $moment->author?->name;
+        $isPraise = (bool) ($metadata['is_praise'] ?? false);
 
-        $title = $celebratedName
-            ? "New {$typeLabel}: {$celebratedName}"
-            : "New moment: {$typeLabel}";
+        if ($isPraise) {
+            $typeLabel = 'Praise';
+            $title = $celebratedName
+                ? "New praise for {$celebratedName}"
+                : 'New praise shared';
+            $actionUrl = '/performance/praise-recognition';
+        } else {
+            $title = $celebratedName
+                ? "New {$typeLabel}: {$celebratedName}"
+                : "New moment: {$typeLabel}";
+            $actionUrl = '/employee-experience/social-wall';
+        }
 
         $body = $moment->content
             ?: ($authorName ? "{$authorName} shared a moment." : 'A new moment was added to the company feed.');
 
-        $actionUrl = '/employee-experience/social-wall';
-
         User::query()
             ->where('company_id', $moment->company_id)
             ->when($excludeUser, fn ($query) => $query->where('id', '!=', $excludeUser->id))
-            ->chunkById(100, function ($users) use ($moment, $title, $body, $actionUrl) {
+            ->chunkById(100, function ($users) use ($moment, $title, $body, $actionUrl, $isPraise) {
                 foreach ($users as $user) {
-                    if (! $user->hasPermission('home.moments.view')) {
+                    if ($isPraise) {
+                        if (! $user->hasPermission('performance.participate') && ! $user->hasPermission('home.moments.view')) {
+                            continue;
+                        }
+                    } elseif (! $user->hasPermission('home.moments.view')) {
                         continue;
                     }
 

@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Models\Employee;
 use App\Models\Project;
+use App\Models\Role;
 use App\Models\User;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Database\Eloquent\Collection;
@@ -12,6 +13,8 @@ use Illuminate\Validation\ValidationException;
 
 class ProjectService
 {
+    public const OTHER_PROJECT_NAME = 'Other';
+
     public function __construct(private EmployeeAccessService $employeeAccessService) {}
 
     public function listForCompany(int $companyId, array $filters = []): LengthAwarePaginator
@@ -216,5 +219,52 @@ class ProjectService
     public function belongsToCompany(Project $project, int $companyId): bool
     {
         return (int) $project->company_id === $companyId;
+    }
+
+    public function otherProjectForCompany(int $companyId, ?User $actor = null): Project
+    {
+        return Project::query()->firstOrCreate(
+            [
+                'company_id' => $companyId,
+                'name' => self::OTHER_PROJECT_NAME,
+            ],
+            [
+                'description' => 'Non-project work and general tasks',
+                'status' => Project::STATUS_ACTIVE,
+                'start_date' => now()->toDateString(),
+                'created_by_user_id' => $this->resolveOtherProjectCreatorId($companyId, $actor),
+            ],
+        );
+    }
+
+    private function resolveOtherProjectCreatorId(int $companyId, ?User $actor): int
+    {
+        if ($actor && (int) $actor->company_id === $companyId) {
+            return (int) $actor->id;
+        }
+
+        $adminId = User::query()
+            ->where('company_id', $companyId)
+            ->whereHas('role', fn ($query) => $query->where('slug', Role::SLUG_COMPANY_ADMIN))
+            ->value('id');
+
+        if ($adminId) {
+            return (int) $adminId;
+        }
+
+        $fallbackId = User::query()->where('company_id', $companyId)->value('id');
+
+        if (! $fallbackId) {
+            throw ValidationException::withMessages([
+                'project' => ['Unable to create the Other project for this company.'],
+            ]);
+        }
+
+        return (int) $fallbackId;
+    }
+
+    public function isOtherProject(Project $project): bool
+    {
+        return $project->name === self::OTHER_PROJECT_NAME;
     }
 }

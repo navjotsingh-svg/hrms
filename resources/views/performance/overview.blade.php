@@ -70,7 +70,10 @@
                     <div id="reviewMeta" class="mb-3 text-muted small"></div>
                     <div id="reviewQuestionsContainer" class="d-flex flex-column gap-3"></div>
                     <div class="mt-3">
-                        <label class="form-label" for="reviewSummaryNotes">Summary Notes</label>
+                        <div class="d-flex align-items-center justify-content-between gap-2 mb-1">
+                            <label class="form-label mb-0" for="reviewSummaryNotes">Summary Notes</label>
+                            <button type="button" class="btn btn-sm btn-outline-primary" id="reviewAiSuggestBtn">AI suggest</button>
+                        </div>
                         <textarea class="form-control" id="reviewSummaryNotes" rows="3"></textarea>
                     </div>
                 </form>

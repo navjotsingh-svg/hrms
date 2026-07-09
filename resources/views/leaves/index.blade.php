@@ -51,6 +51,7 @@
                 </div>
             </div>
         </div>
+        @include('partials.list-pagination-header', ['perPageId' => 'leavesPerPage'])
         <div class="table-responsive">
             <table class="companies-table table mb-0">
                 <thead>
@@ -69,12 +70,13 @@
                 </tbody>
             </table>
         </div>
-        <div class="content-card-body border-top">
-            <div class="d-flex flex-wrap align-items-center justify-content-between gap-3">
-                <div class="small text-muted" id="leavesPaginationInfo"></div>
-                <ul class="pagination pagination-sm mb-0" id="leavesPaginationList"></ul>
-            </div>
-        </div>
+        @include('partials.list-pagination-footer', [
+            'infoId' => 'leavesPaginationInfo',
+            'listId' => 'leavesPaginationList',
+            'perPageId' => 'leavesPerPage',
+            'wrapClass' => 'content-card-body border-top',
+            'ariaLabel' => 'Leaves pagination',
+        ])
     </div>
     @vite(['resources/js/leaves-index.js'])
 @endsection

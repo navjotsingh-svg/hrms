@@ -16,6 +16,9 @@ class TimesheetEntry extends Model
         'end_time',
         'hours',
         'notes',
+        'done_today',
+        'blockers',
+        'plan_tomorrow',
     ];
 
     protected function casts(): array

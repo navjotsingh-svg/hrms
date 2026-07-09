@@ -10,8 +10,10 @@ use App\Http\Requests\UpdateRoleRequest;
 use App\Http\Resources\RoleResource;
 use App\Models\Role;
 use App\Services\RoleService;
+use App\Support\ArrayPaginator;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Validation\Rule;
 
 class RoleController extends Controller
 {
@@ -21,10 +23,17 @@ class RoleController extends Controller
 
     public function index(Request $request): JsonResponse
     {
+        $validated = $request->validate([
+            'page' => ['nullable', 'integer', 'min:1'],
+            'per_page' => ['nullable', 'integer', Rule::in([10, 25, 50])],
+        ]);
+
         $roles = $this->roleService->listForCompany((int) $request->user()->company_id);
+        $paginated = ArrayPaginator::paginate($roles->all(), (int) ($validated['page'] ?? 1), (int) ($validated['per_page'] ?? 10));
 
         return $this->success([
-            'roles' => RoleResource::collection($roles),
+            'roles' => RoleResource::collection(collect($paginated['items'])),
+            'pagination' => $paginated['pagination'],
         ]);
     }
 

@@ -3,6 +3,7 @@ import 'bootstrap';
 import './leave-calendar';
 import './notifications';
 import './moments-badges';
+import './employee-assistant';
 import api, { clearToken, destroyWebSession } from './api';
 import { initFormStatusToggles, initReturnUrlCapture } from './form-utils';
 

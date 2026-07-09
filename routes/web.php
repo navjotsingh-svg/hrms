@@ -60,6 +60,10 @@ Route::redirect('/register', '/');
         });
     });
 
+    Route::middleware('company.member')->prefix('assistant')->name('assistant.')->group(function () {
+        Route::redirect('/', '/home')->name('index');
+    });
+
     Route::middleware('company.member')->prefix('documents-letters')->name('documents-letters.')->group(function () {
         Route::middleware('company.permission:documents.view,documents.manage,documents.sign')->group(function () {
             Route::get('/', [\App\Http\Controllers\DocumentLettersController::class, 'index'])->name('index');
@@ -124,7 +128,7 @@ Route::redirect('/register', '/');
                 ->name('shifts.edit');
         });
 
-        Route::middleware('company.member')->group(function () {
+        Route::middleware('company.admin')->group(function () {
             Route::get('/roles', [\App\Http\Controllers\RoleController::class, 'index'])->name('roles.index');
             Route::get('/roles/{role}', [\App\Http\Controllers\RoleController::class, 'show'])
                 ->whereNumber('role')
@@ -239,6 +243,10 @@ Route::redirect('/register', '/');
         Route::get('/', [\App\Http\Controllers\PeopleController::class, 'index'])->name('index');
     });
 
+    Route::middleware(['company.member', 'company.permission:employees.view,employees.manage'])->group(function () {
+        Route::get('/org-chart', [\App\Http\Controllers\OrgChartController::class, 'index'])->name('org-chart.index');
+    });
+
     Route::middleware('company.member')->group(function () {
         Route::get('/requests', [\App\Http\Controllers\RequestHubController::class, 'index'])->name('requests.index');
         Route::get('/requests/{category}/{id}', [\App\Http\Controllers\RequestHubController::class, 'show'])
@@ -309,6 +317,7 @@ Route::redirect('/register', '/');
         });
         Route::middleware('company.permission:employees.manage')->group(function () {
             Route::get('/create', [\App\Http\Controllers\EmployeeController::class, 'create'])->name('create');
+            Route::get('/bulk-import', [\App\Http\Controllers\EmployeeController::class, 'bulkImport'])->name('bulk-import');
             Route::get('/{employee}/edit', [\App\Http\Controllers\EmployeeController::class, 'edit'])
                 ->whereNumber('employee')
                 ->name('edit');

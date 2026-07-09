@@ -9,9 +9,12 @@
             <p class="page-subtitle mb-0">{{ Auth::user()->canManageEmployees() ? 'Manage your company workforce.' : 'View employees in your reporting hierarchy.' }}</p>
         </div>
         @if (Auth::user()->canManageEmployees())
-        <a href="{{ route('web.employees.create') }}" class="btn btn-primary" id="addEmployeeBtn">
-            + Add Employee
-        </a>
+        <div class="d-flex flex-wrap gap-2">
+            <a href="{{ route('web.employees.bulk-import') }}" class="btn btn-outline-primary">Bulk Import</a>
+            <a href="{{ route('web.employees.create') }}" class="btn btn-primary" id="addEmployeeBtn">
+                + Add Employee
+            </a>
+        </div>
         @endif
     </div>
 @endsection
@@ -62,6 +65,8 @@
             </div>
         </div>
 
+        @include('partials.list-pagination-header', ['perPageId' => 'employeesPerPage'])
+
         <div id="employeesListContainer">
             <div id="employeesTableView" class="employees-table-view">
                 <div class="table-responsive">
@@ -93,14 +98,14 @@
             </div>
         </div>
 
-        <div class="content-card-body border-top companies-pagination-footer" id="employeesPagination">
-            <div class="d-flex flex-wrap align-items-center justify-content-between gap-3">
-                <div class="small text-muted" id="employeesPaginationInfo">Loading pagination...</div>
-                <nav aria-label="Employees pagination">
-                    <ul class="pagination pagination-sm mb-0" id="employeesPaginationList"></ul>
-                </nav>
-            </div>
-        </div>
+        @include('partials.list-pagination-footer', [
+            'infoId' => 'employeesPaginationInfo',
+            'listId' => 'employeesPaginationList',
+            'perPageId' => 'employeesPerPage',
+            'wrapId' => 'employeesPagination',
+            'ariaLabel' => 'Employees pagination',
+            'infoText' => 'Loading pagination...',
+        ])
     </div>
     @vite(['resources/js/employees-index.js'])
 @endsection

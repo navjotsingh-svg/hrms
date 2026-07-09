@@ -38,6 +38,7 @@
             </div>
         </div>
 
+        @include('partials.list-pagination-header', ['perPageId' => 'projectsPerPage'])
         <div class="table-responsive">
             <table class="companies-table table mb-0">
                 <thead>
@@ -58,14 +59,14 @@
             </table>
         </div>
 
-        <div class="content-card-body border-top companies-pagination-footer" id="projectsPagination">
-            <div class="d-flex flex-wrap align-items-center justify-content-between gap-3">
-                <div class="small text-muted" id="projectsPaginationInfo">Loading pagination...</div>
-                <nav aria-label="Projects pagination">
-                    <ul class="pagination pagination-sm mb-0" id="projectsPaginationList"></ul>
-                </nav>
-            </div>
-        </div>
+        @include('partials.list-pagination-footer', [
+            'infoId' => 'projectsPaginationInfo',
+            'listId' => 'projectsPaginationList',
+            'perPageId' => 'projectsPerPage',
+            'wrapId' => 'projectsPagination',
+            'ariaLabel' => 'Projects pagination',
+            'infoText' => 'Loading pagination...',
+        ])
     </div>
 
     <div class="modal fade" id="projectModal" tabindex="-1" aria-labelledby="projectModalLabel" aria-hidden="true">

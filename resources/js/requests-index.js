@@ -25,6 +25,8 @@ import {
     showAutoDismissAlert,
 } from './form-utils';
 
+import { bindPagination, bindPerPageSelect, paginateArray, readPerPage, renderListPagination } from './pagination';
+
 
 
 const statusClass = (status) => ({
@@ -172,6 +174,24 @@ document.addEventListener('DOMContentLoaded', async () => {
     let mineRequests = [];
 
     let employeeSearch = null;
+
+    const paginationWrap = document.getElementById('requestsPagination');
+
+    const paginationInfo = document.getElementById('requestsPaginationInfo');
+
+    const paginationList = document.getElementById('requestsPaginationList');
+
+    const perPageSelect = document.getElementById('requestsPerPage');
+
+    let currentPage = 1;
+
+    let currentPerPage = readPerPage(perPageSelect);
+
+    const resetRequestsPage = () => {
+
+        currentPage = 1;
+
+    };
 
 
 
@@ -734,6 +754,8 @@ document.addEventListener('DOMContentLoaded', async () => {
 
         activeTab = tab;
 
+        resetRequestsPage();
+
         tabButtons.forEach((button) => {
 
             const isActive = button.dataset.requestsTab === tab;
@@ -905,15 +927,35 @@ document.addEventListener('DOMContentLoaded', async () => {
 
 
 
-        const requests = filteredRequests();
+        const allFiltered = filteredRequests();
+
+        const { items, pagination } = paginateArray(allFiltered, currentPage, currentPerPage);
 
 
 
-        tableBody.innerHTML = requests.length
+        tableBody.innerHTML = items.length
 
-            ? requests.map((item) => renderRow(item)).join('')
+            ? items.map((item) => renderRow(item)).join('')
 
             : `<tr><td colspan="6" class="text-center text-muted py-5">${emptyMessage()}</td></tr>`;
+
+
+
+        renderListPagination({
+
+            infoEl: paginationInfo,
+
+            listEl: paginationList,
+
+            perPageSelectEl: perPageSelect,
+
+            pagination,
+
+            itemLabel: 'requests',
+
+            emptyMessage: emptyMessage(),
+
+        });
 
 
 
@@ -959,9 +1001,33 @@ document.addEventListener('DOMContentLoaded', async () => {
 
         try {
 
-            const { data } = await api.get('/request-hub/pending', { params: { per_page: 50 } });
+            let page = 1;
 
-            approvalRequests = data.data?.requests || [];
+            const collected = [];
+
+
+
+            while (true) {
+
+                const { data } = await api.get('/request-hub/pending', { params: { page, per_page: 50 } });
+
+                collected.push(...(data.data?.requests || []));
+
+                const pagination = data.data?.pagination;
+
+                if (!pagination || page >= pagination.last_page) {
+
+                    break;
+
+                }
+
+                page += 1;
+
+            }
+
+
+
+            approvalRequests = collected;
 
         } catch (error) {
 
@@ -1199,6 +1265,8 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     statusFilter?.addEventListener('change', () => {
 
+        resetRequestsPage();
+
         renderTable();
 
         syncListStateToUrl();
@@ -1208,6 +1276,8 @@ document.addEventListener('DOMContentLoaded', async () => {
 
 
     typeFilter?.addEventListener('change', () => {
+
+        resetRequestsPage();
 
         renderTable();
 
@@ -1472,6 +1542,28 @@ document.addEventListener('DOMContentLoaded', async () => {
     updateEmployeeFilterVisibility();
 
     syncListStateToUrl();
+
+    bindPagination(paginationWrap, (page) => {
+
+        currentPage = page;
+
+        renderTable();
+
+        syncListStateToUrl();
+
+    });
+
+    bindPerPageSelect(perPageSelect, (perPage) => {
+
+        currentPerPage = perPage;
+
+        resetRequestsPage();
+
+        renderTable();
+
+        syncListStateToUrl();
+
+    });
 
     await reload();
 

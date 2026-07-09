@@ -77,23 +77,10 @@ class AttendanceRegularizationService
     {
         $employeeAccess = app(EmployeeAccessService::class);
 
-        if ($user->canViewAllAttendance()) {
+        if ($user->canManageRegularization()) {
             if (! empty($filters['employee_id'])) {
                 $query->where('employee_id', (int) $filters['employee_id']);
             }
-        } elseif ($user->canApproveLeave() || $user->hasPermission('attendance.regularize')) {
-            $employee = $employeeAccess->linkedEmployee($user);
-
-            if (! $employee) {
-                throw new AccessDeniedHttpException('No employee profile is linked to your account.');
-            }
-
-            $visibleEmployeeIds = array_values(array_unique([
-                ...$employeeAccess->subordinateIdsForUser($user),
-                $employee->id,
-            ]));
-
-            $query->whereIn('employee_id', $visibleEmployeeIds);
         } else {
             $employee = $employeeAccess->linkedEmployee($user);
 
@@ -515,18 +502,14 @@ class AttendanceRegularizationService
         ?string $onlyDate = null,
         ?string $month = null,
     ): array {
-        if ($user->canViewAllAttendance()) {
-            if (! $user->employee) {
-                return [
-                    'employee' => null,
-                    'dates' => [],
-                    'pending_requests' => [],
-                    'month' => $month,
-                    'month_label' => $this->formatMonthLabel($month),
-                ];
-            }
-
-            $employeeId = (int) $user->employee->id;
+        if ($user->canManageRegularization() && ! $employeeId && ! $user->employee) {
+            return [
+                'employee' => null,
+                'dates' => [],
+                'pending_requests' => [],
+                'month' => $month,
+                'month_label' => $this->formatMonthLabel($month),
+            ];
         }
 
         $employee = $this->resolveTargetEmployee($user, $employeeId);
@@ -855,8 +838,8 @@ class AttendanceRegularizationService
             throw new AccessDeniedHttpException('You are not allowed to request attendance regularization.');
         }
 
-        if (! $user->canViewAllAttendance() && (int) $user->employee?->id !== (int) $employee->id) {
-            throw new AccessDeniedHttpException('You can only regularize your own attendance.');
+        if (! $user->canManageRegularization()) {
+            throw new AccessDeniedHttpException('Only HR and company admin can submit regularization requests.');
         }
 
         if ($date > now()->toDateString()) {
@@ -933,39 +916,29 @@ class AttendanceRegularizationService
 
     private function resolveTargetEmployee(User $user, ?int $employeeId): Employee
     {
-        if ($employeeId) {
-            if (! $user->canViewAllAttendance()) {
-                throw new AccessDeniedHttpException('You cannot regularize attendance for other employees.');
+        if ($user->canManageRegularization()) {
+            if ($employeeId) {
+                return Employee::query()
+                    ->where('company_id', $user->company_id)
+                    ->whereKey($employeeId)
+                    ->firstOrFail();
             }
 
-            if ($user->employee && (int) $employeeId !== (int) $user->employee->id) {
-                throw new AccessDeniedHttpException('You can only regularize your own attendance.');
-            }
-
-            $employee = Employee::query()
-                ->where('company_id', $user->company_id)
-                ->whereKey($employeeId)
-                ->first();
-
-            if (! $employee) {
-                throw new NotFoundHttpException('Employee not found.');
-            }
-
-            return $employee;
-        }
-
-        if ($user->employee) {
-            return $user->employee;
-        }
-
-        if ($user->canViewAllAttendance()) {
             if ($user->employee) {
                 return $user->employee;
             }
 
             throw ValidationException::withMessages([
-                'employee_id' => 'Your account is not linked to an employee profile.',
+                'employee_id' => 'Select an employee to regularize attendance for.',
             ]);
+        }
+
+        if ($employeeId && $user->employee && (int) $employeeId !== (int) $user->employee->id) {
+            throw new AccessDeniedHttpException('You cannot regularize attendance for other employees.');
+        }
+
+        if ($user->employee) {
+            return $user->employee;
         }
 
         throw new NotFoundHttpException('No employee profile is linked to your account.');
@@ -1057,7 +1030,7 @@ class AttendanceRegularizationService
             return false;
         }
 
-        if ($user->canViewAllAttendance()) {
+        if ($user->canManageRegularization()) {
             return true;
         }
 
@@ -1065,11 +1038,7 @@ class AttendanceRegularizationService
             return true;
         }
 
-        if ($user->canApproveRegularization()) {
-            return true;
-        }
-
-        return $user->isDirectReportingManagerOfEmployee($request->employee);
+        return false;
     }
 
     /** @param  Collection<int, AttendanceRegularizationRequest>  $requests */

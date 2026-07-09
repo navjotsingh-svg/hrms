@@ -1,7 +1,16 @@
+import { Modal } from 'bootstrap';
 import api, { getErrorMessage } from './api';
+import { CANCEL_ICON } from './action-icons';
 import { bindEmployeeSearchSelect } from './employee-autocomplete';
+import { bindPagination, bindPerPageSelect, getSerialNumber, paginateArray, readPerPage, renderListPagination } from './pagination';
 
 const pad = (value) => String(value).padStart(2, '0');
+
+const escapeHtml = (value) => String(value ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
 
 const todayInputValue = (date = new Date()) => [
     date.getFullYear(),
@@ -56,6 +65,16 @@ document.addEventListener('DOMContentLoaded', () => {
     const statusSelect = document.getElementById('attendanceTodayStatus');
     const markedSelect = document.getElementById('attendanceTodayMarkedFilter');
     const tableBody = document.getElementById('attendanceTodayTableBody');
+    const paginationWrap = document.getElementById('attendanceTodayPagination');
+    const paginationInfo = document.getElementById('attendanceTodayPaginationInfo');
+    const paginationList = document.getElementById('attendanceTodayPaginationList');
+    const perPageSelect = document.getElementById('attendanceTodayPerPage');
+    const actionsHeader = document.getElementById('attendanceTodayActionsHeader');
+    const markAbsentModalEl = document.getElementById('attendanceMarkAbsentModal');
+    const markAbsentSummary = document.getElementById('attendanceMarkAbsentSummary');
+    const markAbsentReason = document.getElementById('attendanceMarkAbsentReason');
+    const markAbsentReasonError = document.getElementById('attendanceMarkAbsentReasonError');
+    const markAbsentConfirmBtn = document.getElementById('attendanceMarkAbsentConfirmBtn');
 
     const summaryEls = {
         total: document.getElementById('attendanceTodayTotal'),
@@ -70,6 +89,41 @@ document.addEventListener('DOMContentLoaded', () => {
 
     let employees = [];
     let employeeSearch = null;
+    let currentPage = 1;
+    let currentPerPage = readPerPage(perPageSelect);
+    let canMarkAbsent = false;
+    let pendingMarkAbsent = null;
+
+    const getMarkAbsentModal = () => (
+        markAbsentModalEl ? Modal.getOrCreateInstance(markAbsentModalEl) : null
+    );
+
+    const tableColumnCount = () => (canMarkAbsent ? 10 : 9);
+
+    const renderAbsentRemark = (row) => {
+        const remark = row.absent_remark;
+
+        if (!remark?.reason) {
+            return '<span class="text-muted">—</span>';
+        }
+
+        const reason = escapeHtml(remark.reason);
+        const metaParts = [];
+
+        if (remark.marked_by_name) {
+            metaParts.push(`By ${escapeHtml(remark.marked_by_name)}`);
+        }
+
+        if (remark.marked_at_label) {
+            metaParts.push(escapeHtml(remark.marked_at_label));
+        }
+
+        const meta = metaParts.length
+            ? `<div class="small text-muted">${metaParts.join(' · ')}</div>`
+            : '';
+
+        return `<div class="attendance-absent-remark" title="${reason}">${reason}</div>${meta}`;
+    };
 
     if (dateInput) {
         dateInput.value = todayInputValue();
@@ -201,25 +255,38 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     };
 
+    const syncActionsHeader = () => {
+        actionsHeader?.classList.toggle('d-none', !canMarkAbsent);
+    };
+
     const renderTable = () => {
         if (!tableBody) {
             return;
         }
 
-        const rows = filteredRows();
+        const allRows = filteredRows();
+        const { items, pagination } = paginateArray(allRows, currentPage, currentPerPage);
+        const colspan = tableColumnCount();
 
-        if (!rows.length) {
-            tableBody.innerHTML = '<tr><td colspan="8" class="text-center text-muted py-4">No employees match the selected filters.</td></tr>';
-            return;
-        }
+        if (!items.length) {
+            tableBody.innerHTML = `<tr><td colspan="${colspan}" class="text-center text-muted py-4">No employees match the selected filters.</td></tr>`;
+        } else {
+            tableBody.innerHTML = items.map((row, index) => {
+                const statusLabel = row.status_label
+                    || (row.leave_type_name ? `${row.leave_type_name}${row.leave_session_label ? ` · ${row.leave_session_label}` : ''}` : '—');
+                const actionCell = canMarkAbsent
+                    ? `<td class="companies-td-actions">
+                        ${row.can_mark_absent
+                            ? `<button type="button" class="table-action-btn table-action-btn--reject" title="Mark absent" aria-label="Mark ${row.employee_name || 'employee'} absent" data-mark-absent="${row.employee_id}" data-employee-name="${row.employee_name || ''}">
+                                ${CANCEL_ICON}
+                            </button>`
+                            : ''}
+                    </td>`
+                    : '';
 
-        tableBody.innerHTML = rows.map((row, index) => {
-            const statusLabel = row.status_label
-                || (row.leave_type_name ? `${row.leave_type_name}${row.leave_session_label ? ` · ${row.leave_session_label}` : ''}` : '—');
-
-            return `
+                return `
                 <tr>
-                    <td>${index + 1}</td>
+                    <td>${getSerialNumber(index, pagination)}</td>
                     <td>
                         <div class="fw-semibold">${row.employee_name || '—'}</div>
                         <div class="small text-muted">${row.employee_code || row.employee_id || ''}</div>
@@ -236,9 +303,97 @@ document.addEventListener('DOMContentLoaded', () => {
                     <td>
                         <span class="${statusPillClass(row.status, row.awaiting_punch_out)}">${statusLabel}</span>
                     </td>
+                    <td>${renderAbsentRemark(row)}</td>
+                    ${actionCell}
                 </tr>
             `;
-        }).join('');
+            }).join('');
+        }
+
+        renderListPagination({
+            infoEl: paginationInfo,
+            listEl: paginationList,
+            perPageSelectEl: perPageSelect,
+            pagination,
+            itemLabel: 'employees',
+            emptyMessage: 'No employees match the selected filters.',
+        });
+    };
+
+    const openMarkAbsentModal = (employeeId, employeeName) => {
+        const modal = getMarkAbsentModal();
+
+        if (!modal || !dateInput?.value) {
+            return;
+        }
+
+        pendingMarkAbsent = {
+            employeeId: Number(employeeId),
+            employeeName: employeeName || 'Employee',
+            date: dateInput.value,
+        };
+
+        if (markAbsentSummary) {
+            markAbsentSummary.textContent = `Remove attendance punches and mark ${pendingMarkAbsent.employeeName} absent for ${dateInput.value}.`;
+        }
+
+        if (markAbsentReason) {
+            markAbsentReason.value = '';
+            markAbsentReason.classList.remove('is-invalid');
+        }
+
+        if (markAbsentReasonError) {
+            markAbsentReasonError.textContent = '';
+        }
+
+        modal.show();
+        markAbsentReason?.focus();
+    };
+
+    const submitMarkAbsent = async () => {
+        if (!pendingMarkAbsent || !markAbsentConfirmBtn) {
+            return;
+        }
+
+        const reason = markAbsentReason?.value?.trim() || '';
+
+        if (reason.length < 10) {
+            markAbsentReason?.classList.add('is-invalid');
+
+            if (markAbsentReasonError) {
+                markAbsentReasonError.textContent = 'Please provide a reason with at least 10 characters.';
+            }
+
+            return;
+        }
+
+        markAbsentReason?.classList.remove('is-invalid');
+
+        if (markAbsentReasonError) {
+            markAbsentReasonError.textContent = '';
+        }
+
+        const previousLabel = markAbsentConfirmBtn.textContent;
+        markAbsentConfirmBtn.disabled = true;
+        markAbsentConfirmBtn.textContent = 'Marking...';
+
+        try {
+            const { data } = await api.post('/attendance/mark-absent', {
+                employee_id: pendingMarkAbsent.employeeId,
+                date: pendingMarkAbsent.date,
+                reason,
+            });
+
+            getMarkAbsentModal()?.hide();
+            pendingMarkAbsent = null;
+            showAlert(data.message || 'Employee marked absent successfully.', 'success');
+            await loadOverview();
+        } catch (error) {
+            showAlert(getErrorMessage(error), 'danger');
+        } finally {
+            markAbsentConfirmBtn.disabled = false;
+            markAbsentConfirmBtn.textContent = previousLabel;
+        }
     };
 
     const loadOverview = async () => {
@@ -246,7 +401,7 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
 
-        tableBody.innerHTML = '<tr><td colspan="8" class="text-center text-muted py-4">Loading attendance...</td></tr>';
+        tableBody.innerHTML = `<tr><td colspan="${tableColumnCount()}" class="text-center text-muted py-4">Loading attendance...</td></tr>`;
 
         try {
             const params = {};
@@ -259,11 +414,13 @@ document.addEventListener('DOMContentLoaded', () => {
             const payload = data.data || {};
 
             employees = payload.employees || [];
+            canMarkAbsent = Boolean(payload.capabilities?.can_mark_absent);
+            syncActionsHeader();
             populateDepartments(employees);
             renderSummary(payload.summary || {}, payload.date_label || '—', payload.is_today);
             renderTable();
         } catch (error) {
-            tableBody.innerHTML = `<tr><td colspan="8" class="text-center text-danger py-4">${getErrorMessage(error)}</td></tr>`;
+            tableBody.innerHTML = `<tr><td colspan="${tableColumnCount()}" class="text-center text-danger py-4">${getErrorMessage(error)}</td></tr>`;
             showAlert(getErrorMessage(error), 'danger');
         }
     };
@@ -283,11 +440,26 @@ document.addEventListener('DOMContentLoaded', () => {
             markedSelect.value = '';
         }
 
+        currentPage = 1;
         renderTable();
     };
 
     [departmentSelect, statusSelect, markedSelect].forEach((element) => {
-        element?.addEventListener('change', renderTable);
+        element?.addEventListener('change', () => {
+            currentPage = 1;
+            renderTable();
+        });
+    });
+
+    bindPagination(paginationWrap, (page) => {
+        currentPage = page;
+        renderTable();
+    });
+
+    bindPerPageSelect(perPageSelect, (perPage) => {
+        currentPerPage = perPage;
+        currentPage = 1;
+        renderTable();
     });
 
     dateInput?.addEventListener('change', () => {
@@ -299,6 +471,18 @@ document.addEventListener('DOMContentLoaded', () => {
     nextDayBtn?.addEventListener('click', () => shiftSelectedDate(1));
     goTodayBtn?.addEventListener('click', () => setSelectedDate(todayInputValue()));
     resetBtn?.addEventListener('click', resetFilters);
+    markAbsentConfirmBtn?.addEventListener('click', submitMarkAbsent);
+
+    tableBody?.addEventListener('click', (event) => {
+        const button = event.target.closest('[data-mark-absent]');
+
+        if (!button) {
+            return;
+        }
+
+        event.preventDefault();
+        openMarkAbsentModal(button.dataset.markAbsent, button.dataset.employeeName);
+    });
 
     syncTodayNavButtons();
     loadOverview();

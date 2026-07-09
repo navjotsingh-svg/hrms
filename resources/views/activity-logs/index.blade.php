@@ -70,8 +70,8 @@
                 <h2 class="h6 mb-0" id="activityLogsTitle">Activity log entries</h2>
                 <div class="text-muted small" id="activityLogsSummary"></div>
             </div>
-            <div class="text-muted small" id="activityLogsPaginationInfo"></div>
         </div>
+        @include('partials.list-pagination-header', ['perPageId' => 'activityLogsPerPage'])
         <div class="table-responsive">
             <table class="companies-table table mb-0">
                 <thead>
@@ -94,9 +94,13 @@
                 </tbody>
             </table>
         </div>
-        <div class="content-card-body border-top">
-            <ul class="pagination pagination-sm mb-0 justify-content-end" id="activityLogsPaginationList"></ul>
-        </div>
+        @include('partials.list-pagination-footer', [
+            'infoId' => 'activityLogsPaginationInfo',
+            'listId' => 'activityLogsPaginationList',
+            'perPageId' => 'activityLogsPerPage',
+            'wrapClass' => 'content-card-body border-top',
+            'ariaLabel' => 'Activity logs pagination',
+        ])
     </div>
 @endsection
 

@@ -80,12 +80,21 @@
                     </div>
                 </div>
 
-                <div class="table-responsive">
+        @include('partials.list-pagination-header', ['perPageId' => 'payrollSummaryPerPage'])
+        <div class="table-responsive">
                     <table class="table table-hover align-middle payroll-summary-table">
                         <thead id="payrollSummaryHead"></thead>
                         <tbody id="payrollSummaryBody"></tbody>
                     </table>
                 </div>
+                @include('partials.list-pagination-footer', [
+                    'infoId' => 'payrollSummaryPaginationInfo',
+                    'listId' => 'payrollSummaryPaginationList',
+                    'perPageId' => 'payrollSummaryPerPage',
+                    'wrapId' => 'payrollSummaryPaginationWrap',
+                    'wrapClass' => 'content-card-body border-top companies-pagination-footer',
+                    'ariaLabel' => 'Payroll summary pagination',
+                ])
             </div>
 
             <div id="payrollViewerEmpty" class="text-center text-muted py-5">

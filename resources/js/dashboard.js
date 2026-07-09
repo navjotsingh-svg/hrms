@@ -5,8 +5,8 @@ import {
     bindRequestReviewHandlers,
     bulkReviewRequests,
     renderRequestActions,
-    renderSimplePagination,
 } from './request-review';
+import { bindPagination, bindPerPageSelect, paginateArray, readPerPage, renderListPagination } from './pagination';
 import { renderEmployeeNameBlock } from './request-display';
 import { prependAutoDismissAlert } from './form-utils';
 
@@ -19,6 +19,22 @@ let pendingPage = 1;
 let pendingItems = [];
 let pendingPagination = null;
 let selectedPendingKeys = new Set();
+const pendingPerPageSelect = document.getElementById('dashboardPendingPerPage');
+const pendingPaginationWrap = document.getElementById('dashboardPendingPaginationWrap');
+let pendingPerPage = readPerPage(pendingPerPageSelect);
+
+let myRequestsPage = 1;
+let myRequestsItems = [];
+const myRequestsPerPageSelect = document.getElementById('dashboardMyRequestsPerPage');
+const myRequestsPaginationWrap = document.getElementById('dashboardMyRequestsPaginationWrap');
+let myRequestsPerPage = readPerPage(myRequestsPerPageSelect);
+
+const statusBadgeClass = (status) => ({
+    pending: 'text-bg-warning',
+    approved: 'text-bg-success',
+    rejected: 'text-bg-danger',
+    cancelled: 'text-bg-secondary',
+}[status] || 'text-bg-light');
 
 const renderPersonChip = (person) => `
     <div class="dash-person-chip dash-person-chip--static" title="${person.name}">
@@ -148,8 +164,6 @@ const updatePendingSelectAll = () => {
 const renderPendingApprovals = (items = [], pagination = null, showSection = true) => {
     const card = document.getElementById('dashboardPendingCard');
     const body = document.getElementById('dashboardPendingBody');
-    const empty = document.getElementById('dashboardPendingEmpty');
-    const tableWrap = document.getElementById('dashboardPendingTableWrap');
     const count = document.getElementById('dashboardPendingCount');
     const paginationWrap = document.getElementById('dashboardPendingPaginationWrap');
     const paginationInfo = document.getElementById('dashboardPendingPaginationInfo');
@@ -176,9 +190,7 @@ const renderPendingApprovals = (items = [], pagination = null, showSection = tru
     }
 
     if (!items.length) {
-        body.innerHTML = '';
-        tableWrap?.classList.add('d-none');
-        empty?.classList.remove('d-none');
+        body.innerHTML = '<tr><td colspan="6" class="text-center text-muted py-4">Well done. No request approvals.</td></tr>';
         paginationWrap?.classList.add('d-none');
         selectedPendingKeys.clear();
         updatePendingBulkBar();
@@ -186,8 +198,6 @@ const renderPendingApprovals = (items = [], pagination = null, showSection = tru
         return;
     }
 
-    tableWrap?.classList.remove('d-none');
-    empty?.classList.add('d-none');
     body.innerHTML = items.map((item) => {
         const canSelect = item.can_review && item.review_kind && item.review_target;
 
@@ -206,16 +216,89 @@ const renderPendingApprovals = (items = [], pagination = null, showSection = tru
     }).join('');
 
     if (activePagination && activePagination.total > 0) {
-        const rendered = renderSimplePagination(activePagination, 'pending requests');
         paginationWrap?.classList.remove('d-none');
-        if (paginationInfo) paginationInfo.textContent = rendered.info;
-        if (paginationList) paginationList.innerHTML = rendered.pages;
+        renderListPagination({
+            infoEl: paginationInfo,
+            listEl: paginationList,
+            perPageSelectEl: pendingPerPageSelect,
+            pagination: activePagination,
+            itemLabel: 'pending requests',
+            emptyMessage: 'No pending requests',
+        });
     } else {
         paginationWrap?.classList.add('d-none');
     }
 
     updatePendingBulkBar();
     updatePendingSelectAll();
+};
+
+const renderMyRequests = (items = [], showSection = true, page = myRequestsPage) => {
+    const card = document.getElementById('dashboardMyRequestsCard');
+    const body = document.getElementById('dashboardMyRequestsBody');
+    const paginationWrap = document.getElementById('dashboardMyRequestsPaginationWrap');
+    const paginationInfo = document.getElementById('dashboardMyRequestsPaginationInfo');
+    const paginationList = document.getElementById('dashboardMyRequestsPaginationList');
+
+    card?.classList.toggle('d-none', !showSection);
+
+    if (!showSection || !body) {
+        return;
+    }
+
+    myRequestsItems = items;
+    myRequestsPage = page;
+
+    const { items: pageItems, pagination } = paginateArray(items, myRequestsPage, myRequestsPerPage);
+
+    if (!pageItems.length) {
+        body.innerHTML = '<tr><td colspan="5" class="text-center text-muted py-4">No requests submitted yet.</td></tr>';
+        paginationWrap?.classList.add('d-none');
+        return;
+    }
+
+    body.innerHTML = pageItems.map((item) => `
+        <tr>
+            <td>${item.category_label || item.subject || 'Request'}</td>
+            <td>${item.detail || item.subject || '—'}</td>
+            <td>${item.submitted_at_label || '—'}</td>
+            <td><span class="badge ${statusBadgeClass(item.status)}">${item.status_label || 'Pending'}</span></td>
+            <td class="text-end">${renderRequestActions(item)}</td>
+        </tr>
+    `).join('');
+
+    if (pagination.total > 0) {
+        paginationWrap?.classList.remove('d-none');
+        renderListPagination({
+            infoEl: paginationInfo,
+            listEl: paginationList,
+            perPageSelectEl: myRequestsPerPageSelect,
+            pagination,
+            itemLabel: 'requests',
+            emptyMessage: 'No requests submitted yet.',
+        });
+    } else {
+        paginationWrap?.classList.add('d-none');
+    }
+};
+
+const loadMyRequests = async () => {
+    const showSection = document.getElementById('dashboardMyRequestsCard')
+        && !document.getElementById('dashboardMyRequestsCard').classList.contains('d-none');
+
+    if (!showSection) {
+        return;
+    }
+
+    try {
+        const { data } = await api.get('/request-hub/mine');
+        renderMyRequests(data.data?.requests || [], true, myRequestsPage);
+    } catch (error) {
+        const body = document.getElementById('dashboardMyRequestsBody');
+        if (body) {
+            body.innerHTML = `<tr><td colspan="5" class="text-center text-danger py-4">${getErrorMessage(error)}</td></tr>`;
+        }
+    }
 };
 
 const loadPendingApprovals = async (page = pendingPage) => {
@@ -227,16 +310,15 @@ const loadPendingApprovals = async (page = pendingPage) => {
 
     try {
         const { data } = await api.get('/request-hub/pending', {
-            params: { page, per_page: 5 },
+            params: { page, per_page: pendingPerPage },
         });
 
         pendingPage = page;
         renderPendingApprovals(data.data?.requests || [], data.data?.pagination || null, true);
     } catch (error) {
-        const empty = document.getElementById('dashboardPendingEmpty');
-        if (empty) {
-            empty.textContent = getErrorMessage(error);
-            empty.classList.remove('d-none');
+        const body = document.getElementById('dashboardPendingBody');
+        if (body) {
+            body.innerHTML = `<tr><td colspan="6" class="text-center text-danger py-4">${getErrorMessage(error)}</td></tr>`;
         }
     }
 };
@@ -337,6 +419,7 @@ const renderDashboard = (payload) => {
     }
 
     renderCelebrations(payload.celebrations || {});
+    renderMyRequests([], payload.show_my_requests === true);
     renderPendingApprovals([], null, payload.show_pending_approvals === true);
     renderQuickActions(payload.quick_actions || []);
     renderNewJoinees(payload.new_joinees || [], payload.new_joinees_title || 'New Joinees');
@@ -365,20 +448,28 @@ const loadDashboard = async () => {
         const { data } = await api.get('/dashboard');
         renderDashboard(data.data || {});
 
+        if (data.data?.show_my_requests) {
+            await loadMyRequests();
+        }
+
         if (data.data?.show_pending_approvals) {
             await loadPendingApprovals(pendingPage);
         }
     } catch (error) {
         const message = getErrorMessage(error);
         const loadingState = document.getElementById('dashboardLoadingState');
-        const pendingEmpty = document.getElementById('dashboardPendingEmpty');
+        const myRequestsBody = document.getElementById('dashboardMyRequestsBody');
+        const pendingBody = document.getElementById('dashboardPendingBody');
 
         loadingState?.classList.add('d-none');
         document.getElementById('dashboardHomeRoot')?.classList.remove('d-none');
 
-        if (pendingEmpty) {
-            pendingEmpty.textContent = message;
-            pendingEmpty.classList.remove('d-none');
+        if (myRequestsBody) {
+            myRequestsBody.innerHTML = `<tr><td colspan="5" class="text-center text-danger py-4">${message}</td></tr>`;
+        }
+
+        if (pendingBody) {
+            pendingBody.innerHTML = `<tr><td colspan="6" class="text-center text-danger py-4">${message}</td></tr>`;
         }
     }
 };
@@ -403,6 +494,22 @@ document.addEventListener('DOMContentLoaded', async () => {
     await loadDashboard();
 
     const pendingCard = document.getElementById('dashboardPendingCard');
+    const myRequestsCard = document.getElementById('dashboardMyRequestsCard');
+
+    bindRequestReviewHandlers(myRequestsCard, {
+        onSuccess: async (message) => {
+            prependAutoDismissAlert(
+                myRequestsCard?.querySelector('.dash-home-card-body'),
+                message,
+                'success',
+                { className: 'mx-3 mt-3' },
+            );
+            await loadMyRequests();
+        },
+        onError: (error) => {
+            showReviewError(error);
+        },
+    });
 
     bindRequestReviewHandlers(pendingCard, {
         onSuccess: async (message) => {
@@ -480,12 +587,24 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
     });
 
-    document.getElementById('dashboardPendingPaginationList')?.addEventListener('click', async (event) => {
-        const button = event.target.closest('[data-page]');
-        if (!button) return;
-
+    bindPagination(pendingPaginationWrap, async (page) => {
         selectedPendingKeys.clear();
-        await loadPendingApprovals(Number(button.dataset.page));
+        await loadPendingApprovals(page);
+    });
+
+    bindPerPageSelect(pendingPerPageSelect, async (perPage) => {
+        pendingPerPage = perPage;
+        selectedPendingKeys.clear();
+        await loadPendingApprovals(1);
+    });
+
+    bindPagination(myRequestsPaginationWrap, async (page) => {
+        renderMyRequests(myRequestsItems, true, page);
+    });
+
+    bindPerPageSelect(myRequestsPerPageSelect, async (perPage) => {
+        myRequestsPerPage = perPage;
+        renderMyRequests(myRequestsItems, true, 1);
     });
 
     window.addEventListener('beforeunload', () => {

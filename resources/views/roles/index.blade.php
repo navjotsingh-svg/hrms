@@ -16,6 +16,7 @@
     <div id="rolesAlert" class="alert alert-dismissible fade show d-none" role="alert"></div>
 
     <div class="content-card companies-list-card">
+        @include('partials.list-pagination-header', ['perPageId' => 'rolesPerPage'])
         <div class="table-responsive">
             <table class="companies-table table mb-0">
                 <thead>
@@ -35,6 +36,13 @@
                 </tbody>
             </table>
         </div>
+        @include('partials.list-pagination-footer', [
+            'infoId' => 'rolesPaginationInfo',
+            'listId' => 'rolesPaginationList',
+            'perPageId' => 'rolesPerPage',
+            'wrapId' => 'rolesPagination',
+            'ariaLabel' => 'Roles pagination',
+        ])
     </div>
 
     <div class="modal fade" id="createRoleModal" tabindex="-1" aria-hidden="true">

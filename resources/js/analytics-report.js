@@ -1,5 +1,6 @@
 import api, { getErrorMessage } from './api';
 import { bindEmployeeSearchSelect } from './employee-autocomplete';
+import { aiSummarizeAnalytics } from './ai-tools';
 
 const escapeHtml = (value) => String(value ?? '')
     .replace(/&/g, '&amp;')
@@ -21,6 +22,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     const generatedAtEl = document.getElementById('analyticsReportGeneratedAt');
     const loadBtn = document.getElementById('loadAnalyticsReportBtn');
     const exportBtn = document.getElementById('exportAnalyticsReportBtn');
+    const aiSummarizeBtn = document.getElementById('analyticsAiSummarizeBtn');
+    const aiSummaryBox = document.getElementById('analyticsAiSummary');
     const resetBtn = document.getElementById('filterReset');
     const reportPanel = document.getElementById('analyticsReportPanel');
     const chartsPanel = document.getElementById('analyticsChartsPanel');
@@ -306,6 +309,9 @@ document.addEventListener('DOMContentLoaded', async () => {
             const payload = data.data || data;
             renderTable(payload);
             renderCharts(payload.charts);
+            if (aiSummarizeBtn) {
+                aiSummarizeBtn.disabled = false;
+            }
         } catch (error) {
             showAlert(getErrorMessage(error), 'danger');
         } finally {
@@ -363,6 +369,31 @@ document.addEventListener('DOMContentLoaded', async () => {
     });
 
     exportBtn?.addEventListener('click', exportReport);
+
+    aiSummarizeBtn?.addEventListener('click', async () => {
+        if (!lastParams) {
+            showAlert('Load the report before asking AI to summarize.', 'warning');
+            return;
+        }
+
+        aiSummarizeBtn.disabled = true;
+        aiSummarizeBtn.textContent = 'AI working…';
+
+        try {
+            const result = await aiSummarizeAnalytics(reportKey, lastParams);
+
+            if (aiSummaryBox) {
+                aiSummaryBox.className = 'alert alert-info';
+                aiSummaryBox.textContent = result.summary || 'No summary generated.';
+                aiSummaryBox.classList.remove('d-none');
+            }
+        } catch (error) {
+            showAlert(getErrorMessage(error), 'danger');
+        } finally {
+            aiSummarizeBtn.disabled = false;
+            aiSummarizeBtn.textContent = 'AI summarize';
+        }
+    });
 
     resetBtn?.addEventListener('click', () => {
         if (fromDateEl) fromDateEl.value = reportKey.startsWith('regularization') ? prevFrom : monthStart;
