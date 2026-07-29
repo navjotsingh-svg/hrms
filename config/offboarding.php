@@ -9,6 +9,15 @@ return [
         'yes_no' => 'Yes / No',
     ],
 
+    'exit_types' => [
+        'resignation' => 'Resignation',
+        'termination' => 'Termination',
+        'retirement' => 'Retirement',
+        'contract_end' => 'Contract End',
+        'absconding' => 'Absconding',
+        'other' => 'Other',
+    ],
+
     'default_survey_questions' => [
         [
             'question' => 'What was your primary reason for leaving?',

@@ -15,6 +15,8 @@ class ExitCaseResource extends JsonResource
             'stage_label' => $this->resource->stageLabel(),
             'status' => $this->status,
             'status_label' => ucfirst(str_replace('_', ' ', $this->status)),
+            'exit_type' => $this->exit_type,
+            'exit_type_label' => $this->resource->exitTypeLabel(),
             'last_working_date' => $this->last_working_date?->format('d M Y'),
             'completed_at_label' => $this->completed_at?->labelStack(),
             'created_at_label' => $this->created_at?->labelStack(),

@@ -11,23 +11,34 @@ use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
 
 class PerformanceKpiService
 {
-    public function __construct(private EmployeeAccessService $employeeAccessService) {}
+    public function __construct(
+        private EmployeeAccessService $employeeAccessService,
+        private GoalProgressSyncService $goalProgressSyncService,
+    ) {}
 
     public function listForUser(User $user, array $filters = []): LengthAwarePaginator
     {
-        $this->assertManage($user);
+        $this->assertParticipate($user);
 
         $query = PerformanceKpi::query()
-            ->with('employee')
+            ->with(['employee', 'linkedKeyResults.goal'])
             ->where('company_id', $user->company_id)
             ->orderByDesc('updated_at');
 
-        if (! empty($filters['status'])) {
-            $query->where('status', $filters['status']);
+        if (! $user->canManagePerformance()) {
+            $employee = $this->employeeAccessService->linkedEmployee($user);
+
+            if (! $employee) {
+                $query->whereRaw('1 = 0');
+            } else {
+                $query->where('employee_id', $employee->id);
+            }
+        } elseif (! empty($filters['employee_id'])) {
+            $query->where('employee_id', $filters['employee_id']);
         }
 
-        if (! empty($filters['employee_id'])) {
-            $query->where('employee_id', $filters['employee_id']);
+        if (! empty($filters['status'])) {
+            $query->where('status', $filters['status']);
         }
 
         if (! empty($filters['search'])) {
@@ -69,27 +80,38 @@ class PerformanceKpiService
     public function update(User $user, PerformanceKpi $kpi, array $data): PerformanceKpi
     {
         $this->resolve($user, $kpi);
-        $this->assertManage($user);
 
-        if (isset($data['employee_id'])) {
-            $employee = $this->resolveEmployee($user, (int) $data['employee_id']);
-            $kpi->employee_id = $employee->id;
+        if ($user->canManagePerformance()) {
+            if (isset($data['employee_id'])) {
+                $employee = $this->resolveEmployee($user, (int) $data['employee_id']);
+                $kpi->employee_id = $employee->id;
+            }
+
+            $kpi->update([
+                'employee_id' => $kpi->employee_id,
+                'title' => $data['title'],
+                'description' => $data['description'] ?? null,
+                'target_value' => $data['target_value'] ?? $kpi->target_value,
+                'current_value' => $data['current_value'] ?? $kpi->current_value,
+                'unit' => $data['unit'] ?? null,
+                'frequency' => $data['frequency'] ?? $kpi->frequency,
+                'period_start' => $data['period_start'] ?? null,
+                'period_end' => $data['period_end'] ?? null,
+                'status' => $data['status'] ?? $kpi->status,
+            ]);
+        } else {
+            if (! array_key_exists('current_value', $data)) {
+                throw new AccessDeniedHttpException('You can only update the current value on your KPIs.');
+            }
+
+            $kpi->update([
+                'current_value' => $data['current_value'],
+            ]);
         }
 
-        $kpi->update([
-            'employee_id' => $kpi->employee_id,
-            'title' => $data['title'],
-            'description' => $data['description'] ?? null,
-            'target_value' => $data['target_value'] ?? $kpi->target_value,
-            'current_value' => $data['current_value'] ?? $kpi->current_value,
-            'unit' => $data['unit'] ?? null,
-            'frequency' => $data['frequency'] ?? $kpi->frequency,
-            'period_start' => $data['period_start'] ?? null,
-            'period_end' => $data['period_end'] ?? null,
-            'status' => $data['status'] ?? $kpi->status,
-        ]);
+        $this->goalProgressSyncService->onKpiUpdated($kpi->fresh(['employee', 'linkedKeyResults.goal']));
 
-        return $kpi->fresh('employee');
+        return $kpi->fresh(['employee', 'linkedKeyResults.goal']);
     }
 
     public function delete(User $user, PerformanceKpi $kpi): void
@@ -106,7 +128,15 @@ class PerformanceKpiService
             throw new NotFoundHttpException('KPI not found.');
         }
 
-        $kpi->loadMissing('employee');
+        if (! $user->canManagePerformance()) {
+            $employee = $this->employeeAccessService->linkedEmployee($user);
+
+            if (! $employee || (int) $kpi->employee_id !== (int) $employee->id) {
+                throw new AccessDeniedHttpException('You do not have permission to access this KPI.');
+            }
+        }
+
+        $kpi->loadMissing(['employee', 'linkedKeyResults.goal']);
 
         return $kpi;
     }
@@ -129,6 +159,13 @@ class PerformanceKpiService
     {
         if (! $user->canManagePerformance()) {
             throw new AccessDeniedHttpException('You do not have permission to manage KPIs.');
+        }
+    }
+
+    private function assertParticipate(User $user): void
+    {
+        if (! $user->canManagePerformance() && ! $user->canParticipateInPerformance()) {
+            throw new AccessDeniedHttpException('You do not have permission to view KPIs.');
         }
     }
 }

@@ -76,11 +76,15 @@ const categoryClass = (category) => ({
 
 
 
+const isPendingStatus = (status) => ['pending', 'partially_reviewed', 'draft'].includes(status);
+
+
+
 const countByStatus = (items) => ({
 
     total: items.length,
 
-    pending: items.filter((item) => item.status === 'pending').length,
+    pending: items.filter((item) => isPendingStatus(item.status)).length,
 
     approved: items.filter((item) => item.status === 'approved').length,
 
@@ -102,7 +106,21 @@ const dedupeRequests = (items) => {
 
         const key = item.key || `${item.category}:${item.entity_id}:${item.batch_id || ''}`;
 
-        if (!map.has(key)) {
+        const existing = map.get(key);
+
+
+
+        if (!existing) {
+
+            map.set(key, item);
+
+            return;
+
+        }
+
+
+
+        if (isPendingStatus(item.status) && !isPendingStatus(existing.status)) {
 
             map.set(key, item);
 
@@ -166,13 +184,17 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     const hasTeamTab = Boolean(document.getElementById('requestsTabTeam'));
 
-    let activeTab = hasApprovalTab ? 'approval' : 'mine';
+    const hasMineTab = Boolean(document.getElementById('requestsTabMine'));
+
+    let activeTab = hasApprovalTab ? 'approval' : (hasMineTab ? 'mine' : (hasTeamTab ? 'team' : 'approval'));
 
     let approvalRequests = [];
 
     let teamRequests = [];
 
     let mineRequests = [];
+
+    let serverStats = null;
 
     let employeeSearch = null;
 
@@ -380,7 +402,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
 
 
-        if (tab === 'mine') {
+        if (tab === 'mine' && hasMineTab) {
 
             return 'mine';
 
@@ -388,7 +410,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
 
 
-        return hasApprovalTab ? 'approval' : 'mine';
+        return hasApprovalTab ? 'approval' : (hasMineTab ? 'mine' : (hasTeamTab ? 'team' : 'approval'));
 
     };
 
@@ -479,7 +501,13 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     const summarySource = () => {
 
-        const pools = [mineRequests];
+        const pools = [];
+
+        if (hasMineTab) {
+
+            pools.push(mineRequests);
+
+        }
 
         if (hasApprovalTab) {
 
@@ -583,7 +611,19 @@ document.addEventListener('DOMContentLoaded', async () => {
 
 
 
-        return items.filter((item) => item.status === statusFilter.value);
+        return items.filter((item) => {
+
+            if (statusFilter.value === 'pending') {
+
+                return isPendingStatus(item.status);
+
+            }
+
+
+
+            return item.status === statusFilter.value;
+
+        });
 
     };
 
@@ -719,7 +759,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     const renderSummaryCards = () => {
 
-        const counts = countByStatus(summaryFilteredRequests());
+        const counts = serverStats || countByStatus(summaryFilteredRequests());
 
 
 
@@ -994,6 +1034,24 @@ document.addEventListener('DOMContentLoaded', async () => {
 
 
 
+    const loadStats = async () => {
+
+        try {
+
+            const { data } = await api.get('/request-hub/stats', { params: { ...dateFilterParams() } });
+
+            serverStats = data.data || null;
+
+        } catch {
+
+            serverStats = null;
+
+        }
+
+    };
+
+
+
     const loadApprovalRequests = async () => {
 
         if (!hasApprovalTab) return;
@@ -1072,11 +1130,11 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     const loadMineRequests = async () => {
 
+        if (!hasMineTab) return;
+
         try {
 
             const params = { ...dateFilterParams() };
-
-
 
             const { data } = await api.get('/request-hub/mine', { params });
 
@@ -1105,6 +1163,8 @@ document.addEventListener('DOMContentLoaded', async () => {
         await Promise.all([
 
             loadSummary(),
+
+            loadStats(),
 
             loadApprovalRequests(),
 
@@ -1157,6 +1217,10 @@ document.addEventListener('DOMContentLoaded', async () => {
             await loadMineRequests();
 
         }
+
+
+
+        await loadStats();
 
 
 
@@ -1321,6 +1385,10 @@ document.addEventListener('DOMContentLoaded', async () => {
             await loadTeamRequests();
 
         }
+
+
+
+        await loadStats();
 
 
 

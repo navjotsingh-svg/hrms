@@ -34,7 +34,13 @@
                 </div>
             </div>
         </div>
-        @include('partials.list-pagination-header', ['perPageId' => 'leaveTypesPerPage'])
+        @include('partials.list-pagination-top', [
+    'infoId' => 'leaveTypesPaginationInfo',
+    'listId' => 'leaveTypesPaginationList',
+    'perPageId' => 'leaveTypesPerPage',
+    'wrapId' => 'leaveTypesPagination',
+    'ariaLabel' => 'Leave types pagination',
+])
         <div class="table-responsive">
             <table class="companies-table table mb-0">
                 <thead>

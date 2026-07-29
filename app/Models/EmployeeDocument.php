@@ -58,7 +58,7 @@ class EmployeeDocument extends Model
 
     public function canBeReuploaded(): bool
     {
-        return $this->status === 'rejected';
+        return in_array($this->status, ['rejected', 'approved'], true);
     }
 
     public function isLocked(): bool

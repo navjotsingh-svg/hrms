@@ -31,10 +31,13 @@
         </div>
     </div>
 
-    @include('partials.list-pagination-header', [
-        'perPageId' => 'employeeJourneyPerPage',
-        'wrapClass' => 'mb-3 companies-pagination-header',
-    ])
+    @include('partials.list-pagination-top', [
+    'infoId' => 'employeeJourneyPaginationInfo',
+    'listId' => 'employeeJourneyPaginationList',
+    'perPageId' => 'employeeJourneyPerPage',
+    'wrapId' => 'employeeJourneyPagination',
+    'ariaLabel' => 'Portal journey pagination',
+])
     <div id="employeeJourneyList" class="activity-timeline employee-journey-timeline">
         <div class="text-muted py-4 text-center">Open this tab to load portal journey.</div>
     </div>

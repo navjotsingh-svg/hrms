@@ -19,6 +19,7 @@ class EmployeeFamilyMemberResource extends JsonResource
             'status' => $this->status,
             'notes' => $this->notes,
             'can_resubmit' => $this->canBeResubmitted(),
+            'can_delete' => $request->user()?->canDeleteFamilyMember($this->resource) ?? false,
             'is_locked' => $this->isLocked(),
             'submitted_at' => $this->submitted_at?->toIso8601String(),
             'reviewed_at' => $this->reviewed_at?->toIso8601String(),

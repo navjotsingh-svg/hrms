@@ -34,6 +34,7 @@ class EmployeeDocumentResource extends JsonResource
             'status' => $this->status,
             'notes' => $this->notes,
             'can_reupload' => $this->canBeReuploaded(),
+            'can_delete' => $request->user()?->canDeleteEmployeeDocument($this->resource) ?? false,
             'is_locked' => $this->isLocked(),
             'reviewed_at' => $this->reviewed_at?->toIso8601String(),
             'created_at' => $this->created_at?->toIso8601String(),

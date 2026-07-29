@@ -94,7 +94,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     const renderStatusCell = (employee) => {
         const isActive = employee.status === 'active';
         const switchId = `employee-status-${employee.id}`;
-        const disabled = canManage ? '' : 'disabled';
+        const adminProtected = Boolean(employee.is_company_admin) && !canAssignAdmin;
+        const disabled = !canManage || adminProtected ? 'disabled' : '';
 
         return `
             <div class="company-status-cell">
@@ -124,7 +125,8 @@ document.addEventListener('DOMContentLoaded', async () => {
         const hasPortal = Boolean(employee.has_portal_access);
         const switchId = `employee-portal-${employee.id}`;
         const isInactive = employee.status !== 'active';
-        const disabled = !canManage || isInactive ? 'disabled' : '';
+        const adminProtected = Boolean(employee.is_company_admin) && !canAssignAdmin;
+        const disabled = !canManage || isInactive || adminProtected ? 'disabled' : '';
 
         return `
             <div class="company-status-cell">
@@ -181,7 +183,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                 ` : ''}
                 ${canManage ? `
                 ${employee.has_portal_access ? `
-                <button type="button" class="table-action-btn table-action-btn--mail" title="Resend welcome email" aria-label="Resend welcome email to ${escapeHtml(employee.full_name)}" data-resend-welcome-email="${employee.id}">
+                <button type="button" class="table-action-btn table-action-btn--mail" title="Send new login credentials" aria-label="Send new login credentials to ${escapeHtml(employee.full_name)}" data-resend-welcome-email="${employee.id}">
                     ${MAIL_ICON}
                 </button>
                 ` : ''}
@@ -494,7 +496,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             const portalAccess = portalToggle.checked;
             const previousChecked = !portalToggle.checked;
 
-            if (portalAccess && !window.confirm('Enable portal access? A welcome email with login credentials will be sent to the employee.')) {
+            if (portalAccess && !window.confirm('Enable portal access? A new password will be emailed to the employee and any previous password will stop working.')) {
                 portalToggle.checked = previousChecked;
                 return;
             }
@@ -606,7 +608,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         const resendButton = event.target.closest('[data-resend-welcome-email]');
 
         if (resendButton && canManage) {
-            if (!window.confirm('Send a new welcome email with a freshly generated password? The employee will need to use the new password to sign in.')) {
+            if (!window.confirm('Send new login credentials? A fresh password will be emailed and the previous password will stop working immediately.')) {
                 return;
             }
 
@@ -614,7 +616,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
             try {
                 const { data } = await api.post(`/employees/${resendButton.dataset.resendWelcomeEmail}/resend-welcome-email`);
-                showAlert(data.message || 'Welcome email sent with a new login password.');
+                showAlert(data.message || 'New login credentials sent successfully.');
             } catch (error) {
                 showAlert(getErrorMessage(error), 'danger');
             } finally {

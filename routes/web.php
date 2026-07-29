@@ -268,7 +268,6 @@ Route::redirect('/register', '/');
 
     Route::middleware(['company.member', 'company.permission:performance.participate'])->prefix('performance')->name('performance.')->group(function () {
         Route::get('/', [\App\Http\Controllers\PerformanceController::class, 'overview'])->name('overview');
-        Route::get('/praise-recognition', [\App\Http\Controllers\PerformanceController::class, 'praiseRecognition'])->name('praise-recognition');
         Route::get('/continuous-feedback', [\App\Http\Controllers\PerformanceController::class, 'continuousFeedback'])->name('continuous-feedback');
         Route::get('/one-on-one', [\App\Http\Controllers\PerformanceController::class, 'oneOnOne'])->name('one-on-one');
         Route::get('/reviews', [\App\Http\Controllers\PerformanceController::class, 'reviews'])->name('reviews');
@@ -285,9 +284,12 @@ Route::redirect('/register', '/');
         Route::get('/pip', [\App\Http\Controllers\PerformanceController::class, 'pip'])->name('pip');
     });
 
-    Route::middleware(['company.member', 'company.permission:hiring.requisition.create'])->prefix('hiring')->name('hiring.')->group(function () {
+    Route::middleware(['company.member', 'company.permission:performance.manage'])->prefix('performance')->name('performance.')->group(function () {
+        Route::get('/praise-recognition', [\App\Http\Controllers\PerformanceController::class, 'praiseRecognition'])->name('praise-recognition');
+    });
+
+    Route::middleware(['company.member', 'company.permission:hiring.manage,hiring.interview,hiring.careers.publish'])->prefix('hiring')->name('hiring.')->group(function () {
         Route::get('/', [\App\Http\Controllers\HiringController::class, 'overview'])->name('overview');
-        Route::get('/requisitions', [\App\Http\Controllers\HiringController::class, 'requisitions'])->name('requisitions');
         Route::middleware('company.permission:hiring.manage')->group(function () {
             Route::get('/jobs', [\App\Http\Controllers\HiringController::class, 'jobs'])->name('jobs');
             Route::get('/candidates', [\App\Http\Controllers\HiringController::class, 'candidates'])->name('candidates');
@@ -327,6 +329,13 @@ Route::redirect('/register', '/');
         });
     });
 });
+
+Route::get('/offer/{token}', [\App\Http\Controllers\PublicOfferController::class, 'show'])->name('offer.review');
+Route::get('/offer/{token}/pdf', [\App\Http\Controllers\PublicOfferController::class, 'pdf'])->name('offer.pdf');
+Route::post('/offer/{token}/request-otp', [\App\Http\Controllers\PublicOfferController::class, 'requestOtp'])->name('offer.request-otp');
+Route::post('/offer/{token}/verify-otp', [\App\Http\Controllers\PublicOfferController::class, 'verifyOtp'])->name('offer.verify-otp');
+Route::post('/offer/{token}/accept', [\App\Http\Controllers\PublicOfferController::class, 'accept'])->name('offer.accept');
+Route::post('/offer/{token}/decline', [\App\Http\Controllers\PublicOfferController::class, 'decline'])->name('offer.decline');
 
 Route::get('/careers/{slug}', [\App\Http\Controllers\PublicCareersController::class, 'show'])->name('careers.show');
 Route::post('/careers/{slug}/apply', [\App\Http\Controllers\PublicCareersController::class, 'applyGeneral'])->name('careers.apply-general');

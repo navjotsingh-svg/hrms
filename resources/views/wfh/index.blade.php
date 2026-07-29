@@ -53,7 +53,12 @@
                 </div>
             </div>
         </div>
-        @include('partials.list-pagination-header', ['perPageId' => 'wfhPerPage'])
+        @include('partials.list-pagination-top', [
+    'infoId' => 'wfhPaginationInfo',
+    'listId' => 'wfhPaginationList',
+    'perPageId' => 'wfhPerPage',
+    'ariaLabel' => 'WFH pagination',
+])
         <div class="table-responsive">
             <table class="companies-table table mb-0">
                 <thead>

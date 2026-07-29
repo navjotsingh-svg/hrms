@@ -2,6 +2,7 @@ import { Modal } from 'bootstrap';
 import api, { getErrorMessage } from './api';
 import { renderAttendancePunchCard } from './attendance-punch-display';
 import { renderDateTimeStack } from './datetime-utils';
+import { initAttendanceRegularizePanel } from './attendance-regularize-panel';
 import {
     bindEmployeeSearchSelect,
     formatEmployeeLabel,
@@ -226,6 +227,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     const initialUrlEmployeeId = Number(urlParams.get('employee_id')) || null;
     const initialUrlMonth = urlParams.get('month');
     const initialUrlDate = urlParams.get('date');
+    const shouldOpenRegularizePanel = urlParams.get('regularize') === '1';
     let currentMonth = initialUrlMonth && /^\d{4}-\d{2}$/.test(initialUrlMonth)
         ? initialUrlMonth
         : currentMonthKey();
@@ -692,8 +694,6 @@ document.addEventListener('DOMContentLoaded', async () => {
     };
 
     const renderRegularizationSection = (payload) => {
-        const routes = window.HRMS_WEB_ROUTES || {};
-        const regularizeUrl = `${routes.attendanceRegularizeIndex || '/attendance/regularize'}?date=${payload.date}`;
         const request = payload.regularization_request;
 
         if (request) {
@@ -709,7 +709,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (payload.can_request_regularization) {
             return `
                 <div class="mb-3">
-                    <a href="${regularizeUrl}" class="btn btn-sm btn-outline-primary">Request Regularization</a>
+                    <button type="button" class="btn btn-sm btn-outline-primary" data-open-regularize-panel="${payload.date}">Request Regularization</button>
                 </div>
             `;
         }
@@ -798,7 +798,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
         const punches = payload.punches.map((punch) => renderAttendancePunchCard(punch, {
             formatDateTime,
-            threshold: Number(payload.face_match_threshold) || 80,
+            threshold: Number(payload.face_match_threshold) || 90,
         })).join('');
 
         const statusSection = payload.awaiting_punch_out
@@ -924,7 +924,65 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     await loadCalendar();
 
-    if (initialUrlDate && /^\d{4}-\d{2}-\d{2}$/.test(initialUrlDate)) {
+    let regularizePanel = null;
+    const openRegularizePanelBtn = document.getElementById('openRegularizePanelBtn');
+
+    if (document.getElementById('attendanceRegularizePanel')) {
+        regularizePanel = initAttendanceRegularizePanel({
+            getMonth: () => currentMonth,
+            getEmployeeId: () => resolveCalendarEmployeeId(),
+            onSubmitted: async () => {
+                await loadCalendar();
+            },
+            onAlert: showAlert,
+        });
+
+        const openRegularizePanel = async ({ dates = [], selectAllEligible = false } = {}) => {
+            if (!regularizePanel) {
+                return;
+            }
+
+            await regularizePanel.open({
+                dates,
+                selectAllEligible,
+                employeeId: resolveCalendarEmployeeId(),
+            });
+        };
+
+        openRegularizePanelBtn?.addEventListener('click', () => {
+            openRegularizePanel({ selectAllEligible: true });
+        });
+
+        dayModalBody?.addEventListener('click', (event) => {
+            const trigger = event.target.closest('[data-open-regularize-panel]');
+            if (!trigger) {
+                return;
+            }
+
+            event.preventDefault();
+            dayModal?.hide();
+            openRegularizePanel({ dates: [trigger.dataset.openRegularizePanel] });
+        });
+
+        if (shouldOpenRegularizePanel) {
+            const panelDates = initialUrlDate && /^\d{4}-\d{2}-\d{2}$/.test(initialUrlDate)
+                ? [initialUrlDate]
+                : [];
+
+            await openRegularizePanel({
+                dates: panelDates,
+                selectAllEligible: panelDates.length === 0,
+            });
+
+            if (window.history.replaceState) {
+                const cleanUrl = new URL(window.location.href);
+                cleanUrl.searchParams.delete('regularize');
+                window.history.replaceState({}, '', cleanUrl.toString());
+            }
+        }
+    }
+
+    if (initialUrlDate && /^\d{4}-\d{2}-\d{2}$/.test(initialUrlDate) && !shouldOpenRegularizePanel) {
         await openDayModal(initialUrlDate);
     }
 });

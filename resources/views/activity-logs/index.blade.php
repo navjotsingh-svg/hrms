@@ -95,7 +95,12 @@
                 <div class="text-muted small" id="activityLogsSummary"></div>
             </div>
         </div>
-        @include('partials.list-pagination-header', ['perPageId' => 'activityLogsPerPage'])
+        @include('partials.list-pagination-top', [
+    'infoId' => 'activityLogsPaginationInfo',
+    'listId' => 'activityLogsPaginationList',
+    'perPageId' => 'activityLogsPerPage',
+    'ariaLabel' => 'Activity logs pagination',
+])
         <div class="table-responsive">
             <table class="companies-table table mb-0">
                 <thead>

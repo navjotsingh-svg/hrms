@@ -1,5 +1,6 @@
 import api, { getErrorMessage } from './api';
 import { composeActionGroup, renderEditIconButton, renderViewLink } from './action-icons';
+import { bindEmployeeSearchSelect } from './employee-autocomplete';
 import { bindPagination, bindPerPageSelect, getSerialNumber, readPerPage, renderListPagination } from './pagination';
 import { renderApproveIconButton, renderRejectIconButton } from './review-actions';
 import { promptRequestReviewRemarks } from './swal-utils';
@@ -41,6 +42,11 @@ document.addEventListener('DOMContentLoaded', async () => {
     const surveyPaginationList = document.getElementById('exitSurveyPaginationList');
     const surveyPerPageSelect = document.getElementById('exitSurveyPerPage');
     let surveyPerPage = readPerPage(surveyPerPageSelect);
+    let startOffboardingModal;
+    const startOffboardingEmployeeSearch = canManage ? bindEmployeeSearchSelect({
+        inputId: 'startOffboardingEmployeeSearch',
+        hiddenId: 'startOffboardingEmployeeId',
+    }) : null;
 
     const showAlert = (message, type = 'success') => {
         if (!alertBox) return;
@@ -114,13 +120,14 @@ document.addEventListener('DOMContentLoaded', async () => {
                     return `<tr>
                         <td>${serial}</td>
                         <td>${item.employee?.full_name || '—'}<div class="small text-muted">${item.employee?.employee_code || ''}</div></td>
+                        <td>${item.exit_type_label || '—'}</td>
                         <td>${item.last_working_date || '—'}</td>
                         <td>${item.stage_label || '—'}</td>
                         <td><span class="company-status-pill ${statusClass(item.status)}">${item.status_label}</span></td>
                         <td>${renderViewLink(`${routes().offboardingShow || '/offboarding/cases'}/${item.id}`, 'View exit case')}</td>
                     </tr>`;
                 }).join('')
-                : '<tr><td colspan="6" class="text-center text-muted py-5">No exit cases found.</td></tr>';
+                : '<tr><td colspan="7" class="text-center text-muted py-5">No exit cases found.</td></tr>';
 
             renderListPagination({
                 infoEl: exitPaginationInfo,
@@ -131,7 +138,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                 emptyMessage: 'No exit cases found',
             });
         } catch (error) {
-            exitCasesBody.innerHTML = `<tr><td colspan="6" class="text-center text-danger py-5">${getErrorMessage(error)}</td></tr>`;
+            exitCasesBody.innerHTML = `<tr><td colspan="7" class="text-center text-danger py-5">${getErrorMessage(error)}</td></tr>`;
         }
     };
 
@@ -205,14 +212,6 @@ document.addEventListener('DOMContentLoaded', async () => {
         loadResignations(1);
     });
 
-    if (canManage) {
-        bindPagination(surveyPaginationList, loadSurveyQuestions);
-        bindPerPageSelect(surveyPerPageSelect, (perPage) => {
-            surveyPerPage = perPage;
-            loadSurveyQuestions(1);
-        });
-    }
-
     const toggleSurveyOptions = () => {
         const type = document.getElementById('exitSurveyQuestionType')?.value;
         document.getElementById('exitSurveyOptionsWrap')?.classList.toggle('d-none', type !== 'select');
@@ -271,6 +270,14 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
     };
 
+    if (canManage) {
+        bindPagination(surveyPaginationList, loadSurveyQuestions);
+        bindPerPageSelect(surveyPerPageSelect, (perPage) => {
+            surveyPerPage = perPage;
+            loadSurveyQuestions(1);
+        });
+    }
+
     const openSurveyQuestionModal = (questionId = null, cachedQuestions = []) => {
         document.getElementById('exitSurveyQuestionId').value = questionId ? String(questionId) : '';
         document.getElementById('exitSurveyQuestionModalTitle').textContent = questionId ? 'Edit Survey Question' : 'Add Survey Question';
@@ -298,8 +305,73 @@ document.addEventListener('DOMContentLoaded', async () => {
         surveyModal?.show();
     };
 
+    const resetStartOffboardingForm = () => {
+        document.getElementById('startOffboardingForm')?.reset();
+        startOffboardingEmployeeSearch?.clearSelection();
+        const exitTypeSelect = document.getElementById('startOffboardingExitType');
+        if (exitTypeSelect) {
+            exitTypeSelect.value = 'termination';
+        }
+    };
+
+    const openStartOffboardingModal = () => {
+        resetStartOffboardingForm();
+        startOffboardingModal?.show();
+    };
+
     if (canManage) {
+        startOffboardingModal = window.bootstrap?.Modal.getOrCreateInstance(document.getElementById('startOffboardingModal'));
         surveyModal = window.bootstrap?.Modal.getOrCreateInstance(document.getElementById('exitSurveyQuestionModal'));
+
+        document.getElementById('startOffboardingBtn')?.addEventListener('click', openStartOffboardingModal);
+
+        document.getElementById('startOffboardingForm')?.addEventListener('submit', async (event) => {
+            event.preventDefault();
+
+            const employeeId = startOffboardingEmployeeSearch?.getSelectedId();
+            const lastWorkingDate = document.getElementById('startOffboardingLastWorkingDate')?.value;
+            const exitType = document.getElementById('startOffboardingExitType')?.value;
+            const notes = document.getElementById('startOffboardingNotes')?.value?.trim() || undefined;
+
+            if (!employeeId) {
+                showAlert('Please select an employee.', 'danger');
+                return;
+            }
+
+            if (!lastWorkingDate || !exitType) {
+                showAlert('Last working date and exit type are required.', 'danger');
+                return;
+            }
+
+            const submitBtn = event.target.querySelector('button[type="submit"]');
+            submitBtn?.setAttribute('disabled', 'disabled');
+
+            try {
+                const { data } = await api.post('/exit-cases', {
+                    employee_id: employeeId,
+                    last_working_date: lastWorkingDate,
+                    exit_type: exitType,
+                    notes,
+                });
+
+                startOffboardingModal?.hide();
+                showAlert(data.message || 'Offboarding started successfully.');
+
+                const exitCaseId = data.data?.exit_case?.id;
+                const showUrl = routes().offboardingShow || '/offboarding/cases';
+
+                if (exitCaseId) {
+                    window.location.href = `${showUrl}/${exitCaseId}`;
+                    return;
+                }
+
+                await loadExitCases(1);
+            } catch (error) {
+                showAlert(getErrorMessage(error), 'danger');
+            } finally {
+                submitBtn?.removeAttribute('disabled');
+            }
+        });
 
         document.getElementById('exitSurveyCreateBtn')?.addEventListener('click', () => openSurveyQuestionModal());
         document.getElementById('exitSurveyQuestionType')?.addEventListener('change', toggleSurveyOptions);

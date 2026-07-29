@@ -102,7 +102,13 @@
             </div>
         </div>
         <div class="content-card-body p-0">
-        @include('partials.list-pagination-header', ['perPageId' => 'attendanceTodayPerPage'])
+        @include('partials.list-pagination-top', [
+    'infoId' => 'attendanceTodayPaginationInfo',
+    'listId' => 'attendanceTodayPaginationList',
+    'perPageId' => 'attendanceTodayPerPage',
+    'wrapId' => 'attendanceTodayPagination',
+    'ariaLabel' => 'Attendance pagination',
+])
         <div class="table-responsive">
                 <table class="table table-hover align-middle mb-0">
                     <thead>

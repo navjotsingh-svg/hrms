@@ -21,9 +21,9 @@ use App\Http\Resources\EmployeePaymentMethodResource;
 use App\Http\Resources\EmployeeProfilePhotoResource;
 use App\Http\Resources\EmployeeProfileResource;
 use App\Http\Resources\UserResource;
-use App\Models\EmployeeDocument;
-use App\Models\EmployeePaymentMethodProof;
-use App\Services\EmployeeProfileService;
+use App\Models\Employee;
+use App\Models\EmployeeFamilyMember;
+use App\Services\EmployeeFamilyMemberService;
 use App\Services\EmployeeJourneyService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -38,6 +38,7 @@ class ProfileController extends Controller
     public function __construct(
         private EmployeeProfileService $employeeProfileService,
         private EmployeeJourneyService $employeeJourneyService,
+        private EmployeeFamilyMemberService $familyMemberService,
     ) {}
 
     public function show(Request $request): JsonResponse
@@ -118,6 +119,17 @@ class ProfileController extends Controller
                 ? 'Family member(s) saved successfully.'
                 : 'Family member(s) submitted successfully. They are pending approval.',
             201
+        );
+    }
+
+    public function destroyFamilyMember(Request $request, EmployeeFamilyMember $employeeFamilyMember): JsonResponse
+    {
+        $this->familyMemberService->delete($request->user(), $employeeFamilyMember);
+        $employee = $this->employeeProfileService->loadProfile($employeeFamilyMember->employee->fresh());
+
+        return $this->success(
+            ['employee' => new EmployeeProfileResource($employee)],
+            'Family member deleted successfully.'
         );
     }
 

@@ -25,7 +25,12 @@
                     </div>
                 </div>
             </div>
-        @include('partials.list-pagination-header', ['perPageId' => 'meetingsPerPage'])
+        @include('partials.list-pagination-top', [
+    'infoId' => 'meetingsPaginationInfo',
+    'listId' => 'meetingsPaginationList',
+    'perPageId' => 'meetingsPerPage',
+    'ariaLabel' => 'Meetings pagination',
+])
         <div class="table-responsive">
                 <table class="companies-table table mb-0">
                     <thead>

@@ -13,7 +13,7 @@
     <div id="profileDocumentsContent" class="d-none">
         <div class="alert alert-info profile-document-policy mb-4" role="status">
             <strong>Upload policy:</strong>
-            Single-file types allow one upload per employee (re-upload only if rejected).
+            Single-file types allow one upload per employee. Approved documents can be changed and will go for HR approval again.
             Multiple-file types let you upload several files for the same document type.
             HR-uploaded documents require Company Admin approval; all other uploads require HR or Admin approval.
         </div>
@@ -43,7 +43,7 @@
             </div>
         </div>
 
-        <form id="profileDocumentForm" class="profile-form profile-document-upload mb-4" enctype="multipart/form-data">
+        <form id="profileDocumentForm" class="profile-form profile-document-upload mb-4 d-none" enctype="multipart/form-data">
             <h4 class="profile-form-section-title">Upload Document</h4>
             <p class="text-muted small" id="profileDocumentUploadHint">Select a document type that is not yet uploaded, or one that was rejected.</p>
             <div class="row g-3 align-items-end">
@@ -78,7 +78,15 @@
         </form>
 
         <div class="profile-info-card">
-            <h4 class="profile-info-card-title">My Uploaded Documents</h4>
+            <div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-3">
+                <h4 class="profile-info-card-title mb-0">My Uploaded Documents</h4>
+                <div class="d-flex flex-wrap align-items-center gap-2">
+                    <button type="button" class="table-action-btn table-action-btn--edit d-none" id="profileDocumentEditBtn" title="Upload documents" aria-label="Upload documents">
+                        @include('partials.icons.edit')
+                    </button>
+                    <button type="button" class="btn btn-sm btn-primary d-none" id="profileAddDocumentBtn">+ Upload Document</button>
+                </div>
+            </div>
             <div class="table-responsive">
                 <table class="table profile-documents-table mb-0">
                     <thead>

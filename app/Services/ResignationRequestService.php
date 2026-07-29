@@ -150,6 +150,10 @@ class ResignationRequestService
 
         $this->workflowNotificationService->notifyResignationDecision($fresh, $user, 'approved');
 
+        if ($fresh->exitCase) {
+            $this->workflowNotificationService->notifyOffboardingInitiated($fresh->exitCase, $user);
+        }
+
         return $fresh;
     }
 

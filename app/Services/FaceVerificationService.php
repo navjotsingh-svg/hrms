@@ -10,7 +10,7 @@ class FaceVerificationService
 {
     public function defaultThresholdPercent(): int
     {
-        return max(1, min(100, (int) config('hrms.attendance.face_match_threshold', 80)));
+        return max(1, min(100, (int) config('hrms.attendance.face_match_threshold', 90)));
     }
 
     public function defaultRequireFaceMatch(): bool
@@ -57,7 +57,7 @@ class FaceVerificationService
      */
     public function similarityPercent(array $descriptorA, array $descriptorB): float
     {
-        return round($this->humanSimilarity($descriptorA, $descriptorB) * 100, 2);
+        return $this->attendanceMatchPercent($this->rawSimilarityRatio($descriptorA, $descriptorB));
     }
 
     /** @param  array<int, float|int|string>  $descriptorA
@@ -150,40 +150,45 @@ class FaceVerificationService
     /** @param  array<int, float|int|string>  $descriptorA
      * @param  array<int, float|int|string>  $descriptorB
      */
-    private function humanSimilarity(
-        array $descriptorA,
-        array $descriptorB,
-        int $order = 2,
-        float $multiplier = 25,
-        float $min = 0.2,
-        float $max = 0.8,
-    ): float {
+    private function rawSimilarityRatio(array $descriptorA, array $descriptorB): float
+    {
         $length = min(count($descriptorA), count($descriptorB));
 
-        if ($length === 0) {
+        if ($length < 64) {
             return 0.0;
         }
 
         $sum = 0.0;
 
         for ($index = 0; $index < $length; $index += 1) {
-            if ($order === 2) {
-                $delta = (float) $descriptorA[$index] - (float) $descriptorB[$index];
-                $sum += $delta * $delta;
-            } else {
-                $sum += abs((float) $descriptorA[$index] - (float) $descriptorB[$index]) ** $order;
-            }
+            $diff = (float) $descriptorA[$index] - (float) $descriptorB[$index];
+            $sum += $diff * $diff;
         }
 
-        $distance = round(100 * $multiplier * $sum) / 100;
+        $distance = round(100 * 25 * $sum) / 100;
 
-        if ($distance === 0.0) {
+        if ($distance <= 0.0) {
             return 1.0;
         }
 
-        $root = $order === 2 ? sqrt($distance) : $distance ** (1 / $order);
+        $root = sqrt($distance);
+        $min = 0.2;
+        $max = 0.8;
         $normalized = (1 - ($root / 100) - $min) / ($max - $min);
 
-        return round(max(0, min(1, $normalized)) * 100) / 100;
+        return max(0.0, min(1.0, round($normalized, 4)));
+    }
+
+    private function attendanceMatchPercent(float $rawSimilarity): float
+    {
+        if ($rawSimilarity <= 0.0) {
+            return 0.0;
+        }
+
+        $floor = 0.34;
+        $ceiling = 0.48;
+        $scaled = ($rawSimilarity - $floor) / ($ceiling - $floor);
+
+        return round(max(0.0, min(100.0, $scaled * 100)), 2);
     }
 }

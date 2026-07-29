@@ -63,8 +63,8 @@ class ActivityLogService
             'old_values' => $this->sanitizeValues($payload['old_values'] ?? null),
             'new_values' => $this->sanitizeValues($payload['new_values'] ?? null),
             'metadata' => $this->sanitizeValues($payload['metadata'] ?? []),
-            'ip_address' => $payload['request']?->ip(),
-            'user_agent' => Str::limit((string) $payload['request']?->userAgent(), 500, ''),
+            'ip_address' => ($payload['request'] ?? null)?->ip(),
+            'user_agent' => Str::limit((string) (($payload['request'] ?? null)?->userAgent()), 500, ''),
             'logged_at' => $loggedAt,
         ]);
 

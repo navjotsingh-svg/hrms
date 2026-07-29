@@ -12,11 +12,17 @@
                 </ol>
             </nav>
             <h1 class="page-title mb-1">Employee Profile</h1>
-            <p class="page-subtitle mb-0" id="empProfilePageSubtitle">Review submitted profile details and pending approvals.</p>
+            <p class="page-subtitle mb-0" id="empProfilePageSubtitle">
+                @if (!empty($canInlineEditProfile))
+                    Update personal, bank, compliance, and document details directly from this page.
+                @else
+                    Review submitted profile details and pending approvals.
+                @endif
+            </p>
         </div>
         <div class="d-flex flex-wrap gap-2">
             <a href="{{ route('web.employees.index') }}" class="btn btn-outline-secondary">Back to Employees</a>
-            @if (Auth::user()->canReviewEmployeeDocuments())
+            @if (Auth::user()->canReviewEmployeeDocuments() && empty($canInlineEditProfile))
             <a href="{{ route('web.employees.profile.edit', ['employee' => $employeeId]) }}" class="btn btn-primary btn-sm" id="empProfileManageLink">Manage Profile</a>
             @endif
             @if (Auth::user()->canManageEmployees())
@@ -31,7 +37,7 @@
 @section('content')
     <div id="empProfileAlert" class="alert alert-danger alert-dismissible fade show d-none" role="alert"></div>
 
-    @if (Auth::user()->canReviewEmployeeDocuments())
+    @if (Auth::user()->canReviewEmployeeDocuments() && empty($canInlineEditProfile))
     <div class="alert alert-primary d-flex flex-wrap align-items-center justify-content-between gap-2 mb-4" role="status">
         <span>This page is <strong>read-only</strong> for reviewing employee submissions. To update family, address, emergency contact, bank, compliance, or documents directly, use Manage Profile.</span>
         <a href="{{ route('web.employees.profile.edit', ['employee' => $employeeId]) }}" class="btn btn-primary btn-sm flex-shrink-0">Open Manage Profile</a>
@@ -40,10 +46,15 @@
 
     <div class="profile-dashboard-grid">
         <aside class="profile-dashboard-sidebar">
-            @include('employees.partials.profile-sidebar')
+            @if (!empty($canInlineEditProfile))
+                @include('profile.partials.header')
+            @else
+                @include('employees.partials.profile-sidebar')
+            @endif
         </aside>
 
         <div class="profile-dashboard-main">
+            @unless (!empty($canInlineEditProfile))
             <div id="empProfilePendingSection" class="content-card profile-page-card mb-4 d-none">
                 <div class="content-card-body">
                     <div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-3">
@@ -65,183 +76,242 @@
                     </div>
                 </div>
             </div>
+            @endunless
 
             <div class="content-card profile-page-card">
-        <div class="profile-tab-nav-wrap">
-            <ul class="nav nav-tabs profile-tab-nav" id="empProfileTabs" role="tablist">
-                <li class="nav-item" role="presentation">
-                    <button class="nav-link active" id="emp-profile-work-tab" data-bs-toggle="tab" data-bs-target="#empProfileWorkPane" type="button" role="tab">Work</button>
-                </li>
-                <li class="nav-item" role="presentation">
-                    <button class="nav-link" id="emp-profile-personal-tab" data-bs-toggle="tab" data-bs-target="#empProfilePersonalPane" type="button" role="tab">Personal</button>
-                </li>
-                <li class="nav-item" role="presentation">
-                    <button class="nav-link" id="emp-profile-salary-tab" data-bs-toggle="tab" data-bs-target="#empProfileSalaryPane" type="button" role="tab">Salary</button>
-                </li>
-                <li class="nav-item" role="presentation">
-                    <button class="nav-link" id="emp-profile-bank-tab" data-bs-toggle="tab" data-bs-target="#empProfileBankPane" type="button" role="tab">Bank</button>
-                </li>
-                <li class="nav-item" role="presentation">
-                    <button class="nav-link" id="emp-profile-compliances-tab" data-bs-toggle="tab" data-bs-target="#empProfileCompliancesPane" type="button" role="tab">Compliances</button>
-                </li>
-                <li class="nav-item" role="presentation">
-                    <button class="nav-link" id="emp-profile-documents-tab" data-bs-toggle="tab" data-bs-target="#empProfileDocumentsPane" type="button" role="tab">Documents</button>
-                </li>
-                <li class="nav-item" role="presentation">
-                    <button class="nav-link" id="emp-profile-other-tab" data-bs-toggle="tab" data-bs-target="#empProfileOtherPane" type="button" role="tab">Other</button>
-                </li>
-                <li class="nav-item" role="presentation">
-                    <button class="nav-link" id="emp-profile-journey-tab" data-bs-toggle="tab" data-bs-target="#empProfileJourneyPane" type="button" role="tab">Portal Journey</button>
-                </li>
-            </ul>
-        </div>
+                @if (!empty($canInlineEditProfile))
+                    <div class="profile-tab-nav-wrap">
+                        <ul class="nav nav-tabs profile-tab-nav" id="profileTabs" role="tablist">
+                            <li class="nav-item" role="presentation">
+                                <button class="nav-link active" id="profile-work-tab" data-bs-toggle="tab" data-bs-target="#profileWorkPane" type="button" role="tab">Work</button>
+                            </li>
+                            <li class="nav-item" role="presentation">
+                                <button class="nav-link" id="profile-personal-tab" data-bs-toggle="tab" data-bs-target="#profilePersonalPane" type="button" role="tab">Personal</button>
+                            </li>
+                            <li class="nav-item" role="presentation">
+                                <button class="nav-link" id="profile-salary-tab" data-bs-toggle="tab" data-bs-target="#profileSalaryPane" type="button" role="tab">Salary</button>
+                            </li>
+                            <li class="nav-item" role="presentation">
+                                <button class="nav-link" id="profile-bank-tab" data-bs-toggle="tab" data-bs-target="#profileBankPane" type="button" role="tab">Bank</button>
+                            </li>
+                            <li class="nav-item" role="presentation">
+                                <button class="nav-link" id="profile-compliances-tab" data-bs-toggle="tab" data-bs-target="#profileCompliancesPane" type="button" role="tab">Compliances</button>
+                            </li>
+                            <li class="nav-item" role="presentation">
+                                <button class="nav-link" id="profile-documents-tab" data-bs-toggle="tab" data-bs-target="#profileDocumentsPane" type="button" role="tab">Documents</button>
+                            </li>
+                            <li class="nav-item" role="presentation">
+                                <button class="nav-link" id="profile-journey-tab" data-bs-toggle="tab" data-bs-target="#profileJourneyPane" type="button" role="tab">Portal Journey</button>
+                            </li>
+                            <li class="nav-item" role="presentation">
+                                <button class="nav-link" id="profile-other-tab" data-bs-toggle="tab" data-bs-target="#profileOtherPane" type="button" role="tab">Other</button>
+                            </li>
+                        </ul>
+                    </div>
 
-        <div class="tab-content profile-tab-content" id="empProfileTabContent">
-            <div class="tab-pane fade show active" id="empProfileWorkPane" role="tabpanel">
-                <div class="profile-tab-section">
-                    <div class="row g-4">
-                        <div class="col-lg-6">
-                            <div class="profile-info-card h-100">
-                                <h4 class="profile-info-card-title">Job Details</h4>
-                                <dl class="profile-dl" id="empProfileWorkJob"></dl>
+                    <div class="tab-content profile-tab-content" id="profileTabContent">
+                        <div class="tab-pane fade show active" id="profileWorkPane" role="tabpanel">
+                            @include('profile.partials.tabs.work')
+                        </div>
+                        <div class="tab-pane fade" id="profilePersonalPane" role="tabpanel">
+                            @include('profile.partials.tabs.personal', ['hideAccountSettings' => true])
+                        </div>
+                        <div class="tab-pane fade" id="profileSalaryPane" role="tabpanel">
+                            @include('profile.partials.tabs.salary')
+                        </div>
+                        <div class="tab-pane fade" id="profileBankPane" role="tabpanel">
+                            @include('profile.partials.tabs.bank')
+                        </div>
+                        <div class="tab-pane fade" id="profileCompliancesPane" role="tabpanel">
+                            @include('profile.partials.tabs.compliances')
+                        </div>
+                        <div class="tab-pane fade" id="profileDocumentsPane" role="tabpanel">
+                            @include('profile.partials.tabs.documents')
+                        </div>
+                        <div class="tab-pane fade" id="profileJourneyPane" role="tabpanel">
+                            @include('profile.partials.tabs.journey')
+                        </div>
+                        <div class="tab-pane fade" id="profileOtherPane" role="tabpanel">
+                            @include('profile.partials.tabs.other')
+                        </div>
+                    </div>
+                @else
+                    <div class="profile-tab-nav-wrap">
+                        <ul class="nav nav-tabs profile-tab-nav" id="empProfileTabs" role="tablist">
+                            <li class="nav-item" role="presentation">
+                                <button class="nav-link active" id="emp-profile-work-tab" data-bs-toggle="tab" data-bs-target="#empProfileWorkPane" type="button" role="tab">Work</button>
+                            </li>
+                            <li class="nav-item" role="presentation">
+                                <button class="nav-link" id="emp-profile-personal-tab" data-bs-toggle="tab" data-bs-target="#empProfilePersonalPane" type="button" role="tab">Personal</button>
+                            </li>
+                            <li class="nav-item" role="presentation">
+                                <button class="nav-link" id="emp-profile-salary-tab" data-bs-toggle="tab" data-bs-target="#empProfileSalaryPane" type="button" role="tab">Salary</button>
+                            </li>
+                            <li class="nav-item" role="presentation">
+                                <button class="nav-link" id="emp-profile-bank-tab" data-bs-toggle="tab" data-bs-target="#empProfileBankPane" type="button" role="tab">Bank</button>
+                            </li>
+                            <li class="nav-item" role="presentation">
+                                <button class="nav-link" id="emp-profile-compliances-tab" data-bs-toggle="tab" data-bs-target="#empProfileCompliancesPane" type="button" role="tab">Compliances</button>
+                            </li>
+                            <li class="nav-item" role="presentation">
+                                <button class="nav-link" id="emp-profile-documents-tab" data-bs-toggle="tab" data-bs-target="#empProfileDocumentsPane" type="button" role="tab">Documents</button>
+                            </li>
+                            <li class="nav-item" role="presentation">
+                                <button class="nav-link" id="emp-profile-other-tab" data-bs-toggle="tab" data-bs-target="#empProfileOtherPane" type="button" role="tab">Other</button>
+                            </li>
+                            <li class="nav-item" role="presentation">
+                                <button class="nav-link" id="emp-profile-journey-tab" data-bs-toggle="tab" data-bs-target="#empProfileJourneyPane" type="button" role="tab">Portal Journey</button>
+                            </li>
+                        </ul>
+                    </div>
+
+                    <div class="tab-content profile-tab-content" id="empProfileTabContent">
+                        <div class="tab-pane fade show active" id="empProfileWorkPane" role="tabpanel">
+                            <div class="profile-tab-section">
+                                <div class="row g-4">
+                                    <div class="col-lg-6">
+                                        <div class="profile-info-card h-100">
+                                            <h4 class="profile-info-card-title">Job Details</h4>
+                                            <dl class="profile-dl" id="empProfileWorkJob"></dl>
+                                        </div>
+                                    </div>
+                                    <div class="col-lg-6">
+                                        <div class="profile-info-card h-100">
+                                            <h4 class="profile-info-card-title">Organization</h4>
+                                            <dl class="profile-dl" id="empProfileWorkOrg"></dl>
+                                        </div>
+                                    </div>
+                                    <div class="col-lg-6">
+                                        <div class="profile-info-card h-100">
+                                            <h4 class="profile-info-card-title">Probation</h4>
+                                            <dl class="profile-dl" id="empProfileWorkProbation"></dl>
+                                        </div>
+                                    </div>
+                                </div>
                             </div>
                         </div>
-                        <div class="col-lg-6">
-                            <div class="profile-info-card h-100">
-                                <h4 class="profile-info-card-title">Organization</h4>
-                                <dl class="profile-dl" id="empProfileWorkOrg"></dl>
+
+                        <div class="tab-pane fade" id="empProfileSalaryPane" role="tabpanel">
+                            @include('profile.partials.tabs.salary')
+                        </div>
+
+                        <div class="tab-pane fade" id="empProfilePersonalPane" role="tabpanel">
+                            <div class="profile-tab-section">
+                                <div class="profile-info-card mb-4">
+                                    <h4 class="profile-info-card-title">Display Information</h4>
+                                    <dl class="profile-dl" id="empProfilePersonalDisplay"></dl>
+                                </div>
+
+                                <div class="profile-info-card mb-4">
+                                    <h4 class="profile-info-card-title">Family Members</h4>
+                                    <div class="table-responsive">
+                                        <table class="table profile-documents-table mb-0">
+                                            <thead>
+                                                <tr>
+                                                    <th>Name</th>
+                                                    <th>Relation</th>
+                                                    <th>Mobile</th>
+                                                    <th>Date of Birth</th>
+                                                    <th>Status</th>
+                                                    <th>Review Notes</th>
+                                                    <th>Submitted</th>
+                                                    <th>Reviewed By</th>
+                                                    <th class="text-end">Actions</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody id="empProfileFamilyBody"></tbody>
+                                        </table>
+                                    </div>
+                                </div>
+
+                                <div class="profile-info-card mb-4">
+                                    <h4 class="profile-info-card-title">Address</h4>
+                                    <div id="empProfileAddressSection"></div>
+                                </div>
+
+                                <div class="profile-info-card">
+                                    <h4 class="profile-info-card-title">Emergency Contacts</h4>
+                                    <div id="empProfileEmergencySection"></div>
+                                </div>
                             </div>
                         </div>
-                        <div class="col-lg-6">
-                            <div class="profile-info-card h-100">
-                                <h4 class="profile-info-card-title">Probation</h4>
-                                <dl class="profile-dl" id="empProfileWorkProbation"></dl>
+
+                        <div class="tab-pane fade" id="empProfileBankPane" role="tabpanel">
+                            <div class="profile-tab-section">
+                                <div class="table-responsive">
+                                    <table class="table profile-documents-table mb-0">
+                                        <thead>
+                                            <tr>
+                                                <th>Payment Option</th>
+                                                <th>Details</th>
+                                                <th>Status</th>
+                                                <th>Review Notes</th>
+                                                <th>Submitted</th>
+                                                <th>Reviewed By</th>
+                                                <th class="text-end">Actions</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody id="empProfileBankBody"></tbody>
+                                    </table>
+                                </div>
                             </div>
                         </div>
-                    </div>
-                </div>
-            </div>
 
-            <div class="tab-pane fade" id="empProfileSalaryPane" role="tabpanel">
-                @include('profile.partials.tabs.salary')
-            </div>
+                        <div class="tab-pane fade" id="empProfileCompliancesPane" role="tabpanel">
+                            <div class="profile-tab-section">
+                                <dl class="profile-dl mb-4" id="empProfileComplianceFlags"></dl>
+                                <div class="table-responsive">
+                                    <table class="table profile-documents-table mb-0">
+                                        <thead>
+                                            <tr>
+                                                <th>Field</th>
+                                                <th>Value</th>
+                                                <th>Status</th>
+                                                <th>Review Notes</th>
+                                                <th>Submitted</th>
+                                                <th>Reviewed By</th>
+                                                <th class="text-end">Actions</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody id="empProfileCompliancesBody"></tbody>
+                                    </table>
+                                </div>
+                            </div>
+                        </div>
 
-            <div class="tab-pane fade" id="empProfilePersonalPane" role="tabpanel">
-                <div class="profile-tab-section">
-                    <div class="profile-info-card mb-4">
-                        <h4 class="profile-info-card-title">Display Information</h4>
-                        <dl class="profile-dl" id="empProfilePersonalDisplay"></dl>
-                    </div>
+                        <div class="tab-pane fade" id="empProfileDocumentsPane" role="tabpanel">
+                            <div class="profile-tab-section">
+                                <div class="table-responsive">
+                                    <table class="table profile-documents-table mb-0">
+                                        <thead>
+                                            <tr>
+                                                <th>Document</th>
+                                                <th>Status</th>
+                                                <th>Review Notes</th>
+                                                <th>Uploaded</th>
+                                                <th>Reviewed By</th>
+                                                <th class="text-end">Actions</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody id="empProfileDocumentsBody"></tbody>
+                                    </table>
+                                </div>
+                                <div class="profile-info-card mt-4">
+                                    <h4 class="profile-info-card-title">Document Types</h4>
+                                    <div id="empProfileRequiredDocuments" class="profile-required-docs"></div>
+                                </div>
+                            </div>
+                        </div>
 
-                    <div class="profile-info-card mb-4">
-                        <h4 class="profile-info-card-title">Family Members</h4>
-                        <div class="table-responsive">
-                            <table class="table profile-documents-table mb-0">
-                                <thead>
-                                    <tr>
-                                        <th>Name</th>
-                                        <th>Relation</th>
-                                        <th>Mobile</th>
-                                        <th>Date of Birth</th>
-                                        <th>Status</th>
-                                        <th>Review Notes</th>
-                                        <th>Submitted</th>
-                                        <th>Reviewed By</th>
-                                        <th class="text-end">Actions</th>
-                                    </tr>
-                                </thead>
-                                <tbody id="empProfileFamilyBody"></tbody>
-                            </table>
+                        <div class="tab-pane fade" id="empProfileOtherPane" role="tabpanel">
+                            @include('profile.partials.tabs.other')
+                        </div>
+
+                        <div class="tab-pane fade" id="empProfileJourneyPane" role="tabpanel">
+                            @include('profile.partials.tabs.journey')
                         </div>
                     </div>
-
-                    <div class="profile-info-card mb-4">
-                        <h4 class="profile-info-card-title">Address</h4>
-                        <div id="empProfileAddressSection"></div>
-                    </div>
-
-                    <div class="profile-info-card">
-                        <h4 class="profile-info-card-title">Emergency Contact</h4>
-                        <div id="empProfileEmergencySection"></div>
-                    </div>
-                </div>
-            </div>
-
-            <div class="tab-pane fade" id="empProfileBankPane" role="tabpanel">
-                <div class="profile-tab-section">
-                    <div class="table-responsive">
-                        <table class="table profile-documents-table mb-0">
-                            <thead>
-                                <tr>
-                                    <th>Payment Option</th>
-                                    <th>Details</th>
-                                    <th>Status</th>
-                                    <th>Review Notes</th>
-                                    <th>Submitted</th>
-                                    <th>Reviewed By</th>
-                                    <th class="text-end">Actions</th>
-                                </tr>
-                            </thead>
-                            <tbody id="empProfileBankBody"></tbody>
-                        </table>
-                    </div>
-                </div>
-            </div>
-
-            <div class="tab-pane fade" id="empProfileCompliancesPane" role="tabpanel">
-                <div class="profile-tab-section">
-                    <dl class="profile-dl mb-4" id="empProfileComplianceFlags"></dl>
-                    <div class="table-responsive">
-                        <table class="table profile-documents-table mb-0">
-                            <thead>
-                                <tr>
-                                    <th>Field</th>
-                                    <th>Value</th>
-                                    <th>Status</th>
-                                    <th>Review Notes</th>
-                                    <th>Submitted</th>
-                                    <th>Reviewed By</th>
-                                    <th class="text-end">Actions</th>
-                                </tr>
-                            </thead>
-                            <tbody id="empProfileCompliancesBody"></tbody>
-                        </table>
-                    </div>
-                </div>
-            </div>
-
-            <div class="tab-pane fade" id="empProfileDocumentsPane" role="tabpanel">
-                <div class="profile-tab-section">
-                    <div class="table-responsive">
-                        <table class="table profile-documents-table mb-0">
-                            <thead>
-                                <tr>
-                                    <th>Document</th>
-                                    <th>Status</th>
-                                    <th>Review Notes</th>
-                                    <th>Uploaded</th>
-                                    <th>Reviewed By</th>
-                                    <th class="text-end">Actions</th>
-                                </tr>
-                            </thead>
-                            <tbody id="empProfileDocumentsBody"></tbody>
-                        </table>
-                    </div>
-                    <div class="profile-info-card mt-4">
-                        <h4 class="profile-info-card-title">Document Types</h4>
-                        <div id="empProfileRequiredDocuments" class="profile-required-docs"></div>
-                    </div>
-                </div>
-            </div>
-
-            <div class="tab-pane fade" id="empProfileOtherPane" role="tabpanel">
-                @include('profile.partials.tabs.other')
-            </div>
-
-            <div class="tab-pane fade" id="empProfileJourneyPane" role="tabpanel">
-                @include('profile.partials.tabs.journey')
-            </div>
-        </div>
+                @endif
             </div>
         </div>
     </div>
@@ -312,6 +382,11 @@
         </div>
     </div>
 
-    <script>window.EMP_PROFILE_EMPLOYEE_ID = @json($employeeId);</script>
-    @vite(['resources/js/employee-profile.js'])
+    @if (!empty($canInlineEditProfile))
+        <script>window.PROFILE_TARGET_EMPLOYEE_ID = @json($employeeId);</script>
+        @vite(['resources/js/profile.js'])
+    @else
+        <script>window.EMP_PROFILE_EMPLOYEE_ID = @json($employeeId);</script>
+        @vite(['resources/js/employee-profile.js'])
+    @endif
 @endsection

@@ -120,7 +120,8 @@ class User extends Authenticatable
 
     public function canReviewEmployeeDocuments(): bool
     {
-        return $this->hasPermission('employees.manage');
+        return $this->hasPermission('employees.manage')
+            || $this->isCompanyAdmin();
     }
 
     public function canDeleteEmployeeDocument(EmployeeDocument $document): bool
@@ -133,7 +134,32 @@ class User extends Authenticatable
             return false;
         }
 
-        return $this->canReviewEmployeeDocuments();
+        if ($this->canReviewEmployeeDocuments()) {
+            return true;
+        }
+
+        $isOwner = $this->employee && (int) $this->employee->id === (int) $document->employee_id;
+
+        return $isOwner && in_array($document->status, ['pending', 'rejected'], true);
+    }
+
+    public function canDeleteFamilyMember(EmployeeFamilyMember $member): bool
+    {
+        if ((int) $member->company_id !== (int) $this->company_id) {
+            return false;
+        }
+
+        if ($this->mustUseAdminForOwnHrReview((int) $member->employee_id)) {
+            return false;
+        }
+
+        if ($this->canEditEmployeeProfileWithoutApproval($member->employee)) {
+            return true;
+        }
+
+        $isOwner = $this->employee && (int) $this->employee->id === (int) $member->employee_id;
+
+        return $isOwner && in_array($member->status, ['pending', 'rejected'], true);
     }
 
     public function canReviewDocument(EmployeeDocument $document): bool
@@ -480,7 +506,9 @@ class User extends Authenticatable
 
     public function canRegularizeAttendance(): bool
     {
-        return $this->isCompanyAdmin() || $this->isHrManager();
+        return $this->isCompanyAdmin()
+            || $this->isHrManager()
+            || $this->hasPermission('attendance.regularize');
     }
 
     public function canApproveRegularization(): bool
@@ -495,7 +523,7 @@ class User extends Authenticatable
 
     public function canManageRegularization(): bool
     {
-        return $this->isCompanyAdmin() || $this->isHrManager();
+        return $this->isHrManager();
     }
 
     public function canReviewRegularizationRequest(AttendanceRegularizationRequest $request): bool
@@ -516,7 +544,7 @@ class User extends Authenticatable
             return $this->isCompanyAdmin();
         }
 
-        return $this->canManageRegularization();
+        return $this->isHrManager();
     }
 
     public function canCancelRegularizationRequest(AttendanceRegularizationRequest $request): bool
@@ -647,15 +675,11 @@ class User extends Authenticatable
             return $this->isCompanyAdmin();
         }
 
-        if ($this->hasPermission('leave.manage')) {
-            return true;
-        }
-
         if (! $this->hasPermission('leave.approve')) {
             return false;
         }
 
-        return $this->isReportingManagerInHierarchy($request->employee);
+        return $this->isDirectReportingManagerOfEmployee($request->employee);
     }
 
     public function canViewLeaveRequest(LeaveRequest $request): bool
@@ -670,11 +694,11 @@ class User extends Authenticatable
 
         $request->loadMissing('employee');
 
-        if ($this->canManageLeaveTypes()) {
+        if ($this->isCompanyAdmin() || $this->hasPermission('leave.manage')) {
             return true;
         }
 
-        if ($this->hasPermission('leave.manage')) {
+        if ($this->canManageLeaveTypes()) {
             return true;
         }
 
@@ -790,10 +814,6 @@ class User extends Authenticatable
 
         if ($request->employee?->user?->isHrManager() || $request->appliedBy?->isHrManager()) {
             return $this->isCompanyAdmin();
-        }
-
-        if ($this->isCompanyAdmin() || $this->isHrManager()) {
-            return true;
         }
 
         if (! $this->hasPermission('wfh.approve')) {
@@ -997,10 +1017,6 @@ class User extends Authenticatable
             return $this->isCompanyAdmin();
         }
 
-        if ($this->isCompanyAdmin() || $this->isHrManager()) {
-            return true;
-        }
-
         if (! $this->hasPermission('assets.approve')) {
             return false;
         }
@@ -1126,10 +1142,6 @@ class User extends Authenticatable
 
         if ($request->employee?->user?->isHrManager() || $request->appliedBy?->isHrManager()) {
             return $this->isCompanyAdmin();
-        }
-
-        if ($this->isCompanyAdmin() || $this->isHrManager() || $this->canManageOffboarding()) {
-            return true;
         }
 
         if (! $this->hasPermission('offboarding.approve')) {
@@ -1338,12 +1350,16 @@ class User extends Authenticatable
     public function canApproveExpenses(): bool
     {
         return $this->hasPermission('expenses.approve')
-            || $this->hasPermission('expenses.manage');
+            || $this->hasPermission('expenses.manage')
+            || $this->isCompanyAdmin()
+            || $this->isHrManager();
     }
 
     public function canViewAllExpenses(): bool
     {
-        return $this->hasPermission('expenses.manage');
+        return $this->hasPermission('expenses.manage')
+            || $this->isCompanyAdmin()
+            || $this->isHrManager();
     }
 
     public function canMarkExpensePaid(Expense $expense): bool
@@ -1460,7 +1476,8 @@ class User extends Authenticatable
     public function canApproveRequisitions(): bool
     {
         return $this->canManageHiring()
-            || $this->hasPermission('hiring.requisition.approve');
+            || $this->hasPermission('hiring.requisition.approve')
+            || $this->isCompanyAdmin();
     }
 
     public function canReviewRequisition(\App\Models\JobRequisition $requisition): bool
@@ -1526,6 +1543,18 @@ class User extends Authenticatable
     {
         if ($this->isSuperAdmin()) {
             return true;
+        }
+
+        if ($slug === 'attendance.regularize') {
+            if ($this->isCompanyAdmin() || $this->isHrManager() || $this->hasAssignedPermission('attendance.manage')) {
+                return true;
+            }
+        }
+
+        if ($slug === 'attendance.approve') {
+            if ($this->isCompanyAdmin() || $this->isHrManager()) {
+                return true;
+            }
         }
 
         if ($this->hasAssignedPermission($slug)) {

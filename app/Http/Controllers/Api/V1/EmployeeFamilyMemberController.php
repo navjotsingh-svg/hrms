@@ -60,4 +60,12 @@ class EmployeeFamilyMemberController extends Controller
             'Family member rejected. The employee can re-submit after reviewing your feedback.'
         );
     }
+
+    public function destroy(Request $request, EmployeeFamilyMember $employeeFamilyMember): JsonResponse
+    {
+        $this->familyMemberService->assertBelongsToCompany($request->user(), $employeeFamilyMember);
+        $this->familyMemberService->delete($request->user(), $employeeFamilyMember);
+
+        return $this->success(null, 'Family member deleted successfully.');
+    }
 }

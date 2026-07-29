@@ -50,7 +50,7 @@
             <dl class="profile-dl" id="profileComplianceFlags"></dl>
         </div>
 
-        <form id="profileComplianceFieldForm" class="profile-form profile-document-upload mb-4">
+        <form id="profileComplianceFieldForm" class="profile-form profile-document-upload mb-4 d-none">
             <h4 class="profile-form-section-title">Submit Compliance Field</h4>
             <p class="text-muted small" id="profileComplianceFieldUploadHint">Select a field that is not yet submitted, or one that was rejected or approved for change.</p>
             <div class="row g-3 align-items-end">
@@ -80,7 +80,15 @@
         </form>
 
         <div class="profile-info-card">
-            <h4 class="profile-info-card-title">My Compliance Fields</h4>
+            <div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-3">
+                <h4 class="profile-info-card-title mb-0">My Compliance Fields</h4>
+                <div class="d-flex flex-wrap align-items-center gap-2">
+                    <button type="button" class="table-action-btn table-action-btn--edit d-none" id="profileComplianceEditBtn" title="Edit compliance fields" aria-label="Edit compliance fields">
+                        @include('partials.icons.edit')
+                    </button>
+                    <button type="button" class="btn btn-sm btn-primary d-none" id="profileAddComplianceFieldBtn">+ Add Field</button>
+                </div>
+            </div>
             <div class="table-responsive">
                 <table class="table profile-documents-table mb-0">
                     <thead>

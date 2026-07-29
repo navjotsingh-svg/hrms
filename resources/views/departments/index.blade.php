@@ -38,7 +38,13 @@
             </div>
         </div>
 
-        @include('partials.list-pagination-header', ['perPageId' => 'departmentsPerPage'])
+        @include('partials.list-pagination-top', [
+    'infoId' => 'departmentsPaginationInfo',
+    'listId' => 'departmentsPaginationList',
+    'perPageId' => 'departmentsPerPage',
+    'wrapId' => 'departmentsPagination',
+    'ariaLabel' => 'Departments pagination',
+])
         <div class="table-responsive">
             <table class="companies-table table mb-0">
                 <thead>

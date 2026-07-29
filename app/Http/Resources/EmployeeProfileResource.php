@@ -56,6 +56,7 @@ class EmployeeProfileResource extends JsonResource
             'emergency_contact_phone' => $this->emergency_contact_phone,
             'emergency_contact_relation' => $this->emergency_contact_relation,
             'emergency_contact_family_member_id' => $this->emergency_contact_family_member_id,
+            'emergency_contacts' => $this->emergency_contacts ?? [],
             'family_members' => EmployeeFamilyMemberResource::collection($this->whenLoaded('familyMembers')),
             'personal_sections' => EmployeePersonalSectionResource::collection($this->whenLoaded('personalSections')),
             'department' => new DepartmentResource($this->whenLoaded('department')),

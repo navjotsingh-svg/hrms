@@ -30,6 +30,17 @@ class HiringOffer extends Model
         'sent_at',
         'responded_at',
         'created_by_user_id',
+        'access_token',
+        'token_expires_at',
+        'pdf_path',
+        'signed_pdf_path',
+        'signature_name',
+        'signature_image_path',
+        'signed_at',
+        'signature_ip',
+        'signature_meta',
+        'decline_reason',
+        'otp_verified_at',
     ];
 
     protected function casts(): array
@@ -39,6 +50,10 @@ class HiringOffer extends Model
             'joining_date' => 'date',
             'sent_at' => 'datetime',
             'responded_at' => 'datetime',
+            'token_expires_at' => 'datetime',
+            'signed_at' => 'datetime',
+            'otp_verified_at' => 'datetime',
+            'signature_meta' => 'array',
         ];
     }
 

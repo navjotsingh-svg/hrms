@@ -203,11 +203,11 @@ document.addEventListener('DOMContentLoaded', async () => {
             const category = catalog.category ? catalog.category.replace(/_/g, ' ') : 'overview';
             return `
                 <div class="col-lg-6">
-                    <div class="content-card h-100">
+                    <div class="content-card h-100 home-analytics-chart-card">
                         <div class="content-card-body">
                             <div class="d-flex flex-wrap align-items-start justify-content-between gap-2 mb-2">
                                 <div>
-                                    <span class="badge text-bg-light text-uppercase mb-2">${category}</span>
+                                    <span class="badge home-analytics-category-badge text-uppercase mb-2">${category}</span>
                                     <h2 class="h6 mb-1">${catalog.label || widget.key}</h2>
                                     <p class="text-muted small mb-0">${catalog.description || ''}</p>
                                 </div>

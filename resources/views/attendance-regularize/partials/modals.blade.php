@@ -6,8 +6,8 @@
                     <div>
                         <h5 class="modal-title mb-1" id="regularizeModalTitle">Attendance Request</h5>
                         <div class="regularize-modal-timezone small text-muted" id="regularizeModalTimezone">—</div>
-                    </div>
-                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                        </div>
                 </div>
                 <div class="modal-body pt-3">
                     <input type="hidden" id="regularize_employee_id" name="employee_id">
@@ -23,22 +23,6 @@
                         <ul class="regularize-dates-list list-unstyled mb-0" id="regularizeSelectedDatesList">
                             <li class="regularize-dates-empty text-muted small py-3 px-3">Add at least one date to continue.</li>
                         </ul>
-                    </div>
-                    <div class="row g-3 mb-3" id="regularizeOriginalTimesWrap">
-                        <div class="col-12">
-                            <div class="small text-muted mb-1">Current login / logout on record</div>
-                            <div class="fw-semibold" id="regularizeOriginalTimes">—</div>
-                        </div>
-                    </div>
-                    <div class="row g-3 mb-3">
-                        <div class="col-md-6">
-                            <label for="punch_in_time" class="form-label">New login (punch in)</label>
-                            <input type="time" class="form-control" id="punch_in_time" name="punch_in_time" required>
-                        </div>
-                        <div class="col-md-6">
-                            <label for="punch_out_time" class="form-label">New logout (punch out)</label>
-                            <input type="time" class="form-control" id="punch_out_time" name="punch_out_time" placeholder="Required if logout was missed">
-                        </div>
                     </div>
                     <div class="mb-0">
                         <label for="reason" class="form-label">Reason (shared for all selected days)</label>

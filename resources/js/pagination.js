@@ -2,6 +2,43 @@ export const DEFAULT_PER_PAGE = 10;
 
 export const PER_PAGE_OPTIONS = [10, 25, 50];
 
+export const getPairedPaginationElement = (element, suffix = 'Top') => {
+    if (!element?.id) {
+        return null;
+    }
+
+    return document.getElementById(`${element.id}${suffix}`);
+};
+
+const mirrorPaginationElement = (primary, suffix = 'Top') => {
+    const paired = getPairedPaginationElement(primary, suffix);
+
+    if (!paired || !primary) {
+        return;
+    }
+
+    if (primary.tagName === 'UL') {
+        paired.innerHTML = primary.innerHTML;
+        return;
+    }
+
+    paired.textContent = primary.textContent;
+};
+
+export const setPaginationWrapVisible = (wrapEl, visible) => {
+    if (!wrapEl) {
+        return;
+    }
+
+    wrapEl.classList.toggle('d-none', !visible);
+
+    const topWrap = getPairedPaginationElement(wrapEl);
+
+    if (topWrap) {
+        topWrap.classList.toggle('d-none', !visible);
+    }
+};
+
 export const syncPerPageSelect = (selectEl, pagination, fallback = DEFAULT_PER_PAGE) => {
     if (!selectEl) {
         return;
@@ -115,6 +152,7 @@ export const renderListPagination = ({
 }) => {
     if (infoEl) {
         infoEl.textContent = formatPaginationInfo(pagination, itemLabel, emptyMessage);
+        mirrorPaginationElement(infoEl);
     }
 
     syncPerPageSelect(perPageSelectEl, pagination);
@@ -125,6 +163,7 @@ export const renderListPagination = ({
 
     if (!pagination?.total || pagination.last_page <= 1) {
         listEl.innerHTML = '';
+        mirrorPaginationElement(listEl);
         return;
     }
 
@@ -153,9 +192,11 @@ export const renderListPagination = ({
             </button>
         </li>
     `;
+
+    mirrorPaginationElement(listEl);
 };
 
-export const bindPagination = (containerEl, onPage, dataAttr = 'data-page') => {
+const bindPaginationContainer = (containerEl, onPage, dataAttr = 'data-page') => {
     containerEl?.addEventListener('click', (event) => {
         const button = event.target.closest(`[${dataAttr}]`);
 
@@ -169,6 +210,11 @@ export const bindPagination = (containerEl, onPage, dataAttr = 'data-page') => {
             onPage(page);
         }
     });
+};
+
+export const bindPagination = (containerEl, onPage, dataAttr = 'data-page') => {
+    bindPaginationContainer(containerEl, onPage, dataAttr);
+    bindPaginationContainer(getPairedPaginationElement(containerEl), onPage, dataAttr);
 };
 
 export const getSerialNumber = (index, pagination) => {

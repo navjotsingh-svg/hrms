@@ -19,7 +19,12 @@
                 </div>
             </div>
         </div>
-        @include('partials.list-pagination-header', ['perPageId' => 'calibrationPerPage'])
+        @include('partials.list-pagination-top', [
+    'infoId' => 'calibrationPaginationInfo',
+    'listId' => 'calibrationPaginationList',
+    'perPageId' => 'calibrationPerPage',
+    'ariaLabel' => 'Calibration pagination',
+])
         <div class="table-responsive">
             <table class="companies-table table mb-0">
                 <thead>
@@ -86,6 +91,9 @@
                     <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
                 </div>
                 <div class="modal-body">
+                    <div id="calibrationFinalizedNotice" class="alert alert-success d-none mb-3" role="status">
+                        This session is finalized. Calibrated ratings have been applied to the linked performance reviews and can no longer be edited here.
+                    </div>
                     <div class="d-flex justify-content-between align-items-center mb-3">
                         <p class="text-muted mb-0" id="calibrationDetailMeta"></p>
                         <button type="button" class="btn btn-success btn-sm d-none" id="finalizeCalibrationBtn">Finalize Session</button>

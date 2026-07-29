@@ -37,7 +37,12 @@
                 <h2 class="h6 mb-0">Recognition wall</h2>
                 <button type="button" class="btn btn-outline-secondary btn-sm" id="praiseRefreshBtn">Refresh</button>
             </div>
-            @include('partials.list-pagination-header', ['perPageId' => 'praisePerPage'])
+            @include('partials.list-pagination-top', [
+    'infoId' => 'praisePaginationInfo',
+    'listId' => 'praisePaginationList',
+    'perPageId' => 'praisePerPage',
+    'ariaLabel' => 'Praise pagination',
+])
             <div class="content-card-body" id="praiseFeed">
                 <div class="text-center text-muted py-5">Loading praise...</div>
             </div>

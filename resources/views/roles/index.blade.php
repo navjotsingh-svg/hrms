@@ -16,7 +16,13 @@
     <div id="rolesAlert" class="alert alert-dismissible fade show d-none" role="alert"></div>
 
     <div class="content-card companies-list-card">
-        @include('partials.list-pagination-header', ['perPageId' => 'rolesPerPage'])
+        @include('partials.list-pagination-top', [
+    'infoId' => 'rolesPaginationInfo',
+    'listId' => 'rolesPaginationList',
+    'perPageId' => 'rolesPerPage',
+    'wrapId' => 'rolesPagination',
+    'ariaLabel' => 'Roles pagination',
+])
         <div class="table-responsive">
             <table class="companies-table table mb-0">
                 <thead>

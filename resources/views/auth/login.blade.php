@@ -8,7 +8,9 @@
         <p class="text-muted small mb-0">Sign in to access your HRMS dashboard</p>
     </div>
 
-    <div id="loginAlert" class="alert alert-danger py-2 small mb-4 d-none" role="alert"></div>
+    <div id="loginAlert" class="alert alert-danger py-2 small mb-4 {{ session('login_error') ? '' : 'd-none' }}" role="alert">
+        {{ session('login_error') }}
+    </div>
 
     <form id="loginForm" autocomplete="on" onsubmit="event.preventDefault(); return false;">
         <div class="mb-3">

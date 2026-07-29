@@ -65,7 +65,13 @@
             </div>
         </div>
 
-        @include('partials.list-pagination-header', ['perPageId' => 'employeesPerPage'])
+        @include('partials.list-pagination-top', [
+    'infoId' => 'employeesPaginationInfo',
+    'listId' => 'employeesPaginationList',
+    'perPageId' => 'employeesPerPage',
+    'wrapId' => 'employeesPagination',
+    'ariaLabel' => 'Employees pagination',
+])
 
         <div id="employeesListContainer">
             <div id="employeesTableView" class="employees-table-view">

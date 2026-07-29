@@ -31,6 +31,7 @@ class AttendanceService
         private EmployeeAccessService $employeeAccessService,
         private FaceVerificationService $faceVerificationService,
         private AttendanceNetworkService $attendanceNetworkService,
+        private AttendanceSettingsService $attendanceSettingsService,
     ) {}
 
     public function canMarkAttendance(User $user): bool
@@ -168,15 +169,20 @@ class AttendanceService
             'profile_photo_url' => $employee->profilePhotoUrl(),
             'face_match_threshold' => $this->faceVerificationService->thresholdPercent((int) $employee->company_id),
             'require_face_match' => $this->faceVerificationService->requiresFaceMatch((int) $employee->company_id),
-            'requires_profile_photo' => $this->faceVerificationService->requiresFaceMatch((int) $employee->company_id),
+            'require_punch_photo' => $this->attendanceSettingsService->requiresPunchPhoto((int) $employee->company_id),
+            'requires_profile_photo' => $this->faceVerificationService->requiresFaceMatch((int) $employee->company_id)
+                && $this->attendanceSettingsService->requiresPunchPhoto((int) $employee->company_id),
             'has_profile_photo' => filled($employee->profile_photo_path),
             'has_face_reference' => filled($employee->profile_face_descriptor),
+            'profile_face_descriptor' => is_array($employee->profile_face_descriptor)
+                ? array_map('floatval', $employee->profile_face_descriptor)
+                : null,
         ];
     }
 
     public function punch(
         User $user,
-        UploadedFile $selfie,
+        ?UploadedFile $selfie,
         float $latitude,
         float $longitude,
         ?string $locationName = null,
@@ -227,21 +233,37 @@ class AttendanceService
 
         $this->attendanceNetworkService->assertIpAllowed((int) $employee->company_id, $ipAddress);
 
-        $verifiedMatchScore = $this->faceVerificationService->assertPunchAllowed(
-            $employee,
-            $faceMatchScore,
-            $selfieFaceDescriptor,
-        );
+        $requiresPhoto = $this->attendanceSettingsService->requiresPunchPhoto((int) $employee->company_id);
 
-        $relativeDirectory = AttendancePunch::PUBLIC_UPLOAD_DIR."/{$employee->company_id}/{$employee->id}";
-        $selfiePath = $this->imageCompressor->compressAndSave(
-            $selfie,
-            public_path($relativeDirectory),
-            $relativeDirectory,
-            480,
-            70,
-            true,
-        );
+        if ($requiresPhoto && ! $selfie) {
+            throw ValidationException::withMessages([
+                'selfie' => ['A punch photo is required.'],
+            ]);
+        }
+
+        $verifiedMatchScore = null;
+
+        if ($requiresPhoto && $selfie) {
+            $verifiedMatchScore = $this->faceVerificationService->assertPunchAllowed(
+                $employee,
+                $faceMatchScore,
+                $selfieFaceDescriptor,
+            );
+        }
+
+        $selfiePath = null;
+
+        if ($selfie) {
+            $relativeDirectory = AttendancePunch::PUBLIC_UPLOAD_DIR."/{$employee->company_id}/{$employee->id}";
+            $selfiePath = $this->imageCompressor->compressAndSave(
+                $selfie,
+                public_path($relativeDirectory),
+                $relativeDirectory,
+                480,
+                70,
+                true,
+            );
+        }
 
         $locationName = trim((string) $locationName);
         $locationName = $locationName !== ''

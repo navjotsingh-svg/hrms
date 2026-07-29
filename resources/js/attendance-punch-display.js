@@ -9,7 +9,7 @@ const escapeHtml = (value) => String(value ?? '')
 const hasFaceVerification = (punch) => punch.has_face_verification === true
     || (punch.face_match_score !== null && punch.face_match_score !== undefined && punch.face_match_score !== '');
 
-const formatFaceMatch = (score, threshold = 80) => {
+const formatFaceMatch = (score, threshold = 90) => {
     if (score === null || score === undefined || score === '') {
         return '—';
     }
@@ -25,7 +25,7 @@ const formatFaceMatch = (score, threshold = 80) => {
     return `<span class="${className} fw-semibold">${numeric}%</span>`;
 };
 
-export const renderAttendancePunchVerification = (punch, { compact = false, threshold = 80 } = {}) => {
+export const renderAttendancePunchVerification = (punch, { compact = false, threshold = 90 } = {}) => {
     const ip = punch.ip_address ? escapeHtml(punch.ip_address) : '—';
     const mac = punch.mac_address ? escapeHtml(punch.mac_address) : '—';
     const showFaceMatch = hasFaceVerification(punch);
@@ -90,7 +90,7 @@ export const renderAttendancePunchVerification = (punch, { compact = false, thre
 export const renderAttendancePunchCard = (punch, {
     formatDateTime = (value) => renderDateTimeStack(value),
     includeSelfie = true,
-    threshold = 80,
+    threshold = 90,
 } = {}) => {
     const selfieBlock = includeSelfie && punch.selfie_url
         ? `<a href="${escapeHtml(punch.selfie_url)}" target="_blank" rel="noopener" class="small">Open selfie</a>`

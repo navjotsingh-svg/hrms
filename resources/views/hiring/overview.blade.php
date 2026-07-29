@@ -13,8 +13,8 @@
         <div class="col-md-3">
             <div class="content-card h-100">
                 <div class="content-card-body">
-                    <div class="text-muted small">Pending Requisitions</div>
-                    <div class="fs-3 fw-semibold" id="statPendingRequisitions">—</div>
+                    <div class="text-muted small">Draft Jobs</div>
+                    <div class="fs-3 fw-semibold" id="statDraftJobs">—</div>
                 </div>
             </div>
         </div>

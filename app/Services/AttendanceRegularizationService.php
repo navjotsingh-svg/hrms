@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Models\AttendancePunch;
 use App\Models\AttendanceRegularizationRequest;
+use App\Models\Company;
 use App\Models\Employee;
 use App\Models\User;
 use Carbon\Carbon;
@@ -215,7 +216,62 @@ class AttendanceRegularizationService
 
     public function createBulk(User $user, array $data): array
     {
+        $employee = $this->resolveTargetEmployee(
+            $user,
+            isset($data['employee_id']) ? (int) $data['employee_id'] : null,
+        );
+
+        if (! empty($data['entries'])) {
+            $entries = collect($data['entries'])
+                ->map(fn (array $entry) => [
+                    'date' => $entry['date'],
+                    'punch_in_time' => $entry['punch_in_time'] ?? null,
+                    'punch_out_time' => $entry['punch_out_time'] ?? null,
+                ])
+                ->unique('date')
+                ->values()
+                ->all();
+
+            $this->assertCanSubmitBulk($user, $employee, $entries);
+
+            $batchId = (string) Str::uuid();
+
+            $requests = DB::transaction(function () use ($user, $data, $entries, $batchId, $employee) {
+                return array_map(
+                    fn (array $entry) => $this->createRequest($user, [
+                        'employee_id' => $employee->id,
+                        'attendance_date' => $entry['date'],
+                        'punch_in_time' => $entry['punch_in_time'],
+                        'punch_out_time' => $entry['punch_out_time'],
+                        'reason' => $data['reason'],
+                        'batch_id' => $batchId,
+                    ]),
+                    $entries,
+                );
+            });
+
+            if ($requests !== []) {
+                $this->workflowNotificationService->notifyRegularizationSubmitted(
+                    $requests[0],
+                    $user,
+                    count($requests),
+                );
+            }
+
+            return $requests;
+        }
+
         $dates = array_values(array_unique($data['dates'] ?? []));
+        $this->assertCanSubmitBulk(
+            $user,
+            $employee,
+            array_map(fn (string $date) => [
+                'date' => $date,
+                'punch_in_time' => $data['punch_in_time'] ?? null,
+                'punch_out_time' => $data['punch_out_time'] ?? null,
+            ], $dates),
+        );
+
         $batchId = (string) Str::uuid();
 
         $requests = DB::transaction(function () use ($user, $data, $dates, $batchId) {
@@ -238,6 +294,42 @@ class AttendanceRegularizationService
         }
 
         return $requests;
+    }
+
+    /** @param  array<int, array{date: string, punch_in_time?: ?string, punch_out_time?: ?string}>  $entries */
+    private function assertCanSubmitBulk(User $user, Employee $employee, array $entries): void
+    {
+        if ($entries === []) {
+            throw ValidationException::withMessages([
+                'dates' => 'Add at least one date before submitting.',
+            ]);
+        }
+
+        $maxDays = $this->regularizationSettings((int) $employee->company_id)['max_requests_per_month'];
+
+        if ($maxDays !== null) {
+            $entriesByMonth = collect($entries)->groupBy(
+                fn (array $entry) => Carbon::parse($entry['date'])->format('Y-m'),
+            );
+
+            foreach ($entriesByMonth as $month => $monthEntries) {
+                $usage = $this->regularizationDayUsageForMonth((int) $employee->id, $month);
+                $newDayCount = $monthEntries->count();
+
+                if (($usage['total'] + $newDayCount) > $maxDays) {
+                    $remaining = max(0, $maxDays - $usage['total']);
+                    $monthLabel = $this->formatMonthLabel($month);
+
+                    throw ValidationException::withMessages([
+                        'dates' => "You can regularize up to {$maxDays} day(s) per month for {$monthLabel}. "
+                            . "Already used: {$usage['approved']} approved, {$usage['pending']} pending "
+                            . "({$usage['total']}/{$maxDays}). "
+                            . "You selected {$newDayCount} day(s) for {$monthLabel}"
+                            . ($remaining > 0 ? "; only {$remaining} more can be added." : '.'),
+                    ]);
+                }
+            }
+        }
     }
 
     private function createRequest(User $user, array $data): AttendanceRegularizationRequest
@@ -485,6 +577,11 @@ class AttendanceRegularizationService
             ->keyBy(fn (AttendanceRegularizationRequest $request) => $request->attendance_date->toDateString());
     }
 
+    public function isEnabledForCompany(int $companyId): bool
+    {
+        return $this->regularizationSettings($companyId)['enabled'];
+    }
+
     public function canRequestForDate(User $user, Employee $employee, string $date): bool
     {
         try {
@@ -515,15 +612,53 @@ class AttendanceRegularizationService
         $employee = $this->resolveTargetEmployee($user, $employeeId);
         $employee->loadMissing('shift');
 
+        if (! $this->isEnabledForCompany((int) $employee->company_id)) {
+            return [
+                'employee' => $this->formatEmployeeSummary($employee),
+                'dates' => [],
+                'pending_requests' => [],
+                'month' => $month ?: now()->format('Y-m'),
+                'month_label' => $this->formatMonthLabel($month ?: now()->format('Y-m')),
+                'policy' => [
+                    'enabled' => false,
+                    'summary' => 'Attendance regularization is disabled for your company.',
+                ],
+            ];
+        }
+
         $pendingRequests = $this->pendingRequestsForEmployee($user, $employee);
 
         if (! $onlyDate) {
+            $policy = $this->regularizationSettings((int) $employee->company_id);
+            $policyMonth = $month && preg_match('/^\d{4}-\d{2}$/', $month) ? $month : now()->format('Y-m');
+            $usage = $this->regularizationDayUsageForMonth((int) $employee->id, $policyMonth);
+            $maxDays = $policy['max_requests_per_month'];
+            $remainingDays = $maxDays === null ? null : max(0, $maxDays - $usage['total']);
+
             return [
                 'employee' => $this->formatEmployeeSummary($employee),
                 'dates' => $this->collectEligibleDatesForEmployee($user, $employee, $month),
                 'pending_requests' => $pendingRequests,
-                'month' => $month ?: now()->format('Y-m'),
-                'month_label' => $this->formatMonthLabel($month ?: now()->format('Y-m')),
+                'month' => $policyMonth,
+                'month_label' => $this->formatMonthLabel($policyMonth),
+                'policy' => [
+                    'enabled' => true,
+                    'month' => $policyMonth,
+                    'month_label' => $this->formatMonthLabel($policyMonth),
+                    'previous_month_cutoff_day' => $policy['previous_month_cutoff_day'],
+                    'max_requests_per_month' => $maxDays,
+                    'max_days_per_month' => $maxDays,
+                    'block_current_day_until_complete' => $policy['block_current_day_until_complete'],
+                    'days_this_month' => $usage['total'],
+                    'pending_days_this_month' => $usage['pending'],
+                    'approved_days_this_month' => $usage['approved'],
+                    'requests_this_month' => $usage['total'],
+                    'pending_requests_this_month' => $usage['pending'],
+                    'approved_requests_this_month' => $usage['approved'],
+                    'remaining_days' => $remainingDays,
+                    'remaining_requests' => $remainingDays,
+                    'summary' => $this->regularizationPolicySummary($policy, $usage, $maxDays, $policyMonth),
+                ],
             ];
         }
 
@@ -554,7 +689,8 @@ class AttendanceRegularizationService
         } elseif (! $this->pendingForEmployeeDate($employee, $dateString)
             && ! $this->hasApprovedRegularizationForDate((int) $employee->id, $dateString)
             && in_array($dayMeta['status'], self::REGULARIZABLE_STATUSES, true)
-            && $this->canRequestForDate($user, $employee, $dateString)) {
+            && $this->canRequestForDate($user, $employee, $dateString)
+            && $this->isCurrentDayRegularizable($employee, $dateString, $dayMeta)) {
             $dates[] = $this->formatEligibleDate($dateString, $date, $dayMeta, $employee);
         }
 
@@ -677,6 +813,11 @@ class AttendanceRegularizationService
         while ($current->lte($rangeEnd)) {
             $dateString = $current->toDateString();
 
+            if (! $this->isDateWithinRegularizationWindow((int) $employee->company_id, $dateString)) {
+                $current->addDay();
+                continue;
+            }
+
             if (! $this->pendingForEmployeeDate($employee, $dateString)) {
                 $approvedRequest = $this->latestApprovedForDate((int) $employee->id, $dateString);
 
@@ -686,7 +827,8 @@ class AttendanceRegularizationService
                     $dayMeta = $this->attendanceService->dayStatusForEmployee($employee, $dateString);
 
                     if (in_array($dayMeta['status'], self::REGULARIZABLE_STATUSES, true)
-                        && $this->canRequestForDate($user, $employee, $dateString)) {
+                        && $this->canRequestForDate($user, $employee, $dateString)
+                        && $this->isCurrentDayRegularizable($employee, $dateString, $dayMeta)) {
                         $eligible[$dateString] = $this->formatEligibleDate(
                             $dateString,
                             $current->copy(),
@@ -830,16 +972,18 @@ class AttendanceRegularizationService
 
     private function assertCanRequestForDate(User $user, Employee $employee, string $date): void
     {
+        if (! $this->isEnabledForCompany((int) $employee->company_id)) {
+            throw ValidationException::withMessages([
+                'attendance_date' => 'Attendance regularization is disabled for your company.',
+            ]);
+        }
+
         if ((int) $employee->company_id !== (int) $user->company_id) {
             throw new AccessDeniedHttpException('Employee not found in your company.');
         }
 
         if (! $user->canRegularizeAttendance()) {
             throw new AccessDeniedHttpException('You are not allowed to request attendance regularization.');
-        }
-
-        if (! $user->canManageRegularization()) {
-            throw new AccessDeniedHttpException('Only HR and company admin can submit regularization requests.');
         }
 
         if ($date > now()->toDateString()) {
@@ -851,6 +995,15 @@ class AttendanceRegularizationService
         if ($this->portalStartService->isBeforeAttendanceTracking($employee, $date)) {
             throw ValidationException::withMessages([
                 'attendance_date' => 'Attendance tracking had not started on this date.',
+            ]);
+        }
+
+        if (! $this->isDateWithinRegularizationWindow((int) $employee->company_id, $date)) {
+            $settings = $this->regularizationSettings((int) $employee->company_id);
+            $cutoffDay = $settings['previous_month_cutoff_day'];
+
+            throw ValidationException::withMessages([
+                'attendance_date' => "Regularization for this date is closed. Previous-month dates can only be regularized until day {$cutoffDay} of the current month.",
             ]);
         }
 
@@ -878,6 +1031,10 @@ class AttendanceRegularizationService
         $approvedRequest = $this->latestApprovedForDate((int) $employee->id, $date);
         $isUpdateRequest = $approvedRequest !== null;
         $dayMeta = $this->attendanceService->dayStatusForEmployee($employee, $date);
+
+        if (! $isUpdateRequest) {
+            $this->assertCurrentDayHoursComplete($employee, $date, $dayMeta);
+        }
 
         if ($isUpdateRequest) {
             if ($dayMeta['status'] === 'on_leave') {
@@ -1164,5 +1321,157 @@ class AttendanceRegularizationService
         if (! $user->canReviewRegularizationRequest($request)) {
             throw new AccessDeniedHttpException('You are not allowed to review this request.');
         }
+    }
+
+    /** @return array{enabled: bool, previous_month_cutoff_day: int, max_requests_per_month: ?int, block_current_day_until_complete: bool} */
+    private function regularizationSettings(int $companyId): array
+    {
+        $company = Company::query()->whereKey($companyId)->first();
+        $defaults = config('hrms.attendance.regularization', []);
+
+        return [
+            'enabled' => (bool) (
+                $company?->attendance_regularization_enabled
+                ?? ($defaults['enabled'] ?? true)
+            ),
+            'previous_month_cutoff_day' => max(1, min(28, (int) (
+                $company?->attendance_regularization_previous_month_cutoff_day
+                ?? ($defaults['previous_month_cutoff_day'] ?? 2)
+            ))),
+            'max_requests_per_month' => $company?->attendance_regularization_max_requests_per_month
+                ?? ($defaults['max_requests_per_month'] ?? null),
+            'block_current_day_until_complete' => (bool) (
+                $company?->attendance_regularization_block_current_day_until_complete
+                ?? ($defaults['block_current_day_until_complete'] ?? true)
+            ),
+        ];
+    }
+
+    private function isDateWithinRegularizationWindow(int $companyId, string $date): bool
+    {
+        $dateCarbon = Carbon::parse($date)->startOfDay();
+        $today = now()->startOfDay();
+
+        if ($dateCarbon->gt($today)) {
+            return false;
+        }
+
+        $currentMonthStart = $today->copy()->startOfMonth();
+        $previousMonthStart = $currentMonthStart->copy()->subMonth()->startOfMonth();
+
+        if ($dateCarbon->gte($currentMonthStart)) {
+            return true;
+        }
+
+        if ($dateCarbon->lt($previousMonthStart)) {
+            return false;
+        }
+
+        $cutoffDay = $this->regularizationSettings($companyId)['previous_month_cutoff_day'];
+        $cutoffDate = $currentMonthStart->copy()->addDays($cutoffDay - 1);
+
+        return $today->lte($cutoffDate);
+    }
+
+    /** @param  array<string, mixed>  $dayMeta */
+    private function assertCurrentDayHoursComplete(Employee $employee, string $date, array $dayMeta): void
+    {
+        if (! $this->isCurrentDayRegularizable($employee, $date, $dayMeta)) {
+            $worked = (int) ($dayMeta['worked_minutes'] ?? 0);
+            $required = (int) ($dayMeta['required_minutes'] ?? 0);
+
+            throw ValidationException::withMessages([
+                'attendance_date' => "Today's attendance cannot be regularized until required working hours are completed ({$this->formatMinutes($worked)} of {$this->formatMinutes($required)}).",
+            ]);
+        }
+    }
+
+    /** @param  array<string, mixed>  $dayMeta */
+    private function isCurrentDayRegularizable(Employee $employee, string $date, array $dayMeta): bool
+    {
+        $settings = $this->regularizationSettings((int) $employee->company_id);
+
+        if (! $settings['block_current_day_until_complete']) {
+            return true;
+        }
+
+        if ($date !== now()->toDateString()) {
+            return true;
+        }
+
+        $worked = (int) ($dayMeta['worked_minutes'] ?? 0);
+        $required = (int) ($dayMeta['required_minutes'] ?? 0);
+
+        return $required <= 0 || $worked >= $required;
+    }
+
+    /** @return array{total: int, pending: int, approved: int} */
+    private function regularizationDayUsageForMonth(int $employeeId, string $month): array
+    {
+        if (! preg_match('/^\d{4}-\d{2}$/', $month)) {
+            $month = now()->format('Y-m');
+        }
+
+        $monthStart = Carbon::createFromFormat('Y-m', $month)->startOfMonth();
+        $monthEnd = Carbon::createFromFormat('Y-m', $month)->endOfMonth();
+
+        $requests = AttendanceRegularizationRequest::query()
+            ->where('employee_id', $employeeId)
+            ->whereIn('status', [
+                AttendanceRegularizationRequest::STATUS_PENDING,
+                AttendanceRegularizationRequest::STATUS_APPROVED,
+            ])
+            ->whereBetween('attendance_date', [$monthStart->toDateString(), $monthEnd->toDateString()])
+            ->get(['status']);
+
+        $pending = $requests
+            ->where('status', AttendanceRegularizationRequest::STATUS_PENDING)
+            ->count();
+        $approved = $requests
+            ->where('status', AttendanceRegularizationRequest::STATUS_APPROVED)
+            ->count();
+
+        return [
+            'total' => $pending + $approved,
+            'pending' => $pending,
+            'approved' => $approved,
+        ];
+    }
+
+    private function regularizationDayUsageThisMonth(int $employeeId, ?Carbon $reference = null): array
+    {
+        $reference = ($reference ?: now())->copy()->startOfMonth();
+
+        return $this->regularizationDayUsageForMonth($employeeId, $reference->format('Y-m'));
+    }
+
+    private function regularizationRequestCountThisMonth(int $employeeId, ?Carbon $reference = null): int
+    {
+        return $this->regularizationDayUsageThisMonth($employeeId, $reference)['total'];
+    }
+
+    /** @param  array{total: int, pending: int, approved: int}  $usage */
+    private function regularizationPolicySummary(array $policy, array $usage, ?int $maxDays, ?string $month = null): string
+    {
+        if (! ($policy['enabled'] ?? true)) {
+            return 'Attendance regularization is disabled for your company.';
+        }
+
+        $parts = [
+            "Previous month dates can be regularized until day {$policy['previous_month_cutoff_day']} of the current month.",
+        ];
+
+        if ($policy['block_current_day_until_complete']) {
+            $parts[] = 'Today can only be regularized after required working hours are completed.';
+        }
+
+        if ($maxDays !== null) {
+            $remaining = max(0, $maxDays - $usage['total']);
+            $monthLabel = $this->formatMonthLabel($month ?: now()->format('Y-m'));
+            $parts[] = "Monthly day limit for {$monthLabel}: {$usage['approved']} approved, {$usage['pending']} pending "
+                . "({$usage['total']}/{$maxDays} days used, {$remaining} remaining).";
+        }
+
+        return implode(' ', $parts);
     }
 }

@@ -1,23 +1,48 @@
 <?php
 
+
+
 namespace App\Http\Controllers;
+
+
+
+use Illuminate\Http\RedirectResponse;
 
 use Illuminate\View\View;
 
+
+
 class HomeController extends Controller
+
 {
+
     public function index(): View
+
     {
+
         return view('dashboard');
+
     }
 
-    public function dashboard(): View
+
+
+    public function dashboard(): RedirectResponse
+
     {
-        return view('home.dashboard');
+
+        return redirect()->to(route('web.home.index').'#home-analytics');
+
     }
 
-    public function moments(): View
+
+
+    public function moments(): RedirectResponse
+
     {
-        return view('home.moments');
+
+        return redirect()->to(route('web.home.index').'#home-moments');
+
     }
+
 }
+

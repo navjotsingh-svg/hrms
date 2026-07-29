@@ -1,10 +1,9 @@
 import api, { getErrorMessage } from './api';
 import { initFilterAutocomplete } from './filter-autocomplete';
 import { consumePageFlashMessage } from './form-utils';
+import { bindPagination, bindPerPageSelect, getSerialNumber, readPerPage, renderListPagination } from './pagination';
 
 const webRoutes = () => window.HRMS_WEB_ROUTES || {};
-const DEFAULT_PER_PAGE = 10;
-const PER_PAGE_OPTIONS = [10, 25, 50];
 
 const cellIcons = {
     email: `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="currentColor" viewBox="0 0 16 16" aria-hidden="true"><path d="M0 4a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H2a2 2 0 0 1-2-2zm2-1a1 1 0 0 0-1 1v.217l7 4.2 7-4.2V4a1 1 0 0 0-1-1zm13 2.383-4.708 2.825L15 11.105zm-.034 6.876-5.64-3.471L8 9.583l-1.326-.795-5.64 3.47A1 1 0 0 0 2 13h12a1 1 0 0 0 .966-.741M1 11.105l4.708-2.897L1 5.383z"/></svg>`,
@@ -46,7 +45,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     const routes = webRoutes();
 
     let currentPage = 1;
-    let currentPerPage = DEFAULT_PER_PAGE;
+    let currentPerPage = readPerPage(perPageSelect);
     let isLoading = false;
     let hasLoadedOnce = false;
     let loadRequestId = 0;
@@ -207,13 +206,6 @@ document.addEventListener('DOMContentLoaded', async () => {
         `;
     };
 
-    const getSerialNumber = (index, pagination) => {
-        const currentPageNumber = pagination?.current_page || 1;
-        const perPage = pagination?.per_page || 10;
-
-        return ((currentPageNumber - 1) * perPage) + index + 1;
-    };
-
     const renderRow = (company, index, pagination) => `
         <tr class="companies-data-row">
             <td class="companies-td-serial">
@@ -262,110 +254,17 @@ document.addEventListener('DOMContentLoaded', async () => {
         `;
     };
 
-    const renderPaginationInfo = (pagination) => {
-        if (!pagination?.total) {
-            return 'No companies found';
-        }
-
-        return `Showing ${pagination.from || 0} to ${pagination.to || 0} of ${pagination.total} companies`;
-    };
-
-    const renderPageButton = (page, currentPage) => `
-        <li class="page-item ${page === currentPage ? 'active' : ''}">
-            <button
-                type="button"
-                class="page-link"
-                data-page="${page}"
-                ${page === currentPage ? 'aria-current="page"' : ''}
-            >
-                ${page}
-            </button>
-        </li>
-    `;
-
-    const renderEllipsis = () => `
-        <li class="page-item disabled">
-            <span class="page-link">...</span>
-        </li>
-    `;
-
-    const buildNumberedPages = (pagination) => {
-        const totalPages = pagination.last_page;
-        const currentPage = pagination.current_page;
-
-        if (totalPages <= 1) {
-            return renderPageButton(1, currentPage);
-        }
-
-        if (totalPages <= 10) {
-            return Array.from({ length: totalPages }, (_, index) => renderPageButton(index + 1, currentPage)).join('');
-        }
-
-        const items = [renderPageButton(1, currentPage)];
-        const start = Math.max(2, currentPage - 1);
-        const end = Math.min(totalPages - 1, currentPage + 1);
-
-        if (start > 2) {
-            items.push(renderEllipsis());
-        }
-
-        for (let page = start; page <= end; page += 1) {
-            items.push(renderPageButton(page, currentPage));
-        }
-
-        if (end < totalPages - 1) {
-            items.push(renderEllipsis());
-        }
-
-        items.push(renderPageButton(totalPages, currentPage));
-
-        return items.join('');
-    };
-
     const renderPagination = (pagination) => {
-        if (!paginationList || !paginationInfo) {
-            return;
-        }
+        renderListPagination({
+            infoEl: paginationInfo,
+            listEl: paginationList,
+            perPageSelectEl: perPageSelect,
+            pagination,
+            itemLabel: 'companies',
+            emptyMessage: 'No companies found',
+        });
 
-        if (!pagination || !pagination.total) {
-            paginationInfo.textContent = 'No companies found';
-            paginationList.innerHTML = '';
-            return;
-        }
-
-        paginationInfo.textContent = renderPaginationInfo(pagination);
-
-        if (perPageSelect) {
-            perPageSelect.value = String(pagination.per_page || currentPerPage);
-        }
-
-        const numberedPages = buildNumberedPages(pagination);
-
-        paginationList.innerHTML = `
-            <li class="page-item ${pagination.current_page === 1 ? 'disabled' : ''}">
-                <button
-                    type="button"
-                    class="page-link"
-                    data-page="${pagination.current_page - 1}"
-                    ${pagination.current_page === 1 ? 'disabled' : ''}
-                >
-                    Previous
-                </button>
-            </li>
-            ${numberedPages}
-            <li class="page-item ${pagination.current_page === pagination.last_page ? 'disabled' : ''}">
-                <button
-                    type="button"
-                    class="page-link"
-                    data-page="${pagination.current_page + 1}"
-                    ${pagination.current_page === pagination.last_page ? 'disabled' : ''}
-                >
-                    Next
-                </button>
-            </li>
-        `;
-
-        currentPerPage = pagination.per_page;
+        currentPerPage = pagination?.per_page || currentPerPage;
     };
 
     const loadCompanies = async (page = 1) => {
@@ -493,20 +392,12 @@ document.addEventListener('DOMContentLoaded', async () => {
         loadCompanies(1);
     });
 
-    perPageSelect?.addEventListener('change', () => {
-        currentPerPage = Number(perPageSelect.value) || DEFAULT_PER_PAGE;
+    bindPerPageSelect(perPageSelect, (perPage) => {
+        currentPerPage = perPage;
         loadCompanies(1);
     });
 
-    paginationWrap?.addEventListener('click', (event) => {
-        const button = event.target.closest('[data-page]');
-
-        if (!button || button.disabled) {
-            return;
-        }
-
-        const page = Number(button.dataset.page);
-
+    bindPagination(paginationWrap, (page) => {
         if (!page || page < 1 || page === currentPage) {
             return;
         }

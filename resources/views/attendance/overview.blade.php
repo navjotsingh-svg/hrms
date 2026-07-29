@@ -89,10 +89,13 @@
                 </div>
             </div>
         </div>
-        @include('partials.list-pagination-header', [
-            'perPageId' => 'attendanceOverviewPerPage',
-            'defaultPerPage' => 25,
-        ])
+        @include('partials.list-pagination-top', [
+    'infoId' => 'attendanceOverviewPaginationInfo',
+    'listId' => 'attendanceOverviewPaginationList',
+    'perPageId' => 'attendanceOverviewPerPage',
+    'ariaLabel' => 'Attendance overview pagination',
+    'defaultPerPage' => 25,
+])
         <div class="companies-table-wrap attendance-matrix-wrap">
             <table class="companies-table attendance-matrix mb-0">
                 <thead id="attendanceMatrixHead">

@@ -1,6 +1,12 @@
 @extends('performance.layout')
 
 @section('performance-content')
+    <div class="alert alert-light border mb-3">
+        <strong>Goals → Tasks → KPIs flow:</strong>
+        Break each goal into <em>tasks/key results</em>. Link a task to a KPI to sync progress automatically.
+        Goal achievement % is the weighted average of task progress; parent goals roll up from child goals when cascaded.
+        Update KPI current values on the KPI page — linked goal tasks and overall goal % update dynamically.
+    </div>
     <div class="content-card companies-list-card">
         <div class="content-card-body companies-filter-bar border-bottom">
             <div class="row g-3 align-items-end">
@@ -28,7 +34,12 @@
                 </div>
             </div>
         </div>
-        @include('partials.list-pagination-header', ['perPageId' => 'goalsPerPage'])
+        @include('partials.list-pagination-top', [
+    'infoId' => 'goalsPaginationInfo',
+    'listId' => 'goalsPaginationList',
+    'perPageId' => 'goalsPerPage',
+    'ariaLabel' => 'Goals pagination',
+])
         <div class="table-responsive">
             <table class="companies-table table mb-0">
                 <thead>
@@ -36,7 +47,6 @@
                         <th>Title</th>
                         <th>Level</th>
                         <th>Owner</th>
-                        <th>Parent Goal</th>
                         <th>Period</th>
                         <th>Progress</th>
                         <th>Status</th>
@@ -44,7 +54,7 @@
                     </tr>
                 </thead>
                 <tbody id="goalsTableBody">
-                    <tr><td colspan="8" class="text-center text-muted py-4">Loading…</td></tr>
+                    <tr><td colspan="7" class="text-center text-muted py-4">Loading…</td></tr>
                 </tbody>
             </table>
         </div>
@@ -86,9 +96,17 @@
                             </select>
                         </div>
                         <div class="col-md-6 d-none" id="goalEmployeeWrap">
-                            <label class="form-label" for="goalEmployeeSearch">Employee</label>
-                            <input type="text" class="form-control" id="goalEmployeeSearch" placeholder="Search employee">
-                            <input type="hidden" id="goalEmployeeId">
+                            @include('partials.employee-search-select', [
+                                'inputId' => 'goalEmployeeSearch',
+                                'hiddenId' => 'goalEmployeeId',
+                                'label' => 'Employee *',
+                                'placeholder' => 'Search employee by name or code…',
+                                'required' => true,
+                            ])
+                        </div>
+                        <div class="col-md-6 d-none" id="goalSelfEmployeeWrap">
+                            <label class="form-label">Employee</label>
+                            <p class="form-control-plaintext text-muted mb-0" id="goalSelfEmployeeLabel">This goal will be assigned to you.</p>
                         </div>
                         <div class="col-md-4">
                             <label class="form-label" for="goalStatus">Status</label>
@@ -120,9 +138,10 @@
                         </div>
                         <div class="col-12">
                             <div class="d-flex justify-content-between align-items-center mb-2">
-                                <label class="form-label mb-0">Key Results</label>
-                                <button type="button" class="btn btn-sm btn-outline-secondary" id="addKeyResultBtn">+ Add Key Result</button>
+                                <label class="form-label mb-0">Tasks &amp; Key Results</label>
+                                <button type="button" class="btn btn-sm btn-outline-secondary" id="addKeyResultBtn">+ Add Task</button>
                             </div>
+                            <p class="form-text mb-2">Add measurable tasks. Optionally link each task to a KPI — progress syncs from the KPI automatically.</p>
                             <div id="keyResultsList" class="d-flex flex-column gap-2"></div>
                         </div>
                     </div>
@@ -130,6 +149,34 @@
                 <div class="modal-footer">
                     <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
                     <button type="submit" form="goalForm" class="btn btn-primary">Save Goal</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal fade" id="goalTrackingModal" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog modal-lg modal-dialog-scrollable">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="goalTrackingModalLabel">Goal Progress</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <div class="d-flex justify-content-between align-items-center mb-2">
+                            <span class="text-muted small">Overall achievement</span>
+                            <span class="fw-semibold" id="goalTrackingOverallPct">0%</span>
+                        </div>
+                        <div class="progress" style="height: 10px;">
+                            <div class="progress-bar" id="goalTrackingOverallBar" role="progressbar" style="width: 0%"></div>
+                        </div>
+                    </div>
+                    <div id="goalTrackingMeta" class="small text-muted mb-3"></div>
+                    <h6 class="mb-2">Tasks &amp; Key Results</h6>
+                    <div id="goalTrackingTasks" class="d-flex flex-column gap-2"></div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Close</button>
                 </div>
             </div>
         </div>

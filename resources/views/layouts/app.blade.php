@@ -18,7 +18,10 @@
         })();
     </script>
 </head>
-<body class="dashboard-body">
+@php
+    $pageTheme = $hrmsPageTheme ?? ['module' => 'default', 'theme' => 'brand', 'icon' => 'grid', 'label' => 'HRMS'];
+@endphp
+<body class="dashboard-body hrms-theme-{{ $pageTheme['theme'] }} hrms-module-{{ $pageTheme['module'] }}">
     <div class="dashboard-wrapper">
         <div class="sidebar-desktop d-none d-lg-flex">
             @include('layouts.sidebar')
@@ -29,12 +32,23 @@
 
             <main class="content-area">
                 @hasSection('header')
-                    <div class="page-header">
-                        @yield('header')
+                    <div class="page-header hrms-page-banner hrms-page-banner--{{ $pageTheme['theme'] }}">
+                        <div class="hrms-page-banner__pattern" aria-hidden="true"></div>
+                        <div class="hrms-page-banner__row">
+                            <div class="hrms-page-banner__icon-wrap">
+                                @include('layouts.partials.page-icon', ['icon' => $pageTheme['icon']])
+                            </div>
+                            <div class="hrms-page-banner__main">
+                                <div class="hrms-page-banner__eyebrow">{{ $pageTheme['label'] }}</div>
+                                @yield('header')
+                            </div>
+                        </div>
                     </div>
                 @endif
 
-                @yield('content')
+                <div class="hrms-page-body">
+                    @yield('content')
+                </div>
             </main>
 
             <footer class="dashboard-footer">

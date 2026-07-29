@@ -9,8 +9,11 @@
             <p class="page-subtitle mb-0">Resignation requests, clearance, asset return, and F&F settlements.</p>
         </div>
         <div class="d-flex gap-2">
+            @if (Auth::user()->canManageOffboarding())
+                <button type="button" class="btn btn-primary" id="startOffboardingBtn">Start Offboarding</button>
+            @endif
             @if (Auth::user()->canApplyOffboarding())
-                <a href="{{ route('web.offboarding.apply') }}" class="btn btn-primary">Submit Resignation</a>
+                <a href="{{ route('web.offboarding.apply') }}" class="btn btn-outline-primary">Submit Resignation</a>
             @endif
         </div>
     </div>
@@ -32,7 +35,12 @@
                     <button type="button" class="btn btn-primary btn-sm" id="exitSurveyCreateBtn">Add Question</button>
                 </div>
             </div>
-        @include('partials.list-pagination-header', ['perPageId' => 'exitSurveyPerPage'])
+        @include('partials.list-pagination-top', [
+    'infoId' => 'exitSurveyPaginationInfo',
+    'listId' => 'exitSurveyPaginationList',
+    'perPageId' => 'exitSurveyPerPage',
+    'ariaLabel' => 'Survey questions pagination',
+])
         <div class="table-responsive">
                 <table class="companies-table table mb-0">
                     <thead>
@@ -76,13 +84,19 @@
         <div class="content-card-header border-bottom">
             <h2 class="content-card-title mb-0">Exit Cases</h2>
         </div>
-        @include('partials.list-pagination-header', ['perPageId' => 'exitCasesPerPage'])
+        @include('partials.list-pagination-top', [
+    'infoId' => 'exitCasesPaginationInfo',
+    'listId' => 'exitCasesPaginationList',
+    'perPageId' => 'exitCasesPerPage',
+    'ariaLabel' => 'Exit cases pagination',
+])
         <div class="table-responsive">
             <table class="companies-table table mb-0">
                 <thead>
                     <tr>
                         <th>#</th>
                         <th>Employee</th>
+                        <th>Exit Type</th>
                         <th>Last Working Date</th>
                         <th>Stage</th>
                         <th>Status</th>
@@ -90,7 +104,7 @@
                     </tr>
                 </thead>
                 <tbody id="exitCasesTableBody">
-                    <tr><td colspan="6" class="text-center text-muted py-5">Loading...</td></tr>
+                    <tr><td colspan="7" class="text-center text-muted py-5">Loading...</td></tr>
                 </tbody>
             </table>
         </div>
@@ -107,7 +121,12 @@
         <div class="content-card-header border-bottom">
             <h2 class="content-card-title mb-0">Resignation Requests</h2>
         </div>
-        @include('partials.list-pagination-header', ['perPageId' => 'resignationRequestsPerPage'])
+        @include('partials.list-pagination-top', [
+    'infoId' => 'resignationRequestsPaginationInfo',
+    'listId' => 'resignationRequestsPaginationList',
+    'perPageId' => 'resignationRequestsPerPage',
+    'ariaLabel' => 'Resignation requests pagination',
+])
         <div class="table-responsive">
             <table class="companies-table table mb-0">
                 <thead>
@@ -135,6 +154,53 @@
     </div>
 
     @if (Auth::user()->canManageOffboarding())
+        <div class="modal fade" id="startOffboardingModal" tabindex="-1" aria-hidden="true">
+            <div class="modal-dialog">
+                <div class="modal-content">
+                    <form id="startOffboardingForm">
+                        <div class="modal-header">
+                            <h5 class="modal-title">Start Offboarding</h5>
+                            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                        </div>
+                        <div class="modal-body">
+                            <p class="text-muted small">Initiate offboarding for termination, retirement, or other exits without waiting for a resignation request.</p>
+                            <div class="row g-3">
+                                <div class="col-12">
+                                    @include('partials.employee-search-select', [
+                                        'inputId' => 'startOffboardingEmployeeSearch',
+                                        'hiddenId' => 'startOffboardingEmployeeId',
+                                        'label' => 'Employee *',
+                                        'placeholder' => 'Search active employee…',
+                                        'required' => true,
+                                    ])
+                                </div>
+                                <div class="col-md-6">
+                                    <label for="startOffboardingExitType" class="form-label">Exit Type *</label>
+                                    <select class="form-select" id="startOffboardingExitType" required>
+                                        @foreach (config('offboarding.exit_types', []) as $value => $label)
+                                            <option value="{{ $value }}" @selected($value === 'termination')>{{ $label }}</option>
+                                        @endforeach
+                                    </select>
+                                </div>
+                                <div class="col-md-6">
+                                    <label for="startOffboardingLastWorkingDate" class="form-label">Last Working Date *</label>
+                                    <input type="date" class="form-control" id="startOffboardingLastWorkingDate" required>
+                                </div>
+                                <div class="col-12">
+                                    <label for="startOffboardingNotes" class="form-label">Notes</label>
+                                    <textarea class="form-control" id="startOffboardingNotes" rows="2" maxlength="2000" placeholder="Optional internal notes"></textarea>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="modal-footer">
+                            <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+                            <button type="submit" class="btn btn-primary">Start Offboarding</button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+
         <div class="modal fade" id="exitSurveyQuestionModal" tabindex="-1" aria-hidden="true">
             <div class="modal-dialog modal-lg modal-dialog-scrollable">
                 <div class="modal-content">

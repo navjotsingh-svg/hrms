@@ -135,35 +135,53 @@ const emptyRow = (cols, message) => `<tr><td colspan="${cols}" class="text-cente
 
 const getPersonalSectionByType = (sections, type) => (sections || []).find((section) => section.section_type === type);
 
-const getEmergencyContactDetails = (section, employee) => {
+const normalizeEmergencyContacts = (section, employee) => {
+    if (section?.payload?.contacts?.length) {
+        return section.payload.contacts.map((contact) => ({
+            name: contact.name || '',
+            relation: contact.relation || '',
+            phones: (contact.phones || []).filter(Boolean).length
+                ? contact.phones.filter(Boolean)
+                : (contact.phone ? [contact.phone] : []),
+        }));
+    }
+
     if (section?.payload?.name) {
-        return {
-            name: section.payload.name,
+        return [{
+            name: section.payload.name || '',
             relation: section.payload.relation || '',
-            phone: section.payload.phone || '',
-        };
+            phones: section.payload.phone ? [section.payload.phone] : [],
+        }];
     }
 
-    if (section?.payload?.family_member_id) {
-        const member = (employee.family_members || []).find(
-            (item) => Number(item.id) === Number(section.payload.family_member_id),
-        );
-
-        if (member) {
-            return {
-                name: member.name,
-                relation: member.relation || '',
-                phone: member.phone || '',
-            };
-        }
+    if (Array.isArray(employee.emergency_contacts) && employee.emergency_contacts.length) {
+        return employee.emergency_contacts.map((contact) => ({
+            name: contact.name || '',
+            relation: contact.relation || '',
+            phones: (contact.phones || []).filter(Boolean),
+        }));
     }
 
-    return {
-        name: employee.emergency_contact_name || '',
-        relation: employee.emergency_contact_relation || '',
-        phone: employee.emergency_contact_phone || '',
-    };
+    if (employee.emergency_contact_name) {
+        return [{
+            name: employee.emergency_contact_name || '',
+            relation: employee.emergency_contact_relation || '',
+            phones: employee.emergency_contact_phone ? [employee.emergency_contact_phone] : [],
+        }];
+    }
+
+    return [];
 };
+
+const formatEmergencyContactsHtml = (contacts = []) => contacts.map((contact) => `
+    <div class="profile-info-card mb-3">
+        <dl class="profile-dl mb-0">
+            <div class="profile-dl-row"><dt>Name</dt><dd>${contact.name || '—'}</dd></div>
+            <div class="profile-dl-row"><dt>Relation</dt><dd>${contact.relation || '—'}</dd></div>
+            <div class="profile-dl-row"><dt>Mobile</dt><dd>${(contact.phones || []).join(', ') || '—'}</dd></div>
+        </dl>
+    </div>
+`).join('');
 
 const formatAddressBlock = (address = {}) => [
     address.address_line_1,
@@ -629,11 +647,11 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
 
         if (emergencyContainer) {
-            if (!emergencySection && !employee.emergency_contact_name) {
-                emergencyContainer.innerHTML = '<p class="text-muted small mb-0">No emergency contact submitted yet.</p>';
-            } else if (emergencySection) {
-                const emergencyContact = getEmergencyContactDetails(emergencySection, employee);
+            const contacts = normalizeEmergencyContacts(emergencySection, employee);
 
+            if (!contacts.length) {
+                emergencyContainer.innerHTML = '<p class="text-muted small mb-0">No emergency contacts submitted yet.</p>';
+            } else if (emergencySection) {
                 emergencyContainer.innerHTML = `
                     <div class="d-flex flex-wrap align-items-center gap-2 mb-3">
                         <span>${statusBadge(emergencySection.status)}</span>
@@ -641,10 +659,8 @@ document.addEventListener('DOMContentLoaded', async () => {
         ? `<span class="text-danger small">Review notes: ${emergencySection.notes}</span>`
         : ''}
                     </div>
+                    ${formatEmergencyContactsHtml(contacts)}
                     <dl class="profile-dl mb-3">
-                        <div class="profile-dl-row"><dt>Name</dt><dd>${emergencyContact.name || '—'}</dd></div>
-                        <div class="profile-dl-row"><dt>Relation</dt><dd>${emergencyContact.relation || '—'}</dd></div>
-                        <div class="profile-dl-row"><dt>Mobile</dt><dd>${emergencyContact.phone || '—'}</dd></div>
                         <div class="profile-dl-row"><dt>Submitted</dt><dd>${formatDateTime(emergencySection.submitted_at)}</dd></div>
                         <div class="profile-dl-row"><dt>Reviewed By</dt><dd>${formatReviewCell(emergencySection)}</dd></div>
                     </dl>
@@ -656,13 +672,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     )}</div>
                 `;
             } else {
-                emergencyContainer.innerHTML = `
-                    <dl class="profile-dl">
-                        <div class="profile-dl-row"><dt>Name</dt><dd>${employee.emergency_contact_name || '—'}</dd></div>
-                        <div class="profile-dl-row"><dt>Relation</dt><dd>${employee.emergency_contact_relation || '—'}</dd></div>
-                        <div class="profile-dl-row"><dt>Mobile</dt><dd>${employee.emergency_contact_phone || '—'}</dd></div>
-                    </dl>
-                `;
+                emergencyContainer.innerHTML = formatEmergencyContactsHtml(contacts);
             }
         }
     };

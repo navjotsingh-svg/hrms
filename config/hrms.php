@@ -29,6 +29,86 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Family & Emergency Contact Relations
+    |--------------------------------------------------------------------------
+    */
+
+    'family_relations' => [
+        'Spouse',
+        'Father',
+        'Mother',
+        'Son',
+        'Daughter',
+        'Brother',
+        'Sister',
+        'Father-in-law',
+        'Mother-in-law',
+        'Friend',
+        'Other',
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
+    | Documents & Letters (Core HR)
+    |--------------------------------------------------------------------------
+    |
+    | Set HRMS_DOCUMENTS_LETTERS_MENU_ENABLED=true in .env when ready to show
+    | Documents & Letters under Core HR in the sidebar.
+    |
+    */
+
+    'documents_letters_menu_enabled' => env('HRMS_DOCUMENTS_LETTERS_MENU_ENABLED', false),
+
+    /*
+    |--------------------------------------------------------------------------
+    | Employee Experience — Social menus
+    |--------------------------------------------------------------------------
+    |
+    | Set HRMS_EMPLOYEE_EXPERIENCE_SOCIAL_MENUS_ENABLED=true in .env when ready
+    | to show Social Wall, Polls and Announcements, and Public Praise.
+    |
+    */
+
+    'employee_experience_social_menus_enabled' => env('HRMS_EMPLOYEE_EXPERIENCE_SOCIAL_MENUS_ENABLED', false),
+
+    /*
+    |--------------------------------------------------------------------------
+    | Employee Experience — Compensation & Skills menus
+    |--------------------------------------------------------------------------
+    |
+    | Set HRMS_PERFORMANCE_COMPENSATION_SKILLS_MENUS_ENABLED=true in .env when
+    | ready to show Basic Compensation Plans and Skills and Competencies.
+    |
+    */
+
+    'performance_compensation_skills_menus_enabled' => env('HRMS_PERFORMANCE_COMPENSATION_SKILLS_MENUS_ENABLED', false),
+
+    /*
+    |--------------------------------------------------------------------------
+    | Employee Experience — Question Bank menu
+    |--------------------------------------------------------------------------
+    |
+    | Set HRMS_PERFORMANCE_QUESTION_BANK_MENU_ENABLED=true in .env when ready
+    | to show Question Bank (requires wiring into Feedback Forms / Reviews).
+    |
+    */
+
+    'performance_question_bank_menu_enabled' => env('HRMS_PERFORMANCE_QUESTION_BANK_MENU_ENABLED', false),
+
+    /*
+    |--------------------------------------------------------------------------
+    | Employee Experience — KPI menu
+    |--------------------------------------------------------------------------
+    |
+    | Set HRMS_PERFORMANCE_KPI_MENU_ENABLED=true in .env when ready to show KPI.
+    | Goals with key results cover most use cases until KPI is linked or needed.
+    |
+    */
+
+    'performance_kpi_menu_enabled' => env('HRMS_PERFORMANCE_KPI_MENU_ENABLED', false),
+
+    /*
+    |--------------------------------------------------------------------------
     | HR Assistant
     |--------------------------------------------------------------------------
     */
@@ -49,11 +129,30 @@ return [
     */
 
     'attendance' => [
-        'face_match_threshold' => (int) env('ATTENDANCE_FACE_MATCH_THRESHOLD', 80),
+        'face_match_threshold' => (int) env('ATTENDANCE_FACE_MATCH_THRESHOLD', 90),
+        'face_embedding_model' => env('ATTENDANCE_FACE_EMBEDDING_MODEL', 'insightface-mobilenet-emore'),
         'require_face_match' => filter_var(
             env('ATTENDANCE_REQUIRE_FACE_MATCH', env('APP_ENV', 'production') === 'local' ? false : true),
             FILTER_VALIDATE_BOOL
         ),
+        'require_punch_photo' => filter_var(
+            env('ATTENDANCE_REQUIRE_PUNCH_PHOTO', true),
+            FILTER_VALIDATE_BOOL
+        ),
+        'regularization' => [
+            'enabled' => filter_var(
+                env('ATTENDANCE_REGULARIZATION_ENABLED', true),
+                FILTER_VALIDATE_BOOL
+            ),
+            'previous_month_cutoff_day' => (int) env('ATTENDANCE_REGULARIZATION_PREVIOUS_MONTH_CUTOFF_DAY', 2),
+            'max_requests_per_month' => env('ATTENDANCE_REGULARIZATION_MAX_REQUESTS_PER_MONTH') !== null
+                ? (int) env('ATTENDANCE_REGULARIZATION_MAX_REQUESTS_PER_MONTH')
+                : 5,
+            'block_current_day_until_complete' => filter_var(
+                env('ATTENDANCE_REGULARIZATION_BLOCK_CURRENT_DAY_UNTIL_COMPLETE', true),
+                FILTER_VALIDATE_BOOL
+            ),
+        ],
     ],
 
     /*
@@ -347,13 +446,25 @@ return [
         'home.dashboard' => ['permissions' => ['home.dashboard.view', 'home.dashboard.manage']],
         'home.moments' => ['permissions' => ['home.moments.view', 'home.moments.post', 'home.moments.comment']],
 
-        'experience.social_wall' => ['permissions' => ['home.moments.view', 'home.moments.post', 'home.moments.comment']],
-        'experience.polls' => ['permissions' => ['home.moments.view', 'home.moments.post', 'home.dashboard.view', 'home.dashboard.manage']],
-        'experience.public_praise' => ['permissions' => ['home.moments.view', 'home.moments.post', 'performance.participate']],
+        'experience.social_wall' => [
+            'permissions' => ['home.moments.view', 'home.moments.post', 'home.moments.comment'],
+            'feature' => 'employee_experience_social_menus_enabled',
+        ],
+        'experience.polls' => [
+            'permissions' => ['home.moments.view', 'home.moments.post', 'home.dashboard.view', 'home.dashboard.manage'],
+            'feature' => 'employee_experience_social_menus_enabled',
+        ],
+        'experience.public_praise' => [
+            'permissions' => ['home.moments.view', 'home.moments.post', 'performance.participate'],
+            'feature' => 'employee_experience_social_menus_enabled',
+        ],
         'experience.helpdesk' => ['permissions' => ['helpdesk.apply', 'helpdesk.manage']],
         'experience.assistant' => ['rule' => 'company_member', 'feature' => 'assistant.enabled'],
 
-        'core_hr.documents_letters' => ['permissions' => ['documents.view', 'documents.manage', 'documents.sign']],
+        'core_hr.documents_letters' => [
+            'permissions' => ['documents.view', 'documents.manage', 'documents.sign'],
+            'feature' => 'documents_letters_menu_enabled',
+        ],
         'org_chart' => ['permissions' => ['employees.view', 'employees.manage']],
 
         'masters.departments' => ['permissions' => ['departments.view', 'departments.manage']],
@@ -396,17 +507,23 @@ return [
         'leave.management' => ['permissions' => ['leave.apply', 'leave.approve', 'leave.manage']],
         'timesheets' => ['rule' => 'timesheets_access'],
         'expenses' => ['permissions' => ['expenses.apply', 'expenses.approve', 'expenses.manage']],
-        'projects' => ['permissions' => ['projects.view', 'projects.manage']],
+        'projects' => ['permissions' => ['projects.manage']],
         'payroll.manage' => ['permissions' => ['payroll.manage']],
         'payroll.settings' => ['permissions' => ['payroll.manage']],
         'payroll.payslips' => ['permissions' => ['payroll.view']],
         'performance' => ['permissions' => ['performance.manage', 'performance.participate', 'performance.review', 'pip.manage']],
         'performance.review_cycles' => ['permissions' => ['performance.manage']],
         'performance.feedback_forms' => ['permissions' => ['performance.manage']],
-        'performance.question_bank' => ['permissions' => ['performance.manage']],
+        'performance.question_bank' => [
+            'permissions' => ['performance.manage'],
+            'feature' => 'performance_question_bank_menu_enabled',
+        ],
         'performance.goals' => ['permissions' => ['performance.manage', 'performance.participate', 'performance.review']],
-        'performance.kpi' => ['permissions' => ['performance.manage']],
-        'performance.praise' => ['permissions' => ['performance.participate', 'performance.manage', 'performance.review']],
+        'performance.kpi' => [
+            'permissions' => ['performance.manage', 'performance.participate'],
+            'feature' => 'performance_kpi_menu_enabled',
+        ],
+        'performance.praise' => ['permissions' => ['performance.manage']],
         'performance.continuous_feedback' => ['permissions' => ['performance.participate', 'performance.manage', 'performance.review']],
         'performance.one_on_one' => ['permissions' => ['performance.participate', 'performance.review', 'performance.manage']],
         'performance.reviews' => ['permissions' => ['performance.participate', 'performance.review', 'performance.manage']],
@@ -414,13 +531,17 @@ return [
         'performance.promotions' => ['permissions' => ['performance.manage', 'employees.manage']],
         'performance.pip' => ['permissions' => ['pip.manage', 'performance.participate']],
         'performance.insights' => ['permissions' => ['performance.manage', 'performance.participate', 'performance.review']],
-        'performance.compensation' => ['permissions' => ['performance.manage']],
-        'performance.skills' => ['permissions' => ['performance.participate', 'performance.manage', 'performance.review']],
+        'performance.compensation' => [
+            'permissions' => ['performance.manage'],
+            'feature' => 'performance_compensation_skills_menus_enabled',
+        ],
+        'performance.skills' => [
+            'permissions' => ['performance.participate', 'performance.manage', 'performance.review'],
+            'feature' => 'performance_compensation_skills_menus_enabled',
+        ],
         'hiring' => ['permissions' => [
-            'hiring.manage', 'hiring.requisition.create', 'hiring.requisition.approve',
-            'hiring.interview', 'hiring.careers.publish',
+            'hiring.manage', 'hiring.interview', 'hiring.careers.publish',
         ]],
-        'hiring.requisitions' => ['permissions' => ['hiring.requisition.create', 'hiring.manage']],
         'hiring.jobs' => ['permissions' => ['hiring.manage']],
         'hiring.candidates' => ['permissions' => ['hiring.manage']],
         'hiring.offers' => ['permissions' => ['hiring.manage']],

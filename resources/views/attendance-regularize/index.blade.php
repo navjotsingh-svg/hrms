@@ -28,6 +28,7 @@
 
 @section('content')
     <div id="regularizeAlert" class="alert alert-success alert-dismissible fade show d-none"></div>
+    <div id="regularizePolicyBanner" class="alert alert-info d-none mb-4" role="status"></div>
 
     <div class="content-card mb-4">
         <div class="content-card-body companies-filter-bar">
@@ -141,7 +142,12 @@
                     <h2 class="content-card-title mb-0">My Requests</h2>
                     <p class="small text-muted mb-0">Requests you submitted for yourself or on behalf of employees.</p>
                 </div>
-        @include('partials.list-pagination-header', ['perPageId' => 'myRequestsPerPage'])
+        @include('partials.list-pagination-top', [
+    'infoId' => 'myRequestsPaginationInfo',
+    'listId' => 'myRequestsPaginationList',
+    'perPageId' => 'myRequestsPerPage',
+    'ariaLabel' => 'My requests pagination',
+])
         <div class="table-responsive">
                     <table class="companies-table table mb-0">
                         <thead>
@@ -206,7 +212,12 @@
                         </div>
                     </div>
                 </div>
-        @include('partials.list-pagination-header', ['perPageId' => 'regularizePerPage'])
+        @include('partials.list-pagination-top', [
+    'infoId' => 'regularizePaginationInfo',
+    'listId' => 'regularizePaginationList',
+    'perPageId' => 'regularizePerPage',
+    'ariaLabel' => 'Regularization history pagination',
+])
         <div class="table-responsive">
                     <table class="companies-table table mb-0">
                         <thead>
@@ -290,7 +301,12 @@
                     </div>
                 </div>
             </div>
-        @include('partials.list-pagination-header', ['perPageId' => 'regularizePerPage'])
+        @include('partials.list-pagination-top', [
+    'infoId' => 'regularizePaginationInfo',
+    'listId' => 'regularizePaginationList',
+    'perPageId' => 'regularizePerPage',
+    'ariaLabel' => 'Regularization history pagination',
+])
         <div class="table-responsive">
                 <table class="companies-table table mb-0">
                     <thead>

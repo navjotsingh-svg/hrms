@@ -98,7 +98,14 @@
                     <button type="button" class="btn btn-primary" id="openGroupModalBtn">+ Add Expense Group</button>
                 @endif
             </div>
-        @include('partials.list-pagination-header', ['perPageId' => 'itemsPerPage', 'perPageOptions' => [5, 10, 25], 'defaultPerPage' => 10])
+        @include('partials.list-pagination-top', [
+    'infoId' => 'expensesPaginationInfo',
+    'listId' => 'expensesPaginationList',
+    'perPageId' => 'itemsPerPage',
+    'ariaLabel' => 'Expenses pagination',
+    'perPageOptions' => [5, 10, 25],
+    'defaultPerPage' => 10,
+])
         <div class="table-responsive">
                 <table class="companies-table table mb-0">
                     <thead>

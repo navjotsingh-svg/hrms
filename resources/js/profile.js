@@ -4,11 +4,13 @@ import { applyBackendErrors, bindUploadProgress, setFieldError, setSubmitLoading
 import { renderDateTimeStack } from './datetime-utils';
 import { initRichTextEditor } from './rich-text-editor';
 import { renderReviewIconActionGroup, renderViewDocumentIconButton, renderDeleteDocumentIconButton, renderReviewIconActions } from './review-actions';
+import { renderDeleteButton, renderEditIconButton } from './action-icons';
 import { patchProfileReviewAction } from './request-review';
 import { hasSalaryRevisionTimeline, renderSalaryRevisionTimeline } from './salary-timeline';
 import { computeIncrementEffectiveDate, todayDateInput } from './salary-dates';
 import { initEmployeeJourneyTab } from './employee-journey';
 import { compressImageFiles } from './image-compress';
+import { cropProfilePhotoFile, initProfilePhotoCrop } from './profile-photo-crop';
 import { showErrorAlert, showInfoAlert, showProfilePhotoPendingNotice } from './swal-utils';
 
 const PROFILE_TAB_HASHES = {
@@ -24,7 +26,55 @@ const PROFILE_TAB_HASHES = {
 let profileCanEditWithoutApproval = false;
 let profileCanManageSalary = false;
 let profileCanManageAssets = false;
+const profileFormEditor = {
+    family: false,
+    address: false,
+    emergency: false,
+    bank: false,
+    compliance: false,
+    document: false,
+};
 const assetDescriptionEditors = new Map();
+
+const isSelfServiceProfile = () => !profileCanEditWithoutApproval;
+
+const toggleHrSectionEditButton = (buttonId, show) => {
+    const button = document.getElementById(buttonId);
+
+    if (button) {
+        button.classList.toggle('d-none', !show || !profileCanEditWithoutApproval);
+    }
+};
+
+const syncHrSectionEditors = () => {
+    if (!profileCanEditWithoutApproval) {
+        return;
+    }
+
+    toggleHrSectionEditButton('profileFamilySectionEditBtn', !profileFormEditor.family);
+    toggleHrSectionEditButton('profileAddressEditBtn', !profileFormEditor.address);
+    toggleHrSectionEditButton('profileEmergencyEditBtn', !profileFormEditor.emergency);
+    toggleHrSectionEditButton('profileBankEditBtn', !profileFormEditor.bank);
+    toggleHrSectionEditButton('profileComplianceEditBtn', !profileFormEditor.compliance);
+    toggleHrSectionEditButton('profileDocumentEditBtn', !profileFormEditor.document);
+};
+
+const openProfileFormEditor = (key) => {
+    profileFormEditor[key] = true;
+    syncHrSectionEditors();
+};
+
+const closeProfileFormEditor = (key) => {
+    profileFormEditor[key] = false;
+    syncHrSectionEditors();
+};
+
+const resetProfileFormEditors = () => {
+    Object.keys(profileFormEditor).forEach((key) => {
+        profileFormEditor[key] = false;
+    });
+    syncHrSectionEditors();
+};
 
 const escapeHtml = (value) => String(value ?? '')
     .replace(/&/g, '&amp;')
@@ -1031,15 +1081,20 @@ const resetFamilyForm = (member = null) => {
                 : 'Add family members for this employee. Changes save immediately.')
             : (isResubmit
                 ? 'Update this relation and submit for HR approval again.'
-                : 'Add new family members below. Submitted relations appear in the listing above only.');
+                : 'Add family member details and submit for HR approval.');
     }
+
+    syncFamilyEditorUi();
 };
 
 const setPersonalSectionFormState = (form, submitBtn, section) => {
     const isLocked = !profileCanEditWithoutApproval && Boolean(section?.is_locked);
     const canSubmit = canSubmitProfileSection(section);
 
-    form?.classList.toggle('d-none', !canSubmit);
+    if (!isSelfServiceProfile()) {
+        form?.classList.remove('d-none');
+    }
+
     form?.querySelectorAll('input, select, textarea, button[type="button"]').forEach((element) => {
         if (element.id === 'profileAddFamilyMember') {
             element.disabled = isLocked || !canSubmit;
@@ -1053,6 +1108,89 @@ const setPersonalSectionFormState = (form, submitBtn, section) => {
         submitBtn.disabled = isLocked || !canSubmit;
         submitBtn.textContent = profileSubmitLabel(section);
     }
+};
+
+const updatePersonalSectionActions = (sectionType, section, employee) => {
+    const isAddress = sectionType === 'address';
+    const form = document.getElementById(isAddress ? 'profileAddressSectionForm' : 'profileEmergencySectionForm');
+    const submitBtn = document.getElementById(isAddress ? 'profileAddressSectionSubmit' : 'profileEmergencySectionSubmit');
+    const addBtn = document.getElementById(isAddress ? 'profileAddressAddBtn' : 'profileEmergencyAddBtn');
+    const changeBtn = document.getElementById(isAddress ? 'profileAddressChangeBtn' : 'profileEmergencyChangeBtn');
+    const editorKey = isAddress ? 'address' : 'emergency';
+
+    if (profileCanEditWithoutApproval) {
+        const editorOpen = profileFormEditor[editorKey];
+        const hasData = isAddress
+            ? Boolean(section?.status === 'approved' || employee.address_line_1)
+            : Boolean(section?.status === 'approved' || (employee.emergency_contacts || []).length || employee.emergency_contact_name);
+
+        form?.classList.toggle('d-none', !editorOpen);
+        form?.querySelectorAll('input, select, textarea, button[type="button"]').forEach((element) => {
+            if (element.id === 'profileAddEmergencyContact') {
+                element.disabled = !editorOpen;
+                return;
+            }
+
+            element.disabled = !editorOpen;
+        });
+
+        if (submitBtn) {
+            submitBtn.disabled = !editorOpen;
+            submitBtn.textContent = profileSubmitLabel(section);
+        }
+
+        addBtn?.classList.add('d-none');
+        changeBtn?.classList.add('d-none');
+        syncHrSectionEditors();
+
+        return;
+    }
+
+    const isPending = section?.status === 'pending';
+    const isRejected = section?.status === 'rejected';
+    const hasApprovedData = isAddress
+        ? Boolean(section?.status === 'approved' || employee.address_line_1)
+        : Boolean(section?.status === 'approved' || employee.emergency_contact_name);
+    const canChange = Boolean(section?.can_resubmit || (hasApprovedData && !isPending));
+    const canInitialAdd = !isPending && !hasApprovedData && !isRejected;
+    const editorOpen = profileFormEditor[editorKey];
+    const canSubmit = canSubmitProfileSection(section);
+    const isLocked = Boolean(section?.is_locked);
+    const showForm = editorOpen && canSubmit;
+
+    form?.classList.toggle('d-none', !showForm);
+    form?.querySelectorAll('input, select, textarea').forEach((element) => {
+        element.disabled = isLocked || !showForm;
+    });
+
+    if (submitBtn) {
+        submitBtn.disabled = isLocked || !showForm;
+        submitBtn.textContent = profileSubmitLabel(section);
+    }
+
+    addBtn?.classList.toggle('d-none', !canInitialAdd || editorOpen);
+    changeBtn?.classList.toggle('d-none', !canChange || isPending || editorOpen);
+    if (changeBtn) {
+        changeBtn.textContent = isRejected ? 'Re-submit' : 'Change';
+    }
+};
+
+const syncFamilyEditorUi = () => {
+    const form = document.getElementById('profileFamilySectionForm');
+    const addHeaderBtn = document.getElementById('profileAddFamilyMemberBtn');
+    const resubmitId = document.getElementById('profileFamilyResubmitId')?.value;
+
+    if (profileCanEditWithoutApproval) {
+        const isEditing = profileFormEditor.family || Boolean(resubmitId);
+        form?.classList.toggle('d-none', !isEditing);
+        addHeaderBtn?.classList.add('d-none');
+        syncHrSectionEditors();
+        return;
+    }
+
+    const isEditing = profileFormEditor.family || Boolean(resubmitId);
+    form?.classList.toggle('d-none', !isEditing);
+    addHeaderBtn?.classList.toggle('d-none', isEditing);
 };
 
 const updateFamilyMemberRemoveButtons = () => {
@@ -1104,6 +1242,163 @@ const collectFamilyMembersFromForm = () => {
     return members;
 };
 
+const createEmergencyPhoneRow = (phone = '') => {
+    const template = document.getElementById('profileEmergencyPhoneRowTemplate');
+    const row = template?.content.firstElementChild?.cloneNode(true);
+
+    if (!row) {
+        return null;
+    }
+
+    const input = row.querySelector('[data-emergency-phone]');
+
+    if (input) {
+        input.value = phone || '';
+    }
+
+    return row;
+};
+
+const updateEmergencyPhoneRemoveButtons = (contactRow) => {
+    const phoneRows = contactRow.querySelectorAll('[data-emergency-phone-row]');
+
+    phoneRows.forEach((row, index) => {
+        const removeBtn = row.querySelector('[data-remove-emergency-phone]');
+
+        if (removeBtn) {
+            removeBtn.classList.toggle('d-none', phoneRows.length <= 1);
+        }
+    });
+};
+
+const createEmergencyContactRow = (contact = {}) => {
+    const template = document.getElementById('profileEmergencyContactRowTemplate');
+    const row = template?.content.firstElementChild?.cloneNode(true);
+
+    if (!row) {
+        return null;
+    }
+
+    row.querySelector('[data-emergency-name]').value = contact.name || '';
+    row.querySelector('[data-emergency-relation]').value = contact.relation || '';
+
+    const phonesList = row.querySelector('[data-emergency-phones-list]');
+    const phones = (contact.phones || []).filter(Boolean);
+
+    if (phones.length === 0 && contact.phone) {
+        phones.push(contact.phone);
+    }
+
+    (phones.length ? phones : ['']).forEach((phone) => {
+        const phoneRow = createEmergencyPhoneRow(phone);
+
+        if (phoneRow && phonesList) {
+            phonesList.appendChild(phoneRow);
+        }
+    });
+
+    updateEmergencyPhoneRemoveButtons(row);
+    updateEmergencyContactRemoveButtons();
+
+    return row;
+};
+
+const updateEmergencyContactRemoveButtons = () => {
+    const rows = document.querySelectorAll('[data-emergency-contact-row]');
+
+    rows.forEach((row, index) => {
+        const removeBtn = row.querySelector('[data-remove-emergency-contact]');
+
+        if (removeBtn) {
+            removeBtn.classList.toggle('d-none', rows.length <= 1);
+        }
+    });
+};
+
+const collectEmergencyContactsFromForm = () => Array.from(document.querySelectorAll('[data-emergency-contact-row]')).map((row) => ({
+    name: row.querySelector('[data-emergency-name]')?.value.trim() || '',
+    relation: row.querySelector('[data-emergency-relation]')?.value.trim() || '',
+    phones: Array.from(row.querySelectorAll('[data-emergency-phone]'))
+        .map((input) => input.value.trim())
+        .filter(Boolean),
+})).filter((contact) => contact.name || contact.relation || contact.phones.length);
+
+const fillEmergencyContactsList = (contacts = []) => {
+    const list = document.getElementById('profileEmergencyContactsList');
+
+    if (!list) {
+        return;
+    }
+
+    list.innerHTML = '';
+
+    const normalized = contacts.length
+        ? contacts
+        : [{ name: '', relation: '', phones: [''] }];
+
+    normalized.forEach((contact) => {
+        const row = createEmergencyContactRow(contact);
+
+        if (row) {
+            list.appendChild(row);
+        }
+    });
+};
+
+const normalizeEmergencyContacts = (section, employee) => {
+    if (usesSectionPayload(section) && section?.payload?.contacts?.length) {
+        return section.payload.contacts.map((contact) => ({
+            name: contact.name || '',
+            relation: contact.relation || '',
+            phones: (contact.phones || []).filter(Boolean).length
+                ? contact.phones.filter(Boolean)
+                : (contact.phone ? [contact.phone] : []),
+        }));
+    }
+
+    if (usesSectionPayload(section) && section?.payload?.name) {
+        return [{
+            name: section.payload.name || '',
+            relation: section.payload.relation || '',
+            phones: section.payload.phone ? [section.payload.phone] : [],
+        }];
+    }
+
+    if (Array.isArray(employee.emergency_contacts) && employee.emergency_contacts.length) {
+        return employee.emergency_contacts.map((contact) => ({
+            name: contact.name || '',
+            relation: contact.relation || '',
+            phones: (contact.phones || []).filter(Boolean),
+        }));
+    }
+
+    if (employee.emergency_contact_name) {
+        return [{
+            name: employee.emergency_contact_name || '',
+            relation: employee.emergency_contact_relation || '',
+            phones: employee.emergency_contact_phone ? [employee.emergency_contact_phone] : [],
+        }];
+    }
+
+    return [];
+};
+
+const formatEmergencyContactsHtml = (contacts = []) => {
+    if (!contacts.length) {
+        return '<p class="text-muted small mb-0">No emergency contacts submitted yet.</p>';
+    }
+
+    return contacts.map((contact) => `
+        <div class="profile-info-card mb-3">
+            <dl class="profile-dl mb-0">
+                <div class="profile-dl-row"><dt>Name</dt><dd>${contact.name || '—'}</dd></div>
+                <div class="profile-dl-row"><dt>Relation</dt><dd>${contact.relation || '—'}</dd></div>
+                <div class="profile-dl-row"><dt>Mobile</dt><dd>${(contact.phones || []).join(', ') || '—'}</dd></div>
+            </dl>
+        </div>
+    `).join('');
+};
+
 const formatAddressBlock = (address = {}) => [
     address.address_line_1,
     address.address_line_2,
@@ -1141,12 +1436,22 @@ const renderFamilyMembersTable = (employee) => {
             <td>${formatDateTime(member.submitted_at)}</td>
             <td>${formatReviewCell(member)}</td>
             <td class="text-end">
-                ${member.can_resubmit
+                <div class="table-action-group justify-content-end">
+                    ${member.can_resubmit
         ? `<button type="button" class="btn btn-sm btn-outline-primary" data-resubmit-family-member="${member.id}">${member.status === 'approved' ? 'Change' : 'Re-submit'}</button>`
-        : '<span class="text-muted">—</span>'}
+        : ''}
+                    ${profileCanEditWithoutApproval && member.can_resubmit
+        ? renderEditIconButton('data-edit-family-member', member.id, 'Edit family member')
+        : ''}
+                    ${member.can_delete
+        ? renderDeleteButton('data-delete-family-member', member.id, 'Delete family member', member.name)
+        : ''}
+                </div>
             </td>
         </tr>
     `).join('');
+
+    syncFamilyEditorUi();
 };
 
 const renderPendingFamilyMemberApprovals = (members = []) => {
@@ -1343,85 +1648,37 @@ const renderEmergencyApprovedView = (employee, section = null) => {
         return;
     }
 
-    if (!employee.emergency_contact_name && !section) {
+    const contacts = normalizeEmergencyContacts(section, employee);
+
+    if (!contacts.length && !section) {
         container.innerHTML = '<p class="text-muted small mb-0">No approved emergency contact yet.</p>';
         return;
     }
 
     if (section && section.status !== 'approved') {
-        const contact = getEmergencyContactDetails(section, employee);
-
         container.innerHTML = `
             <p class="small fw-semibold mb-2">${section.status === 'pending' ? 'Submitted for Review' : 'Rejected Submission'}</p>
-            <dl class="profile-dl mb-0">
-                <div class="profile-dl-row"><dt>Name</dt><dd>${contact.name || '—'}</dd></div>
-                <div class="profile-dl-row"><dt>Relation</dt><dd>${contact.relation || '—'}</dd></div>
-                <div class="profile-dl-row"><dt>Mobile</dt><dd>${contact.phone || '—'}</dd></div>
-            </dl>
+            ${formatEmergencyContactsHtml(contacts)}
             ${section.status !== 'pending' ? `<div class="mt-3">${formatReviewCell(section)}</div>` : ''}
         `;
         return;
     }
 
     container.innerHTML = `
-        <dl class="profile-dl">
-            <div class="profile-dl-row"><dt>Name</dt><dd>${employee.emergency_contact_name}</dd></div>
-            <div class="profile-dl-row"><dt>Relation</dt><dd>${employee.emergency_contact_relation || '—'}</dd></div>
-            <div class="profile-dl-row"><dt>Mobile</dt><dd>${employee.emergency_contact_phone || '—'}</dd></div>
-        </dl>
+        ${formatEmergencyContactsHtml(contacts)}
         ${section && section.status === 'approved' ? `<div class="mt-3">${formatReviewCell(section)}</div>` : ''}
     `;
 };
 
-const getEmergencyContactDetails = (section, employee) => {
-    if (section?.payload?.name) {
-        return {
-            name: section.payload.name,
-            relation: section.payload.relation || '',
-            phone: section.payload.phone || '',
-        };
-    }
-
-    if (section?.payload?.family_member_id) {
-        const member = (employee.family_members || []).find(
-            (item) => Number(item.id) === Number(section.payload.family_member_id),
-        );
-
-        if (member) {
-            return {
-                name: member.name,
-                relation: member.relation || '',
-                phone: member.phone || '',
-            };
-        }
-    }
-
-    return {
-        name: employee.emergency_contact_name || '',
-        relation: employee.emergency_contact_relation || '',
-        phone: employee.emergency_contact_phone || '',
-    };
+const getEmergencyContactDetails = (section, employee) => normalizeEmergencyContacts(section, employee)[0] || {
+    name: '',
+    relation: '',
+    phones: [],
+    phone: '',
 };
 
 const fillEmergencySectionForm = (section, employee) => {
-    const contact = usesSectionPayload(section)
-        ? getEmergencyContactDetails(section, employee)
-        : {
-            name: employee.emergency_contact_name || '',
-            relation: employee.emergency_contact_relation || '',
-            phone: employee.emergency_contact_phone || '',
-        };
-
-    const set = (id, value) => {
-        const input = document.getElementById(id);
-        if (input) {
-            input.value = value ?? '';
-        }
-    };
-
-    set('profile_emergency_contact_name', contact.name);
-    set('profile_emergency_contact_relation', contact.relation);
-    set('profile_emergency_contact_phone', contact.phone);
+    fillEmergencyContactsList(normalizeEmergencyContacts(section, employee));
 };
 
 const renderPersonalTab = (employee) => {
@@ -1437,22 +1694,13 @@ const renderPersonalTab = (employee) => {
     renderSectionReviewNotes(document.getElementById('profileAddressSectionNotes'), addressSection);
     renderAddressDetailsView(employee, addressSection);
     fillAddressSectionForm(addressSection, employee);
-    setPersonalSectionFormState(
-        document.getElementById('profileAddressSectionForm'),
-        document.getElementById('profileAddressSectionSubmit'),
-        addressSection,
-    );
+    updatePersonalSectionActions('address', addressSection, employee);
 
     renderSectionStatusBadge(document.getElementById('profileEmergencySectionStatus'), emergencySection);
     renderSectionReviewNotes(document.getElementById('profileEmergencySectionNotes'), emergencySection);
     renderEmergencyApprovedView(employee, emergencySection);
     fillEmergencySectionForm(emergencySection, employee);
-
-    setPersonalSectionFormState(
-        document.getElementById('profileEmergencySectionForm'),
-        document.getElementById('profileEmergencySectionSubmit'),
-        emergencySection,
-    );
+    updatePersonalSectionActions('emergency', emergencySection, employee);
 
     document.getElementById('profileSubmissionPolicyAlert')?.classList.toggle('d-none', profileCanEditWithoutApproval);
 };
@@ -1675,15 +1923,19 @@ const formatPaymentMethodDetails = (method) => {
     return base + formatPaymentMethodProofLinks(method);
 };
 
+const getNewPaymentModes = (methods) => PAYMENT_MODE_OPTIONS.filter((option) => !getPaymentMethodByMode(methods, option.value));
+
 const renderPaymentMethods = (employee) => {
     const select = document.getElementById('profile_payment_mode');
     const uploadForm = document.getElementById('profilePaymentMethodForm');
     const uploadHint = document.getElementById('profilePaymentMethodUploadHint');
+    const addBtn = document.getElementById('profileAddPaymentMethodBtn');
     const tableBody = document.getElementById('profilePaymentMethodsTableBody');
     const requiredWrap = document.getElementById('profileRequiredPaymentMethods');
     const methods = employee.payment_methods || [];
     cachedPaymentMethods = methods;
     const submittableModes = getSubmittablePaymentModes(methods);
+    const newModes = getNewPaymentModes(methods);
 
     if (select) {
         if (submittableModes.length === 0) {
@@ -1701,8 +1953,18 @@ const renderPaymentMethods = (employee) => {
     }
 
     if (uploadForm) {
-        uploadForm.classList.toggle('d-none', submittableModes.length === 0);
+        if (profileCanEditWithoutApproval) {
+            uploadForm.classList.toggle('d-none', submittableModes.length === 0 || !profileFormEditor.bank);
+        } else {
+            uploadForm.classList.toggle('d-none', !profileFormEditor.bank);
+        }
     }
+
+    if (addBtn) {
+        addBtn.classList.toggle('d-none', profileCanEditWithoutApproval || newModes.length === 0 || profileFormEditor.bank);
+    }
+
+    toggleHrSectionEditButton('profileBankEditBtn', submittableModes.length > 0 && !profileFormEditor.bank);
 
     if (uploadHint) {
         uploadHint.textContent = profileCanEditWithoutApproval
@@ -1729,8 +1991,10 @@ const renderPaymentMethods = (employee) => {
                     <td>${formatDateTime(method.submitted_at)}</td>
                     <td>${formatReviewCell(method)}</td>
                     <td class="text-end">
-                        ${method.can_resubmit
-        ? `<button type="button" class="btn btn-sm btn-outline-primary" data-change-payment-method="${method.payment_mode}">${method.status === 'approved' ? 'Change' : 'Re-submit'}</button>`
+                        ${method.can_resubmit || profileCanEditWithoutApproval
+        ? `<div class="table-action-group justify-content-end">${profileCanEditWithoutApproval
+            ? renderEditIconButton('data-change-payment-method', method.payment_mode, 'Edit payment option')
+            : `<button type="button" class="btn btn-sm btn-outline-primary" data-change-payment-method="${method.payment_mode}">${method.status === 'approved' ? 'Change' : 'Re-submit'}</button>`}</div>`
         : '<span class="text-muted">—</span>'}
                     </td>
                 </tr>
@@ -1893,16 +2157,21 @@ const handleComplianceFieldTypeChange = (fields = []) => {
 
 let cachedComplianceFields = [];
 
+const getNewComplianceFieldOptions = (fields, salary = {}) => getComplianceFieldOptionsForSalary(salary)
+    .filter((option) => !getComplianceFieldByType(fields, option.value));
+
 const renderComplianceFields = (employee, salary = {}) => {
     const select = document.getElementById('profile_compliance_field_type');
     const uploadForm = document.getElementById('profileComplianceFieldForm');
     const uploadHint = document.getElementById('profileComplianceFieldUploadHint');
+    const addBtn = document.getElementById('profileAddComplianceFieldBtn');
     const tableBody = document.getElementById('profileComplianceFieldsTableBody');
     const requiredWrap = document.getElementById('profileRequiredComplianceFields');
     const fields = employee.compliance_fields || [];
     cachedComplianceFields = fields;
     const availableOptions = getComplianceFieldOptionsForSalary(salary);
     const submittableOptions = getSubmittableComplianceFields(fields, salary);
+    const newOptions = getNewComplianceFieldOptions(fields, salary);
 
     renderDl(document.getElementById('profileComplianceFlags'), [
         ['PF Applicable', yesNo(salary.pf_applicable)],
@@ -1926,8 +2195,18 @@ const renderComplianceFields = (employee, salary = {}) => {
     }
 
     if (uploadForm) {
-        uploadForm.classList.toggle('d-none', submittableOptions.length === 0);
+        if (profileCanEditWithoutApproval) {
+            uploadForm.classList.toggle('d-none', submittableOptions.length === 0 || !profileFormEditor.compliance);
+        } else {
+            uploadForm.classList.toggle('d-none', !profileFormEditor.compliance);
+        }
     }
+
+    if (addBtn) {
+        addBtn.classList.toggle('d-none', profileCanEditWithoutApproval || newOptions.length === 0 || profileFormEditor.compliance);
+    }
+
+    toggleHrSectionEditButton('profileComplianceEditBtn', submittableOptions.length > 0 && !profileFormEditor.compliance);
 
     if (uploadHint) {
         uploadHint.textContent = profileCanEditWithoutApproval
@@ -1954,8 +2233,10 @@ const renderComplianceFields = (employee, salary = {}) => {
                     <td>${formatDateTime(field.submitted_at)}</td>
                     <td>${formatReviewCell(field)}</td>
                     <td class="text-end">
-                        ${field.can_resubmit
-        ? `<button type="button" class="btn btn-sm btn-outline-primary" data-change-compliance-field="${field.field_type}">${field.status === 'approved' ? 'Change' : 'Re-submit'}</button>`
+                        ${field.can_resubmit || profileCanEditWithoutApproval
+        ? `<div class="table-action-group justify-content-end">${profileCanEditWithoutApproval
+            ? renderEditIconButton('data-change-compliance-field', field.field_type, 'Edit compliance field')
+            : `<button type="button" class="btn btn-sm btn-outline-primary" data-change-compliance-field="${field.field_type}">${field.status === 'approved' ? 'Change' : 'Re-submit'}</button>`}</div>`
         : '<span class="text-muted">—</span>'}
                     </td>
                 </tr>
@@ -2150,10 +2431,18 @@ const renderDocuments = (employee, documentTypes = []) => {
     const select = document.getElementById('profile_document_type_id');
     const uploadForm = document.getElementById('profileDocumentForm');
     const uploadHint = document.getElementById('profileDocumentUploadHint');
+    const addBtn = document.getElementById('profileAddDocumentBtn');
     const tableBody = document.getElementById('profileDocumentsTableBody');
     const requiredWrap = document.getElementById('profileRequiredDocuments');
     const documents = employee.documents || [];
     const uploadableTypes = getUploadableDocumentTypes(documentTypes, documents);
+    const newDocumentTypes = uploadableTypes.filter((type) => {
+        if (type.allow_multiple) {
+            return true;
+        }
+
+        return !getDocumentsByType(documents, type.id)[0];
+    });
 
     if (select) {
         if (uploadableTypes.length === 0) {
@@ -2164,7 +2453,9 @@ const renderDocuments = (employee, documentTypes = []) => {
             select.innerHTML = '<option value="">Select document type</option>' + uploadableTypes
                 .map((type) => {
                     const existing = getDocumentsByType(documents, type.id)[0];
-                    const suffix = existing?.can_reupload ? ' (Re-upload)' : '';
+                    const suffix = existing?.can_reupload
+                        ? (existing.status === 'approved' ? ' (Change)' : ' (Re-upload)')
+                        : '';
                     const modeLabel = type.allow_multiple ? ' · Multiple' : '';
                     return `<option value="${type.id}">${type.name}${type.is_required ? ' *' : ''}${modeLabel}${suffix}</option>`;
                 })
@@ -2175,8 +2466,18 @@ const renderDocuments = (employee, documentTypes = []) => {
     }
 
     if (uploadForm) {
-        uploadForm.classList.toggle('d-none', uploadableTypes.length === 0);
+        if (profileCanEditWithoutApproval) {
+            uploadForm.classList.toggle('d-none', uploadableTypes.length === 0 || !profileFormEditor.document);
+        } else {
+            uploadForm.classList.toggle('d-none', !profileFormEditor.document);
+        }
     }
+
+    if (addBtn) {
+        addBtn.classList.toggle('d-none', profileCanEditWithoutApproval || newDocumentTypes.length === 0 || profileFormEditor.document);
+    }
+
+    toggleHrSectionEditButton('profileDocumentEditBtn', uploadableTypes.length > 0 && !profileFormEditor.document);
 
     const documentSubmitBtn = document.getElementById('profileDocumentSubmit');
     if (documentSubmitBtn) {
@@ -2187,8 +2488,8 @@ const renderDocuments = (employee, documentTypes = []) => {
         uploadHint.textContent = profileCanEditWithoutApproval
             ? 'Upload or replace documents directly for this employee.'
             : (uploadableTypes.length
-                ? 'Select a document type that is not yet uploaded, or one that was rejected.'
-                : 'All document types are either pending approval or already approved.');
+                ? 'Select a document type to upload, change approved documents, or re-upload rejected ones.'
+                : 'All document types are currently pending HR review.');
     }
 
     if (tableBody) {
@@ -2210,7 +2511,10 @@ const renderDocuments = (employee, documentTypes = []) => {
                     <td class="text-end">
                         <div class="table-action-group justify-content-end">
                             ${renderViewDocumentIconButton(document.id, document.document_type?.name || 'Document')}
-                            ${profileCanDeleteDocuments
+                            ${!profileCanEditWithoutApproval && document.can_reupload && !document.document_type?.allow_multiple
+        ? `<button type="button" class="btn btn-sm btn-outline-primary" data-change-document="${document.document_type_id}">${document.status === 'approved' ? 'Change' : 'Re-upload'}</button>`
+        : ''}
+                            ${document.can_delete
                                 ? renderDeleteDocumentIconButton(document.id, document.document_type?.name || 'Document')
                                 : ''}
                         </div>
@@ -2340,6 +2644,7 @@ const populateEmployeeProfile = (employee, documentTypes = []) => {
     renderPaymentMethods(employee);
     renderComplianceFields(employee, employee.salary);
     renderDocuments(employee, documentTypes);
+    syncHrSectionEditors();
 };
 
 const showFormStatus = (element, message) => {
@@ -2461,6 +2766,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     const refreshEmployeeProfile = async () => {
         const { data } = await api.get(profileEmployeeEndpoint);
 
+        resetProfileFormEditors();
+
         return applyEmployeeProfilePayload(data.data);
     };
 
@@ -2493,12 +2800,36 @@ document.addEventListener('DOMContentLoaded', async () => {
         const select = document.getElementById('profile_payment_mode');
         const form = document.getElementById('profilePaymentMethodForm');
 
+        openProfileFormEditor('bank');
+
         if (select) {
             select.value = changeBtn.dataset.changePaymentMethod;
             handlePaymentModeChange(cachedPaymentMethods);
         }
 
+        if (employeeProfile) {
+            renderPaymentMethods(employeeProfile);
+        }
+
         form?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
+
+    document.getElementById('profileAddPaymentMethodBtn')?.addEventListener('click', () => {
+        const select = document.getElementById('profile_payment_mode');
+        const newModes = getNewPaymentModes(cachedPaymentMethods);
+
+        openProfileFormEditor('bank');
+
+        if (select && newModes[0]) {
+            select.value = newModes[0].value;
+            handlePaymentModeChange(cachedPaymentMethods);
+        }
+
+        if (employeeProfile) {
+            renderPaymentMethods(employeeProfile);
+        }
+
+        document.getElementById('profilePaymentMethodForm')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
     });
 
     document.getElementById('profile_compliance_field_type')?.addEventListener('change', () => {
@@ -2515,12 +2846,225 @@ document.addEventListener('DOMContentLoaded', async () => {
         const select = document.getElementById('profile_compliance_field_type');
         const form = document.getElementById('profileComplianceFieldForm');
 
+        openProfileFormEditor('compliance');
+
         if (select) {
             select.value = changeBtn.dataset.changeComplianceField;
             handleComplianceFieldTypeChange(cachedComplianceFields);
         }
 
+        if (employeeProfile) {
+            renderComplianceFields(employeeProfile, employeeProfile.salary);
+        }
+
         form?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
+
+    document.getElementById('profileAddComplianceFieldBtn')?.addEventListener('click', () => {
+        const select = document.getElementById('profile_compliance_field_type');
+        const newOptions = getNewComplianceFieldOptions(cachedComplianceFields, employeeProfile?.salary || {});
+
+        openProfileFormEditor('compliance');
+
+        if (select && newOptions[0]) {
+            select.value = newOptions[0].value;
+            handleComplianceFieldTypeChange(cachedComplianceFields);
+        }
+
+        if (employeeProfile) {
+            renderComplianceFields(employeeProfile, employeeProfile.salary);
+        }
+
+        document.getElementById('profileComplianceFieldForm')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
+
+    document.getElementById('profileDocumentsTableBody')?.addEventListener('click', (event) => {
+        const changeBtn = event.target.closest('[data-change-document]');
+
+        if (!changeBtn) {
+            return;
+        }
+
+        const select = document.getElementById('profile_document_type_id');
+        openProfileFormEditor('document');
+
+        if (select) {
+            select.value = changeBtn.dataset.changeDocument;
+            syncDocumentFileInput(documentTypes, select.value);
+        }
+
+        if (employeeProfile) {
+            renderDocuments(employeeProfile, documentTypes);
+        }
+
+        document.getElementById('profileDocumentForm')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
+
+    document.getElementById('profileAddDocumentBtn')?.addEventListener('click', () => {
+        const select = document.getElementById('profile_document_type_id');
+        const documents = employeeProfile?.documents || [];
+        const uploadableTypes = getUploadableDocumentTypes(documentTypes, documents);
+        const newDocumentTypes = uploadableTypes.filter((type) => {
+            if (type.allow_multiple) {
+                return true;
+            }
+
+            return !getDocumentsByType(documents, type.id)[0];
+        });
+
+        openProfileFormEditor('document');
+
+        if (select && newDocumentTypes[0]) {
+            select.value = String(newDocumentTypes[0].id);
+            syncDocumentFileInput(documentTypes, select.value);
+        }
+
+        if (employeeProfile) {
+            renderDocuments(employeeProfile, documentTypes);
+        }
+
+        document.getElementById('profileDocumentForm')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
+
+    document.getElementById('profileAddFamilyMemberBtn')?.addEventListener('click', () => {
+        openProfileFormEditor('family');
+        resetFamilyForm();
+        document.getElementById('profileFamilySectionForm')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
+
+    document.getElementById('profileAddressAddBtn')?.addEventListener('click', () => {
+        openProfileFormEditor('address');
+
+        if (employeeProfile) {
+            renderPersonalTab(employeeProfile);
+        }
+
+        document.getElementById('profileAddressSectionForm')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
+
+    document.getElementById('profileAddressChangeBtn')?.addEventListener('click', () => {
+        openProfileFormEditor('address');
+
+        if (employeeProfile) {
+            renderPersonalTab(employeeProfile);
+        }
+
+        document.getElementById('profileAddressSectionForm')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
+
+    document.getElementById('profileEmergencyAddBtn')?.addEventListener('click', () => {
+        openProfileFormEditor('emergency');
+
+        if (employeeProfile) {
+            renderPersonalTab(employeeProfile);
+        }
+
+        document.getElementById('profileEmergencySectionForm')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
+
+    document.getElementById('profileEmergencyChangeBtn')?.addEventListener('click', () => {
+        openProfileFormEditor('emergency');
+
+        if (employeeProfile) {
+            renderPersonalTab(employeeProfile);
+        }
+
+        document.getElementById('profileEmergencySectionForm')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
+
+    document.getElementById('profileFamilySectionEditBtn')?.addEventListener('click', () => {
+        openProfileFormEditor('family');
+        resetFamilyForm();
+        document.getElementById('profileFamilySectionForm')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
+
+    document.getElementById('profileAddressEditBtn')?.addEventListener('click', () => {
+        openProfileFormEditor('address');
+
+        if (employeeProfile) {
+            renderPersonalTab(employeeProfile);
+        }
+
+        document.getElementById('profileAddressSectionForm')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
+
+    document.getElementById('profileEmergencyEditBtn')?.addEventListener('click', () => {
+        openProfileFormEditor('emergency');
+
+        if (employeeProfile) {
+            renderPersonalTab(employeeProfile);
+        }
+
+        document.getElementById('profileEmergencySectionForm')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
+
+    document.getElementById('profileBankEditBtn')?.addEventListener('click', () => {
+        openProfileFormEditor('bank');
+        renderPaymentMethods(employeeProfile);
+        document.getElementById('profilePaymentMethodForm')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
+
+    document.getElementById('profileComplianceEditBtn')?.addEventListener('click', () => {
+        openProfileFormEditor('compliance');
+        renderComplianceFields(employeeProfile, employeeProfile?.salary);
+        document.getElementById('profileComplianceFieldForm')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
+
+    document.getElementById('profileDocumentEditBtn')?.addEventListener('click', () => {
+        openProfileFormEditor('document');
+        renderDocuments(employeeProfile, documentTypes);
+        document.getElementById('profileDocumentForm')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
+
+    document.getElementById('profileAddEmergencyContact')?.addEventListener('click', () => {
+        const list = document.getElementById('profileEmergencyContactsList');
+        const row = createEmergencyContactRow();
+
+        if (row && list) {
+            list.appendChild(row);
+        }
+    });
+
+    emergencySectionForm?.addEventListener('click', (event) => {
+        const removeContactBtn = event.target.closest('[data-remove-emergency-contact]');
+
+        if (removeContactBtn) {
+            removeContactBtn.closest('[data-emergency-contact-row]')?.remove();
+            updateEmergencyContactRemoveButtons();
+            return;
+        }
+
+        const addPhoneBtn = event.target.closest('[data-add-emergency-phone]');
+
+        if (addPhoneBtn) {
+            const contactRow = addPhoneBtn.closest('[data-emergency-contact-row]');
+            const phonesList = contactRow?.querySelector('[data-emergency-phones-list]');
+            const phoneRow = createEmergencyPhoneRow();
+
+            if (phoneRow && phonesList) {
+                phonesList.appendChild(phoneRow);
+                updateEmergencyPhoneRemoveButtons(contactRow);
+            }
+
+            return;
+        }
+
+        const removePhoneBtn = event.target.closest('[data-remove-emergency-phone]');
+
+        if (removePhoneBtn) {
+            const contactRow = removePhoneBtn.closest('[data-emergency-contact-row]');
+            removePhoneBtn.closest('[data-emergency-phone-row]')?.remove();
+
+            if (contactRow) {
+                updateEmergencyPhoneRemoveButtons(contactRow);
+            }
+        }
+    });
+
+    emergencySectionForm?.addEventListener('input', (event) => {
+        if (event.target.matches('[data-emergency-phone]')) {
+            normalizePhoneInput(event.target);
+        }
     });
 
     document.getElementById('profile_compliance_value')?.addEventListener('input', (event) => {
@@ -2536,16 +3080,9 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
     });
 
-    ['profile_phone', 'profile_emergency_contact_phone', 'profile_postal_code'].forEach((id) => {
+    ['profile_phone', 'profile_postal_code'].forEach((id) => {
         document.getElementById(id)?.addEventListener('input', (event) => {
-            if (id === 'profile_emergency_contact_phone') {
-                normalizePhoneInput(event.target);
-                return;
-            }
-
-            if (['profile_phone', 'profile_postal_code'].includes(id)) {
-                event.target.value = event.target.value.replace(/\D/g, '');
-            }
+            event.target.value = event.target.value.replace(/\D/g, '');
         });
     });
 
@@ -2814,17 +3351,28 @@ document.addEventListener('DOMContentLoaded', async () => {
         event.preventDefault();
         const submitBtn = document.getElementById('profileEmergencySectionSubmit');
         const statusEl = document.getElementById('profileEmergencySectionStatusMsg');
-        const name = document.getElementById('profile_emergency_contact_name')?.value.trim();
-        const relation = document.getElementById('profile_emergency_contact_relation')?.value.trim();
-        const phone = document.getElementById('profile_emergency_contact_phone')?.value.trim();
+        const contacts = collectEmergencyContactsFromForm();
 
-        if (!name || !relation) {
+        if (!contacts.length) {
+            alert('Add at least one emergency contact.');
             return;
         }
 
-        if (!isValidTenDigitPhone(phone)) {
-            alert('Mobile number must be exactly 10 digits.');
-            return;
+        for (const contact of contacts) {
+            if (!contact.name || !contact.relation) {
+                alert('Each emergency contact needs a name and relation.');
+                return;
+            }
+
+            if (!contact.phones.length) {
+                alert('Each emergency contact needs at least one mobile number.');
+                return;
+            }
+
+            if (contact.phones.some((phone) => !isValidTenDigitPhone(phone))) {
+                alert('Each mobile number must be exactly 10 digits.');
+                return;
+            }
         }
 
         setSubmitLoading(submitBtn, true, { submittingText: 'Submitting...' });
@@ -2832,11 +3380,10 @@ document.addEventListener('DOMContentLoaded', async () => {
         try {
             const { data } = await api.post(`${profileSubmitPrefix}/personal-sections`, {
                 section_type: 'emergency_contact',
-                name,
-                relation,
-                phone: phone || null,
+                contacts,
             });
 
+            closeProfileFormEditor('emergency');
             await refreshEmployeeProfile();
             showFormStatus(statusEl, data.message || 'Submitted.');
         } catch (error) {
@@ -3290,23 +3837,46 @@ document.addEventListener('DOMContentLoaded', async () => {
     };
 
     document.getElementById('profileFamilyResubmitCancel')?.addEventListener('click', () => {
+        closeProfileFormEditor('family');
         resetFamilyForm();
     });
 
-    document.getElementById('profileFamilyMembersTableBody')?.addEventListener('click', (event) => {
-        const resubmitBtn = event.target.closest('[data-resubmit-family-member]');
+    document.getElementById('profileFamilyMembersTableBody')?.addEventListener('click', async (event) => {
+        const deleteBtn = event.target.closest('[data-delete-family-member]');
 
-        if (!resubmitBtn || !employeeProfile) {
+        if (deleteBtn) {
+            const memberName = deleteBtn.dataset.deleteName || 'this family member';
+
+            if (!window.confirm(`Delete ${memberName}? This cannot be undone.`)) {
+                return;
+            }
+
+            try {
+                await api.delete(`/employee-family-members/${deleteBtn.dataset.deleteFamilyMember}`);
+                await refreshEmployeeProfile();
+            } catch (error) {
+                alert(getErrorMessage(error));
+            }
+
             return;
         }
 
-        const memberId = Number(resubmitBtn.dataset.resubmitFamilyMember);
+        const editBtn = event.target.closest('[data-edit-family-member]');
+        const resubmitBtn = event.target.closest('[data-resubmit-family-member]');
+        const actionBtn = editBtn || resubmitBtn;
+
+        if (!actionBtn || !employeeProfile) {
+            return;
+        }
+
+        const memberId = Number(actionBtn.dataset.editFamilyMember || actionBtn.dataset.resubmitFamilyMember);
         const member = (employeeProfile.family_members || []).find((item) => item.id === memberId);
 
         if (!member) {
             return;
         }
 
+        openProfileFormEditor('family');
         resetFamilyForm(member);
         document.getElementById('profileFamilySectionForm')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
     });
@@ -3469,8 +4039,9 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     const profilePhotoInput = document.getElementById('profilePhotoInput');
     const profilePhotoUploadBtn = document.getElementById('profilePhotoUploadBtn');
-    const profileEditTabBtn = document.getElementById('profileEditTabBtn');
     const profileViewWorkBtn = document.getElementById('profileViewWorkBtn');
+
+    initProfilePhotoCrop();
 
     profilePhotoUploadBtn?.addEventListener('click', () => {
         if (!profilePhotoUploadBtn.disabled) {
@@ -3494,9 +4065,41 @@ document.addEventListener('DOMContentLoaded', async () => {
             return;
         }
 
+        let croppedFile = file;
+
+        try {
+            croppedFile = await cropProfilePhotoFile(file);
+        } catch (error) {
+            if (error?.message !== 'cancelled') {
+                await showErrorAlert({ text: getErrorMessage(error, 'Unable to crop profile photo.') });
+            }
+
+            profilePhotoInput.value = '';
+            return;
+        }
+
+        try {
+            const { detectFaceInFile } = await import('./face-verification');
+            const hasFace = await detectFaceInFile(croppedFile);
+
+            if (!hasFace) {
+                await showErrorAlert({
+                    text: 'No face detected in the cropped photo. Frame your face inside the blue square and try again.',
+                });
+                profilePhotoInput.value = '';
+                return;
+            }
+        } catch (error) {
+            await showErrorAlert({
+                text: getErrorMessage(error, 'Unable to verify face in profile photo. Check your connection and try again.'),
+            });
+            profilePhotoInput.value = '';
+            return;
+        }
+
         try {
             const formData = new FormData();
-            formData.append('photo', file);
+            formData.append('photo', croppedFile);
             const { data } = await api.post(`${profileSubmitPrefix}/photo`, formData, {
                 headers: { 'Content-Type': 'multipart/form-data' },
             });
@@ -3511,6 +4114,19 @@ document.addEventListener('DOMContentLoaded', async () => {
                 employeeProfile,
             );
 
+            const approvedPhotoUrl = employeeProfile?.profile_photo_url;
+
+            if (approvedPhotoUrl && employeeProfile?.profile_photo_submission?.status !== 'pending') {
+                try {
+                    const { syncFaceReferenceFromProfilePhoto } = await import('./face-verification');
+                    await syncFaceReferenceFromProfilePhoto(approvedPhotoUrl);
+                } catch (error) {
+                    await showErrorAlert({
+                        text: getErrorMessage(error, 'Profile photo saved, but face recognition could not be updated. Re-upload your photo or try again from attendance.'),
+                    });
+                }
+            }
+
             if (data.data?.profile_photo?.status === 'pending' || employeeProfile?.profile_photo_submission?.status === 'pending') {
                 await showProfilePhotoPendingNotice();
             } else {
@@ -3524,14 +4140,6 @@ document.addEventListener('DOMContentLoaded', async () => {
             await showErrorAlert({ text: getErrorMessage(error) });
         } finally {
             profilePhotoInput.value = '';
-        }
-    });
-
-    profileEditTabBtn?.addEventListener('click', () => {
-        const tab = document.getElementById('profile-personal-tab');
-
-        if (tab) {
-            Tab.getOrCreateInstance(tab).show();
         }
     });
 

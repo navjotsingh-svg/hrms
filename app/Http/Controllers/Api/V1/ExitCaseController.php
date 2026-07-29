@@ -45,6 +45,24 @@ class ExitCaseController extends Controller
         ]);
     }
 
+    public function store(Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'employee_id' => ['required', 'integer', 'exists:employees,id'],
+            'last_working_date' => ['required', 'date'],
+            'exit_type' => ['required', Rule::in(array_keys(config('offboarding.exit_types', [])))],
+            'notes' => ['nullable', 'string', 'max:2000'],
+        ]);
+
+        $exitCase = $this->exitCaseService->createDirect($request->user(), $validated);
+
+        return $this->success(
+            ['exit_case' => new ExitCaseResource($exitCase)],
+            'Offboarding started successfully.',
+            201,
+        );
+    }
+
     public function show(Request $request, ExitCase $exitCase): JsonResponse
     {
         $exitCase = $this->exitCaseService->showForUser($request->user(), $exitCase);

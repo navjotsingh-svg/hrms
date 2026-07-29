@@ -37,11 +37,10 @@ class HiringOfferController extends Controller
         $validated = $request->validate([
             'candidate_id' => ['required', 'integer', 'exists:candidates,id'],
             'job_id' => ['nullable', 'integer', 'exists:job_postings,id'],
-            'template_id' => ['nullable', 'integer', 'exists:hiring_templates,id'],
+            'template_id' => ['required', 'integer', 'exists:hiring_templates,id'],
             'title' => ['required', 'string', 'max:255'],
             'offered_ctc' => ['nullable', 'numeric', 'min:0'],
             'joining_date' => ['nullable', 'date'],
-            'letter_html' => ['nullable', 'string'],
         ]);
 
         $offer = $this->hiringService->storeOffer($request->user(), $validated);
@@ -53,7 +52,7 @@ class HiringOfferController extends Controller
     {
         $offer = $this->hiringService->sendOffer($request->user(), $hiringOffer);
 
-        return $this->success(['offer' => $this->formatOffer($offer)], 'Offer sent.');
+        return $this->success(['offer' => $this->formatOffer($offer)], 'Offer email with PDF sent to candidate.');
     }
 
     public function templates(Request $request): JsonResponse
@@ -68,6 +67,15 @@ class HiringOfferController extends Controller
         return $this->success([
             'templates' => collect($paginator->items())->map(fn (HiringTemplate $t) => $this->formatTemplate($t))->values(),
             'pagination' => $this->paginationMeta($paginator),
+        ]);
+    }
+
+    public function templatesMeta(): JsonResponse
+    {
+        return $this->success([
+            'placeholders' => config('hiring.placeholders', []),
+            'sample_templates' => config('hiring.sample_templates', []),
+            'types' => config('hiring.template_types', []),
         ]);
     }
 

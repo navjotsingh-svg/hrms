@@ -2,6 +2,7 @@
 
 namespace App\Http\Requests;
 
+use App\Services\AttendanceSettingsService;
 use Illuminate\Foundation\Http\FormRequest;
 
 class StoreAttendancePunchRequest extends FormRequest
@@ -13,8 +14,17 @@ class StoreAttendancePunchRequest extends FormRequest
 
     public function rules(): array
     {
+        $requiresPhoto = app(AttendanceSettingsService::class)->requiresPunchPhoto(
+            (int) $this->user()?->company_id,
+        );
+
         return [
-            'selfie' => ['required', 'image', 'mimes:jpg,jpeg,png,webp', 'max:5120'],
+            'selfie' => [
+                $requiresPhoto ? 'required' : 'nullable',
+                'image',
+                'mimes:jpg,jpeg,png,webp',
+                'max:5120',
+            ],
             'latitude' => ['required', 'numeric', 'between:-90,90'],
             'longitude' => ['required', 'numeric', 'between:-180,180'],
             'location_name' => ['nullable', 'string', 'max:500'],

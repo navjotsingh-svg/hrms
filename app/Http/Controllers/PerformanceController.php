@@ -23,7 +23,7 @@ class PerformanceController extends Controller
 
     public function continuousFeedback(): View
     {
-        return view('performance.feedback-forms', $this->pageData('continuous-feedback'));
+        return view('performance.continuous-feedback', $this->pageData('continuous-feedback'));
     }
 
     public function oneOnOne(): View
@@ -37,7 +37,7 @@ class PerformanceController extends Controller
 
     public function reviews(): View
     {
-        return view('performance.overview', $this->pageData('reviews'));
+        return view('performance.reviews', $this->pageData('reviews'));
     }
 
     public function calibration(): View
@@ -108,11 +108,14 @@ class PerformanceController extends Controller
     /** @return array<string, mixed> */
     private function pageData(string $page): array
     {
+        $user = auth()->user();
+
         return [
             'performancePage' => $page,
-            'canManage' => auth()->user()->canManagePerformance(),
-            'canReview' => auth()->user()->canReviewPerformance(),
-            'canManagePips' => auth()->user()->canManagePips(),
+            'canManage' => $user->canManagePerformance(),
+            'canReview' => $user->canReviewPerformance(),
+            'canParticipate' => $user->canParticipateInPerformance(),
+            'canManagePips' => $user->canManagePips(),
         ];
     }
 }

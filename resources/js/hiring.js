@@ -13,6 +13,7 @@ import {
     renderListPagination,
 } from './pagination';
 import { renderDateTimeStack } from './datetime-utils';
+import { initRichTextEditor, isEmptyEditorContent } from './rich-text-editor';
 
 const cfg = window.HRMS_HIRING || {};
 const page = cfg.page || 'overview';
@@ -301,7 +302,7 @@ const initOverview = async () => {
         const overview = data.data.overview;
 
         document.getElementById('statOpenJobs').textContent = overview.open_jobs ?? '—';
-        document.getElementById('statPendingRequisitions').textContent = overview.pending_requisitions ?? '—';
+        document.getElementById('statDraftJobs').textContent = overview.draft_jobs ?? '—';
         document.getElementById('statActiveCandidates').textContent = overview.active_candidates ?? '—';
         document.getElementById('statUpcomingInterviews').textContent = overview.upcoming_interviews ?? '—';
 
@@ -316,133 +317,6 @@ const initOverview = async () => {
         body.innerHTML = rows.length
             ? rows.join('')
             : '<tr><td colspan="2" class="text-center text-muted py-4">No candidates in pipeline.</td></tr>';
-    } catch (error) {
-        showAlert(getErrorMessage(error), 'danger');
-    }
-};
-
-const initRequisitions = async () => {
-    const body = document.getElementById('requisitionsTableBody');
-    if (!body) return;
-
-    const modalEl = document.getElementById('requisitionModal');
-    const modal = modalEl ? Modal.getOrCreateInstance(modalEl) : null;
-    let currentPage = 1;
-
-    const load = async (pageNum = 1) => {
-        currentPage = pageNum;
-        const params = { page: pageNum, per_page: readPerPage(document.getElementById('requisitionsPerPage')) };
-        const status = document.getElementById('requisitionStatusFilter')?.value;
-        const search = document.getElementById('requisitionSearchFilter')?.value?.trim();
-        if (status) params.status = status;
-        if (search) params.search = search;
-
-        const { data } = await api.get('/job-requisitions', { params });
-        const requisitions = data.data.requisitions || [];
-
-        if (!requisitions.length) {
-            body.innerHTML = '<tr><td colspan="6" class="text-center text-muted py-4">No requisitions found.</td></tr>';
-        } else {
-            body.innerHTML = requisitions.map((req) => {
-                const actions = [];
-                if (cfg.canCreateRequisition && req.status === 'draft') {
-                    actions.push(renderEditIconButton('data-edit-requisition', req.id, 'Edit'));
-                    actions.push(`<button type="button" class="table-action-btn table-action-btn--approve" title="Submit" data-submit-requisition="${req.id}">&#9654;</button>`);
-                }
-                return `
-                    <tr>
-                        <td>${escapeHtml(req.title)}</td>
-                        <td>${escapeHtml(req.department?.name || '—')}</td>
-                        <td>${req.headcount ?? '—'}</td>
-                        <td>${statusPill(req.urgency || 'normal')}</td>
-                        <td>${statusPill(req.status)}</td>
-                        <td class="text-end">${renderActionGroup(actions)}</td>
-                    </tr>
-                `;
-            }).join('');
-        }
-
-        renderPagination('requisitions', data.data.pagination, load);
-    };
-
-    if (cfg.canCreateRequisition) {
-        setHeaderAction('<button type="button" class="btn btn-primary" id="openRequisitionModalBtn">+ Create Requisition</button>');
-        await loadDepartments(document.getElementById('requisitionDepartment'));
-
-        document.getElementById('openRequisitionModalBtn')?.addEventListener('click', () => {
-            document.getElementById('requisitionEditingId').value = '';
-            document.getElementById('requisitionModalLabel').textContent = 'Create Requisition';
-            document.getElementById('requisitionForm').reset();
-            document.getElementById('requisitionUrgency').value = 'normal';
-            document.getElementById('requisitionEmploymentType').value = 'full_time';
-            document.getElementById('requisitionHeadcount').value = '1';
-            modal?.show();
-        });
-
-        document.getElementById('requisitionForm')?.addEventListener('submit', async (e) => {
-            e.preventDefault();
-            const id = document.getElementById('requisitionEditingId').value;
-            const payload = {
-                title: document.getElementById('requisitionTitle').value,
-                department_id: document.getElementById('requisitionDepartment').value || null,
-                headcount: Number(document.getElementById('requisitionHeadcount').value || 1),
-                description: document.getElementById('requisitionDescription').value,
-                urgency: document.getElementById('requisitionUrgency').value,
-                employment_type: document.getElementById('requisitionEmploymentType').value,
-            };
-
-            try {
-                if (id) {
-                    await api.put(`/job-requisitions/${id}`, payload);
-                } else {
-                    await api.post('/job-requisitions', payload);
-                }
-                modal?.hide();
-                showAlert('Requisition saved.');
-                await load(currentPage);
-            } catch (error) {
-                showAlert(getErrorMessage(error), 'danger');
-            }
-        });
-    }
-
-    body.addEventListener('click', async (e) => {
-        const editBtn = e.target.closest('[data-edit-requisition]');
-        const submitBtn = e.target.closest('[data-submit-requisition]');
-
-        try {
-            if (editBtn) {
-                const { data } = await api.get('/job-requisitions', { params: { per_page: 50 } });
-                const req = (data.data.requisitions || []).find((r) => String(r.id) === editBtn.dataset.editRequisition);
-                if (!req) return;
-                document.getElementById('requisitionEditingId').value = req.id;
-                document.getElementById('requisitionModalLabel').textContent = 'Edit Requisition';
-                document.getElementById('requisitionTitle').value = req.title;
-                document.getElementById('requisitionDepartment').value = req.department?.id || '';
-                document.getElementById('requisitionHeadcount').value = req.headcount || 1;
-                document.getElementById('requisitionDescription').value = req.description || '';
-                document.getElementById('requisitionUrgency').value = req.urgency || 'normal';
-                document.getElementById('requisitionEmploymentType').value = req.employment_type || 'full_time';
-                modal?.show();
-            }
-
-            if (submitBtn) {
-                await api.patch(`/job-requisitions/${submitBtn.dataset.submitRequisition}/submit`);
-                showAlert('Requisition submitted for approval.');
-                await load(currentPage);
-            }
-        } catch (error) {
-            showAlert(getErrorMessage(error), 'danger');
-        }
-    });
-
-    ['requisitionStatusFilter', 'requisitionSearchFilter'].forEach((id) => {
-        document.getElementById(id)?.addEventListener('change', () => load(1).catch((err) => showAlert(getErrorMessage(err), 'danger')));
-        document.getElementById(id)?.addEventListener('input', () => load(1).catch((err) => showAlert(getErrorMessage(err), 'danger')));
-    });
-
-    try {
-        await load();
     } catch (error) {
         showAlert(getErrorMessage(error), 'danger');
     }
@@ -906,11 +780,10 @@ const initOffers = async () => {
             const payload = {
                 candidate_id: Number(document.getElementById('offerCandidate').value),
                 job_id: document.getElementById('offerJob').value || null,
-                template_id: document.getElementById('offerTemplate').value || null,
+                template_id: Number(document.getElementById('offerTemplate').value),
                 title: document.getElementById('offerTitle').value,
                 offered_ctc: document.getElementById('offerCtc').value || null,
                 joining_date: document.getElementById('offerJoiningDate').value || null,
-                letter_html: document.getElementById('offerLetterHtml').value || null,
             };
 
             try {
@@ -930,7 +803,7 @@ const initOffers = async () => {
 
         try {
             await api.patch(`/hiring-offers/${sendBtn.dataset.sendOffer}/send`);
-            showAlert('Offer sent.');
+            showAlert('Offer email with PDF sent to candidate.');
             await load(currentPage);
         } catch (error) {
             showAlert(getErrorMessage(error), 'danger');
@@ -953,6 +826,92 @@ const initTemplates = async () => {
     const modalEl = document.getElementById('templateModal');
     const modal = modalEl ? Modal.getOrCreateInstance(modalEl) : null;
     let currentPage = 1;
+    let templateBodyEditor = null;
+    let templateMeta = { placeholders: [], sample_templates: {} };
+
+    const ensureTemplateBodyEditor = () => {
+        if (templateBodyEditor) {
+            return templateBodyEditor;
+        }
+
+        templateBodyEditor = initRichTextEditor({
+            container: document.getElementById('templateBodyEditor'),
+            textarea: document.getElementById('templateBodyHtml'),
+            placeholder: 'Write the template content. Click dynamic fields below to insert placeholders.',
+        });
+
+        return templateBodyEditor;
+    };
+
+    const setTemplateBodyContent = (html = '') => {
+        const editor = ensureTemplateBodyEditor();
+        if (html && !isEmptyEditorContent(html)) {
+            editor.quill.root.innerHTML = html;
+        } else {
+            editor.quill.setText('');
+        }
+        editor.sync?.();
+    };
+
+    const insertTemplatePlaceholder = (key) => {
+        const editor = ensureTemplateBodyEditor();
+        if (!editor?.quill) return;
+
+        const token = `{${key}}`;
+        const range = editor.quill.getSelection(true);
+        editor.quill.insertText(range.index, token);
+        editor.sync?.();
+    };
+
+    const renderPlaceholderGroups = () => {
+        const container = document.getElementById('templatePlaceholderGroups');
+        if (!container) return;
+
+        const groups = {};
+        (templateMeta.placeholders || []).forEach((item) => {
+            const group = item.group || 'Fields';
+            if (!groups[group]) {
+                groups[group] = [];
+            }
+            groups[group].push(item);
+        });
+
+        container.innerHTML = Object.entries(groups).map(([group, items]) => `
+            <div class="mb-2">
+                <div class="small text-muted mb-1">${escapeHtml(group)}</div>
+                <div class="d-flex flex-wrap gap-1">
+                    ${items.map((item) => `
+                        <button
+                            type="button"
+                            class="btn btn-outline-secondary btn-sm doc-letter-placeholder-btn hiring-template-field-btn"
+                            data-placeholder-key="${escapeHtml(item.key)}"
+                            title="${escapeHtml(item.label)}"
+                        >{${escapeHtml(item.key)}}</button>
+                    `).join('')}
+                </div>
+            </div>
+        `).join('');
+    };
+
+    const resetTemplateForm = () => {
+        document.getElementById('templateEditingId').value = '';
+        document.getElementById('templateModalLabel').textContent = 'Create Template';
+        document.getElementById('templateForm').reset();
+        document.getElementById('templateType').value = 'offer';
+        setTemplateBodyContent('');
+    };
+
+    const loadMeta = async () => {
+        if (!cfg.canManage) return;
+
+        try {
+            const { data } = await api.get('/hiring-templates/meta');
+            templateMeta = data.data || templateMeta;
+            renderPlaceholderGroups();
+        } catch {
+            renderPlaceholderGroups();
+        }
+    };
 
     const load = async (pageNum = 1) => {
         currentPage = pageNum;
@@ -987,15 +946,23 @@ const initTemplates = async () => {
         setHeaderAction('<button type="button" class="btn btn-primary" id="openTemplateModalBtn">+ Create Template</button>');
 
         document.getElementById('openTemplateModalBtn')?.addEventListener('click', () => {
-            document.getElementById('templateEditingId').value = '';
-            document.getElementById('templateModalLabel').textContent = 'Create Template';
-            document.getElementById('templateForm').reset();
-            document.getElementById('templateType').value = 'offer';
+            resetTemplateForm();
             modal?.show();
+        });
+
+        document.getElementById('useOfferSampleBtn')?.addEventListener('click', () => {
+            setTemplateBodyContent(templateMeta.sample_templates?.offer || '');
+        });
+
+        document.getElementById('templatePlaceholderGroups')?.addEventListener('click', (event) => {
+            const button = event.target.closest('.hiring-template-field-btn');
+            if (!button) return;
+            insertTemplatePlaceholder(button.dataset.placeholderKey);
         });
 
         document.getElementById('templateForm')?.addEventListener('submit', async (e) => {
             e.preventDefault();
+            templateBodyEditor?.sync?.();
             const id = document.getElementById('templateEditingId').value;
             const payload = {
                 name: document.getElementById('templateName').value,
@@ -1016,6 +983,10 @@ const initTemplates = async () => {
                 showAlert(getErrorMessage(error), 'danger');
             }
         });
+
+        modalEl?.addEventListener('shown.bs.modal', () => {
+            ensureTemplateBodyEditor();
+        });
     }
 
     body.addEventListener('click', async (e) => {
@@ -1030,14 +1001,15 @@ const initTemplates = async () => {
             document.getElementById('templateModalLabel').textContent = 'Edit Template';
             document.getElementById('templateName').value = template.name;
             document.getElementById('templateType').value = template.type || 'offer';
-            document.getElementById('templateBodyHtml').value = template.body_html || '';
             modal?.show();
+            setTemplateBodyContent(template.body_html || '');
         } catch (error) {
             showAlert(getErrorMessage(error), 'danger');
         }
     });
 
     try {
+        await loadMeta();
         await load();
     } catch (error) {
         showAlert(getErrorMessage(error), 'danger');
@@ -1048,22 +1020,167 @@ const initCareers = async () => {
     const form = document.getElementById('careersForm');
     if (!form) return;
 
+    let sectionsState = {};
+
     const previewLink = document.getElementById('careersPreviewLink');
     const publicUrlInput = document.getElementById('careersPublicUrl');
     const bannerPreview = document.getElementById('careersBannerPreview');
 
+    const setNested = (obj, path, value) => {
+        const keys = path.split('.');
+        let cur = obj;
+        keys.forEach((key, i) => {
+            if (i === keys.length - 1) cur[key] = value;
+            else cur = cur[key] = cur[key] || {};
+        });
+    };
+
+    const getNested = (obj, path) => path.split('.').reduce((acc, key) => acc?.[key], obj);
+
+    const rowHtml = (fields, values = {}, removeLabel = 'Remove') => `
+        <div class="border rounded p-2 careers-dynamic-row">
+            <div class="row g-2 align-items-end">
+                ${fields.map((f) => `
+                    <div class="col-md-${f.col || 3}">
+                        <label class="form-label small mb-1">${f.label}</label>
+                        <input type="text" class="form-control form-control-sm" data-field="${f.key}" value="${escapeHtml(values[f.key] || '')}" placeholder="${escapeHtml(f.placeholder || '')}">
+                    </div>
+                `).join('')}
+                <div class="col-md-auto ms-auto">
+                    <button type="button" class="btn btn-sm btn-outline-danger" data-remove-row>${removeLabel}</button>
+                </div>
+            </div>
+        </div>
+    `;
+
+    const collectRows = (container, keys) => Array.from(container?.querySelectorAll('.careers-dynamic-row') || []).map((row) => {
+        const item = {};
+        keys.forEach((key) => {
+            item[key] = row.querySelector(`[data-field="${key}"]`)?.value?.trim() || '';
+        });
+        return item;
+    }).filter((item) => Object.values(item).some(Boolean));
+
+    const renderMarquee = (tags = []) => {
+        const list = document.getElementById('careersMarqueeList');
+        if (!list) return;
+        list.innerHTML = (tags.length ? tags : ['']).map((tag) => rowHtml([{ label: 'Tag', key: 'tag', col: 10, placeholder: 'Engineering' }], { tag }, '×')).join('');
+    };
+
+    const renderWhyJoin = (items = []) => {
+        const list = document.getElementById('careersWhyJoinList');
+        if (!list) return;
+        const rows = items.length ? items : [{ title: '', description: '', icon: 'star' }];
+        list.innerHTML = rows.map((item) => rowHtml([
+            { label: 'Title', key: 'title', col: 3 },
+            { label: 'Description', key: 'description', col: 5 },
+            { label: 'Icon', key: 'icon', col: 2, placeholder: 'lightbulb' },
+        ], item)).join('');
+    };
+
+    const renderStats = (items = []) => {
+        const list = document.getElementById('careersStatsList');
+        if (!list) return;
+        const rows = items.length ? items : [{ value: '', suffix: '', label: '' }];
+        list.innerHTML = rows.map((item) => rowHtml([
+            { label: 'Value', key: 'value', col: 2 },
+            { label: 'Suffix', key: 'suffix', col: 2 },
+            { label: 'Label', key: 'label', col: 5 },
+        ], item)).join('');
+    };
+
+    const renderTestimonials = (items = []) => {
+        const list = document.getElementById('careersTestimonialsList');
+        if (!list) return;
+        const rows = items.length ? items : [{ name: '', role: '', quote: '', photo_url: '' }];
+        list.innerHTML = rows.map((item) => rowHtml([
+            { label: 'Name', key: 'name', col: 2 },
+            { label: 'Role', key: 'role', col: 2 },
+            { label: 'Quote', key: 'quote', col: 4 },
+            { label: 'Photo URL', key: 'photo_url', col: 3 },
+        ], item)).join('');
+    };
+
+    const renderBadges = (items = []) => {
+        const list = document.getElementById('careersBadgesList');
+        if (!list) return;
+        const rows = items.length ? items : [{ title: '', image_url: '' }];
+        list.innerHTML = rows.map((item) => rowHtml([
+            { label: 'Title', key: 'title', col: 4 },
+            { label: 'Image URL', key: 'image_url', col: 6 },
+        ], item)).join('');
+    };
+
+    const renderSocial = (items = []) => {
+        const list = document.getElementById('careersSocialList');
+        if (!list) return;
+        const rows = items.length ? items : [{ platform: '', url: '' }];
+        list.innerHTML = rows.map((item) => rowHtml([
+            { label: 'Platform', key: 'platform', col: 3 },
+            { label: 'URL', key: 'url', col: 7 },
+        ], item)).join('');
+    };
+
+    const populateSectionTitles = (sections) => {
+        document.querySelectorAll('[data-section-title]').forEach((input) => {
+            input.value = getNested(sections, `section_titles.${input.dataset.sectionTitle}`) || '';
+        });
+    };
+
+    const collectSections = () => {
+        const sectionTitles = {};
+        document.querySelectorAll('[data-section-title]').forEach((input) => {
+            setNested(sectionTitles, input.dataset.sectionTitle, input.value);
+        });
+
+        return {
+            ...sectionsState,
+            marquee_tags: collectRows(document.getElementById('careersMarqueeList'), ['tag']).map((r) => r.tag),
+            why_join: collectRows(document.getElementById('careersWhyJoinList'), ['title', 'description', 'icon']),
+            stats: collectRows(document.getElementById('careersStatsList'), ['value', 'suffix', 'label']),
+            testimonials: collectRows(document.getElementById('careersTestimonialsList'), ['name', 'role', 'quote', 'photo_url']),
+            badges: collectRows(document.getElementById('careersBadgesList'), ['title', 'image_url']),
+            social_links: collectRows(document.getElementById('careersSocialList'), ['platform', 'url']),
+            footer_note: document.getElementById('careersFooterNote')?.value || '',
+            section_titles: sectionTitles,
+            show_marquee: true,
+            show_stats: true,
+            show_why_join: true,
+            show_testimonials: true,
+            show_badges: true,
+        };
+    };
+
     const populate = (settings) => {
+        sectionsState = settings.sections || {};
+
         document.getElementById('careersHeroTitle').value = settings.hero_title || '';
         document.getElementById('careersHeroSubtitle').value = settings.hero_subtitle || '';
+        document.getElementById('careersHeroCtaText').value = settings.hero_cta_text || '';
+        document.getElementById('careersHeroCtaUrl').value = settings.hero_cta_url || '';
         document.getElementById('careersAboutHtml').value = settings.about_html || '';
-        document.getElementById('careersHeaderHtml').value = settings.header_html || '';
         document.getElementById('careersFooterHtml').value = settings.footer_html || '';
+        document.getElementById('careersMetaTitle').value = settings.meta_title || '';
+        document.getElementById('careersMetaDescription').value = settings.meta_description || '';
+        document.getElementById('careersThemePrimary').value = settings.theme_primary || '#0f172a';
+        document.getElementById('careersThemeAccent').value = settings.theme_accent || '#2563eb';
         document.getElementById('careersIsPublished').checked = Boolean(settings.is_published);
+        document.getElementById('careersFooterNote').value = sectionsState.footer_note || '';
 
         if (publicUrlInput) publicUrlInput.value = settings.public_url || '';
         if (previewLink) {
             previewLink.href = settings.public_url || '#';
             previewLink.classList.toggle('disabled', !settings.public_url);
+            previewLink.textContent = settings.is_published ? 'Preview Live Page' : 'Preview Draft';
+            previewLink.title = settings.is_published
+                ? 'View the public careers page'
+                : 'Draft preview (log in to HRMS in this browser). Publish to make it public.';
+        }
+        const publishHint = document.getElementById('careersPublishHint');
+        if (publishHint) {
+            publishHint.textContent = settings.is_published
+                ? 'Your careers page is live at the public URL.'
+                : 'The public URL shows “coming soon” until you publish. You can still preview the draft while logged in.';
         }
 
         if (bannerPreview) {
@@ -1071,7 +1188,30 @@ const initCareers = async () => {
                 ? `<img src="${escapeHtml(settings.banner_url)}" alt="Banner preview" class="img-fluid rounded border" style="max-height: 160px;">`
                 : '';
         }
+
+        renderMarquee(sectionsState.marquee_tags || []);
+        renderWhyJoin(sectionsState.why_join || []);
+        renderStats(sectionsState.stats || []);
+        renderTestimonials(sectionsState.testimonials || []);
+        renderBadges(sectionsState.badges || []);
+        renderSocial(sectionsState.social_links || []);
+        populateSectionTitles(sectionsState);
     };
+
+    document.getElementById('careersAddMarquee')?.addEventListener('click', () => {
+        renderMarquee([...(sectionsState.marquee_tags || []), '']);
+        sectionsState.marquee_tags = collectRows(document.getElementById('careersMarqueeList'), ['tag']).map((r) => r.tag);
+    });
+    document.getElementById('careersAddWhyJoin')?.addEventListener('click', () => renderWhyJoin([...collectRows(document.getElementById('careersWhyJoinList'), ['title', 'description', 'icon']), { title: '', description: '', icon: 'star' }]));
+    document.getElementById('careersAddStat')?.addEventListener('click', () => renderStats([...collectRows(document.getElementById('careersStatsList'), ['value', 'suffix', 'label']), { value: '', suffix: '', label: '' }]));
+    document.getElementById('careersAddTestimonial')?.addEventListener('click', () => renderTestimonials([...collectRows(document.getElementById('careersTestimonialsList'), ['name', 'role', 'quote', 'photo_url']), { name: '', role: '', quote: '', photo_url: '' }]));
+    document.getElementById('careersAddBadge')?.addEventListener('click', () => renderBadges([...collectRows(document.getElementById('careersBadgesList'), ['title', 'image_url']), { title: '', image_url: '' }]));
+    document.getElementById('careersAddSocial')?.addEventListener('click', () => renderSocial([...collectRows(document.getElementById('careersSocialList'), ['platform', 'url']), { platform: '', url: '' }]));
+
+    form.addEventListener('click', (e) => {
+        if (!e.target.matches('[data-remove-row]')) return;
+        e.target.closest('.careers-dynamic-row')?.remove();
+    });
 
     try {
         const { data } = await api.get('/hiring/careers-page');
@@ -1086,10 +1226,16 @@ const initCareers = async () => {
         const formData = new FormData();
         formData.append('hero_title', document.getElementById('careersHeroTitle').value);
         formData.append('hero_subtitle', document.getElementById('careersHeroSubtitle').value);
+        formData.append('hero_cta_text', document.getElementById('careersHeroCtaText').value);
+        formData.append('hero_cta_url', document.getElementById('careersHeroCtaUrl').value);
         formData.append('about_html', document.getElementById('careersAboutHtml').value);
-        formData.append('header_html', document.getElementById('careersHeaderHtml').value);
         formData.append('footer_html', document.getElementById('careersFooterHtml').value);
+        formData.append('meta_title', document.getElementById('careersMetaTitle').value);
+        formData.append('meta_description', document.getElementById('careersMetaDescription').value);
+        formData.append('theme_primary', document.getElementById('careersThemePrimary').value);
+        formData.append('theme_accent', document.getElementById('careersThemeAccent').value);
         formData.append('is_published', document.getElementById('careersIsPublished').checked ? '1' : '0');
+        formData.append('sections', JSON.stringify(collectSections()));
 
         const bannerFile = document.getElementById('careersBanner')?.files?.[0];
         if (bannerFile) formData.append('banner', bannerFile);
@@ -1110,7 +1256,6 @@ const initCareers = async () => {
 document.addEventListener('DOMContentLoaded', () => {
     const inits = {
         overview: initOverview,
-        requisitions: initRequisitions,
         jobs: initJobs,
         candidates: initCandidates,
         interviews: initInterviews,

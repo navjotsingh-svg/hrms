@@ -3,9 +3,10 @@
 namespace App\Services;
 
 use App\Models\Employee;
-use App\Models\EmployeeFamilyMember;
 use App\Models\EmployeePersonalSection;
 use App\Models\User;
+use App\Support\EmergencyContactPayload;
+use App\Support\FamilyRelationOptions;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
@@ -187,16 +188,38 @@ class EmployeePersonalSectionService
 
     private function validateEmergencyPayload(array $payload): void
     {
-        if (empty(trim((string) ($payload['name'] ?? '')))) {
+        $contacts = EmergencyContactPayload::normalize($payload)['contacts'];
+
+        if ($contacts === []) {
             throw ValidationException::withMessages([
-                'name' => ['Emergency contact name is required.'],
+                'contacts' => ['Add at least one emergency contact.'],
             ]);
         }
 
-        if (empty(trim((string) ($payload['relation'] ?? '')))) {
-            throw ValidationException::withMessages([
-                'relation' => ['Emergency contact relation is required.'],
-            ]);
+        foreach ($contacts as $index => $contact) {
+            if ($contact['name'] === '') {
+                throw ValidationException::withMessages([
+                    "contacts.{$index}.name" => ['Emergency contact name is required.'],
+                ]);
+            }
+
+            if ($contact['relation'] === '') {
+                throw ValidationException::withMessages([
+                    "contacts.{$index}.relation" => ['Emergency contact relation is required.'],
+                ]);
+            }
+
+            if (! in_array($contact['relation'], FamilyRelationOptions::all(), true)) {
+                throw ValidationException::withMessages([
+                    "contacts.{$index}.relation" => ['Select a valid relation.'],
+                ]);
+            }
+
+            if ($contact['phones'] === []) {
+                throw ValidationException::withMessages([
+                    "contacts.{$index}.phones" => ['Add at least one mobile number.'],
+                ]);
+            }
         }
     }
 
@@ -233,34 +256,21 @@ class EmployeePersonalSectionService
 
     private function syncEmergencyContact(EmployeePersonalSection $section): void
     {
-        $payload = $section->payload ?? [];
+        $payload = EmergencyContactPayload::normalize($section->payload ?? []);
+        $contacts = $payload['contacts'];
 
-        if (! empty($payload['name'])) {
-            $section->employee->update([
-                'emergency_contact_name' => trim((string) $payload['name']),
-                'emergency_contact_phone' => $payload['phone'] ?? null,
-                'emergency_contact_relation' => trim((string) ($payload['relation'] ?? '')),
-                'emergency_contact_family_member_id' => null,
-            ]);
-
+        if ($contacts === []) {
             return;
         }
 
-        $familyMemberId = $payload['family_member_id'] ?? null;
-        $member = EmployeeFamilyMember::query()
-            ->where('employee_id', $section->employee_id)
-            ->where('id', $familyMemberId)
-            ->first();
-
-        if (! $member) {
-            return;
-        }
+        $primary = $contacts[0];
 
         $section->employee->update([
-            'emergency_contact_name' => $member->name,
-            'emergency_contact_phone' => $member->phone,
-            'emergency_contact_relation' => $member->relation,
-            'emergency_contact_family_member_id' => $member->id,
+            'emergency_contacts' => $contacts,
+            'emergency_contact_name' => $primary['name'],
+            'emergency_contact_phone' => $primary['phones'][0] ?? null,
+            'emergency_contact_relation' => $primary['relation'],
+            'emergency_contact_family_member_id' => null,
         ]);
     }
 }

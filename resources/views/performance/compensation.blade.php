@@ -21,7 +21,12 @@
                         </div>
                     </div>
                 </div>
-                @include('partials.list-pagination-header', ['perPageId' => 'bandsPerPage'])
+                @include('partials.list-pagination-top', [
+    'infoId' => 'bandsPaginationInfo',
+    'listId' => 'bandsPaginationList',
+    'perPageId' => 'bandsPerPage',
+    'ariaLabel' => 'Salary bands pagination',
+])
                 <div class="table-responsive">
                     <table class="companies-table table mb-0">
                         <thead>
@@ -70,7 +75,12 @@
                         </div>
                     </div>
                 </div>
-                @include('partials.list-pagination-header', ['perPageId' => 'meritPerPage'])
+                @include('partials.list-pagination-top', [
+    'infoId' => 'meritPaginationInfo',
+    'listId' => 'meritPaginationList',
+    'perPageId' => 'meritPerPage',
+    'ariaLabel' => 'Merit recommendations pagination',
+])
                 <div class="table-responsive">
                     <table class="companies-table table mb-0">
                         <thead>

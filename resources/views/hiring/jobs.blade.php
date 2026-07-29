@@ -19,7 +19,12 @@
                 </div>
             </div>
         </div>
-        @include('partials.list-pagination-header', ['perPageId' => 'jobsPerPage'])
+        @include('partials.list-pagination-top', [
+    'infoId' => 'jobsPaginationInfo',
+    'listId' => 'jobsPaginationList',
+    'perPageId' => 'jobsPerPage',
+    'ariaLabel' => 'Jobs pagination',
+])
         <div class="table-responsive">
             <table class="companies-table table mb-0">
                 <thead>

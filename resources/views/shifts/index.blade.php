@@ -38,7 +38,13 @@
             </div>
         </div>
 
-        @include('partials.list-pagination-header', ['perPageId' => 'shiftsPerPage'])
+        @include('partials.list-pagination-top', [
+    'infoId' => 'shiftsPaginationInfo',
+    'listId' => 'shiftsPaginationList',
+    'perPageId' => 'shiftsPerPage',
+    'wrapId' => 'shiftsPagination',
+    'ariaLabel' => 'Shifts pagination',
+])
         <div class="table-responsive">
             <table class="companies-table table mb-0">
                 <thead>

@@ -21,7 +21,12 @@
                 </div>
             </div>
         </div>
-        @include('partials.list-pagination-header', ['perPageId' => 'pipPerPage'])
+        @include('partials.list-pagination-top', [
+    'infoId' => 'pipPaginationInfo',
+    'listId' => 'pipPaginationList',
+    'perPageId' => 'pipPerPage',
+    'ariaLabel' => 'PIP pagination',
+])
         <div class="table-responsive">
             <table class="companies-table table mb-0">
                 <thead>

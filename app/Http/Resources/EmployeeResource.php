@@ -50,6 +50,7 @@ class EmployeeResource extends JsonResource
             'emergency_contact_name' => $this->emergency_contact_name,
             'emergency_contact_phone' => $this->emergency_contact_phone,
             'emergency_contact_relation' => $this->emergency_contact_relation,
+            'emergency_contacts' => $this->emergency_contacts ?? [],
             'department_id' => $this->department_id,
             'department_ids' => $this->whenLoaded('departments', fn () => $this->departments->pluck('id')->values()),
             'role_id' => $this->role_id,

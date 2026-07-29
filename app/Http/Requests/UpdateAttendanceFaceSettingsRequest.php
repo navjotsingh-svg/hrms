@@ -15,7 +15,8 @@ class UpdateAttendanceFaceSettingsRequest extends FormRequest
     {
         return [
             'face_match_threshold' => ['nullable', 'integer', 'min:1', 'max:100'],
-            'require_face_match' => ['nullable', 'boolean'],
+            'require_face_match' => ['required', 'boolean'],
+            'require_punch_photo' => ['required', 'boolean'],
         ];
     }
 }

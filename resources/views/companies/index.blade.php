@@ -73,7 +73,13 @@
             </div>
         </div>
 
-        @include('partials.list-pagination-header', ['perPageId' => 'companiesPerPage'])
+        @include('partials.list-pagination-top', [
+    'infoId' => 'companiesPaginationInfo',
+    'listId' => 'companiesPaginationList',
+    'perPageId' => 'companiesPerPage',
+    'wrapId' => 'companiesPagination',
+    'ariaLabel' => 'Companies pagination',
+])
 
         <div class="companies-table-wrap" id="companiesTableWrap">
             <table class="companies-table table mb-0">

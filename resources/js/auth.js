@@ -58,7 +58,11 @@ const initLogin = async () => {
 
             await redirectToDashboard(data.data.token);
         } catch (error) {
-            showAlert(error.response?.data?.message || 'Invalid login credentials.');
+            const emailErrors = error.response?.data?.errors?.email;
+            const message = Array.isArray(emailErrors) && emailErrors.length
+                ? emailErrors[0]
+                : (error.response?.data?.message || 'Invalid login credentials.');
+            showAlert(message);
         } finally {
             if (submitButton) {
                 submitButton.disabled = false;

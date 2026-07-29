@@ -80,7 +80,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
         if (assetSelect?.val) {
 
-            assetSelect.val(values).trigger('change.select2Sync');
+            assetSelect.val(values).trigger('change');
 
             return;
 
@@ -93,6 +93,8 @@ document.addEventListener('DOMContentLoaded', async () => {
             option.selected = values.includes(option.value);
 
         });
+
+        updateCatalogActions();
 
     };
 
@@ -184,7 +186,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
 
 
-        assetSelect.on('change.select2Sync', () => {
+        assetSelect.on('change', () => {
 
             updateCatalogActions();
 

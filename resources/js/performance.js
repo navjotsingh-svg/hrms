@@ -1,4 +1,5 @@
 import { Modal } from 'bootstrap';
+import Chart from 'chart.js/auto';
 import api, { getErrorMessage } from './api';
 import { aiSuggestReview } from './ai-tools';
 import { bindEmployeeSearchSelect, formatEmployeeLabel } from './employee-autocomplete';
@@ -19,6 +20,126 @@ import {
 
 const cfg = window.HRMS_PERFORMANCE || {};
 const page = cfg.page || 'overview';
+
+const performanceChartPalette = ['#1e3a5f', '#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6'];
+const performanceChartInstances = {};
+
+const destroyPerformanceChart = (key) => {
+    if (performanceChartInstances[key]) {
+        performanceChartInstances[key].destroy();
+        delete performanceChartInstances[key];
+    }
+};
+
+const countReviewStatuses = (reviews = []) => {
+    const counts = {
+        completed: 0,
+        in_progress: 0,
+        pending: 0,
+        not_started: 0,
+    };
+
+    reviews.forEach((review) => {
+        const status = review.status || 'not_started';
+        if (status === 'completed' || status === 'submitted') {
+            counts.completed += 1;
+        } else if (status === 'in_progress') {
+            counts.in_progress += 1;
+        } else if (status === 'pending') {
+            counts.pending += 1;
+        } else {
+            counts.not_started += 1;
+        }
+    });
+
+    return counts;
+};
+
+const renderPerformanceOverviewCharts = (prefix, overview, reviews = []) => {
+    const metricsCanvas = document.getElementById(`${prefix}MetricsChart`);
+    const statusCanvas = document.getElementById(`${prefix}ReviewStatusChart`);
+
+    if (metricsCanvas) {
+        destroyPerformanceChart(`${prefix}Metrics`);
+        const labels = ['Review Cycles', 'Pending Reviews', 'Active Goals', 'Active PIPs'];
+        const values = [
+            Number(overview.active_cycles) || 0,
+            Number(overview.pending_reviews) || 0,
+            Number(overview.active_goals) || 0,
+            Number(overview.active_pips) || 0,
+        ];
+
+        performanceChartInstances[`${prefix}Metrics`] = new Chart(metricsCanvas, {
+            type: 'bar',
+            data: {
+                labels,
+                datasets: [{
+                    label: 'Count',
+                    data: values,
+                    backgroundColor: performanceChartPalette.map((color) => `${color}CC`),
+                    borderColor: performanceChartPalette,
+                    borderWidth: 1,
+                    borderRadius: 8,
+                    maxBarThickness: 48,
+                }],
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: true,
+                plugins: {
+                    legend: { display: false },
+                },
+                scales: {
+                    x: {
+                        grid: { display: false },
+                        ticks: { color: '#64748b', font: { weight: '600', size: 11 } },
+                    },
+                    y: {
+                        beginAtZero: true,
+                        ticks: { precision: 0, color: '#64748b' },
+                        grid: { color: 'rgba(226, 232, 240, 0.8)' },
+                    },
+                },
+            },
+        });
+    }
+
+    if (statusCanvas) {
+        destroyPerformanceChart(`${prefix}Status`);
+        const statusCounts = countReviewStatuses(reviews);
+        const labels = ['Completed', 'In Progress', 'Pending', 'Not Started'];
+        const values = [statusCounts.completed, statusCounts.in_progress, statusCounts.pending, statusCounts.not_started];
+
+        performanceChartInstances[`${prefix}Status`] = new Chart(statusCanvas, {
+            type: 'doughnut',
+            data: {
+                labels,
+                datasets: [{
+                    data: values.every((value) => value === 0) ? [1] : values,
+                    backgroundColor: values.every((value) => value === 0)
+                        ? ['#e2e8f0']
+                        : ['#10b981', '#3b82f6', '#f59e0b', '#94a3b8'],
+                    borderWidth: 0,
+                }],
+            },
+            options: {
+                responsive: true,
+                cutout: '68%',
+                plugins: {
+                    legend: {
+                        position: 'bottom',
+                        labels: {
+                            boxWidth: 10,
+                            boxHeight: 10,
+                            color: '#475569',
+                            font: { size: 11, weight: '600' },
+                        },
+                    },
+                },
+            },
+        });
+    }
+};
 
 const escapeHtml = (value) => String(value ?? '')
     .replace(/&/g, '&amp;')
@@ -41,7 +162,7 @@ const statusPill = (status) => {
         nominated: 'primary',
         approved: 'success',
         rejected: 'danger',
-        finalized: 'dark',
+        finalized: 'success',
         proposed: 'info',
         pending: 'secondary',
         adjusted: 'warning',
@@ -49,7 +170,7 @@ const statusPill = (status) => {
         applied: 'success',
     };
 
-    return `<span class="badge bg-${map[status] || 'secondary'}">${escapeHtml(status?.replace(/_/g, ' '))}</span>`;
+    return `<span class="badge bg-${map[status] || 'secondary'}">${escapeHtml((status || 'unknown').replace(/_/g, ' '))}</span>`;
 };
 
 const showAlert = (message, type = 'success') => {
@@ -88,7 +209,7 @@ const renderPagination = (prefix, pagination, onPage) => {
 
 const bindReviewModal = () => {
     const reviewModalEl = document.getElementById('reviewModal');
-    if (!reviewModalEl || !cfg.canReview) return null;
+    if (!reviewModalEl) return null;
 
     const reviewModal = Modal.getOrCreateInstance(reviewModalEl);
 
@@ -175,28 +296,72 @@ const initOverview = async () => {
         const { data } = await api.get('/performance/overview');
         const overview = data.data.overview;
 
-        document.getElementById('statActiveCycles').textContent = overview.active_cycles;
-        document.getElementById('statPendingReviews').textContent = overview.pending_reviews;
-        document.getElementById('statActiveGoals').textContent = overview.active_goals;
-        document.getElementById('statActivePips').textContent = overview.active_pips;
+        document.getElementById('statActiveCycles') && (document.getElementById('statActiveCycles').textContent = overview.active_cycles);
+        document.getElementById('statPendingReviews') && (document.getElementById('statPendingReviews').textContent = overview.pending_reviews);
+        document.getElementById('statActiveGoals') && (document.getElementById('statActiveGoals').textContent = overview.active_goals);
+        document.getElementById('statActivePips') && (document.getElementById('statActivePips').textContent = overview.active_pips);
 
-        if (!overview.my_reviews?.length) {
-            body.innerHTML = '<tr><td colspan="4" class="text-center text-muted py-4">No pending reviews.</td></tr>';
-            return;
+        const pendingFeedbackEl = document.getElementById('statPendingFeedback');
+        if (pendingFeedbackEl) {
+            pendingFeedbackEl.textContent = overview.pending_feedback ?? 0;
         }
 
-        body.innerHTML = overview.my_reviews.map((review) => `
-            <tr>
-                <td>${escapeHtml(review.cycle_name)}</td>
-                <td>${escapeHtml(review.reviewee_name)}</td>
-                <td>${statusPill(review.status)}</td>
-                <td class="text-end">
-                    ${review.status !== 'submitted' && cfg.canReview
-                        ? `<button type="button" class="btn btn-sm btn-primary" data-open-review="${review.id}">Complete</button>`
-                        : '—'}
-                </td>
-            </tr>
-        `).join('');
+        const feedbackBody = document.getElementById('overviewFeedbackBody');
+        if (feedbackBody) {
+            const pendingFeedback = (overview.my_feedback_requests || []).filter((item) => item.status !== 'submitted');
+            if (!pendingFeedback.length) {
+                feedbackBody.innerHTML = '<tr><td colspan="4" class="text-center text-muted py-4">No pending feedback requests.</td></tr>';
+            } else {
+                feedbackBody.innerHTML = pendingFeedback.map((item) => `
+                    <tr>
+                        <td>${escapeHtml(item.form_name || '—')}</td>
+                        <td>${escapeHtml(item.subject_name || '—')}</td>
+                        <td>${statusPill(item.status)}</td>
+                        <td class="text-end">
+                            ${cfg.canReview
+                                ? `<a href="${cfg.continuousFeedbackUrl || '/performance/continuous-feedback'}" class="btn btn-sm btn-primary">Complete</a>`
+                                : '—'}
+                        </td>
+                    </tr>
+                `).join('');
+            }
+        }
+
+        const reviewsToComplete = overview.my_reviews || [];
+        renderPerformanceOverviewCharts('overview', overview, reviewsToComplete);
+        if (!reviewsToComplete.length) {
+            body.innerHTML = '<tr><td colspan="4" class="text-center text-muted py-4">No reviews assigned to you.</td></tr>';
+        } else {
+            body.innerHTML = reviewsToComplete.map((review) => `
+                <tr>
+                    <td>${escapeHtml(review.cycle_name)}</td>
+                    <td>${escapeHtml(review.reviewee_name || '—')}</td>
+                    <td>${statusPill(review.status)}</td>
+                    <td class="text-end">
+                        ${review.can_submit
+                            ? `<button type="button" class="btn btn-sm btn-primary" data-open-review="${review.id}">Complete</button>`
+                            : '—'}
+                    </td>
+                </tr>
+            `).join('');
+        }
+
+        const aboutMeBody = document.getElementById('overviewReviewsAboutMeBody');
+        if (aboutMeBody) {
+            const reviewsAboutMe = overview.reviews_about_me || [];
+            if (!reviewsAboutMe.length) {
+                aboutMeBody.innerHTML = '<tr><td colspan="4" class="text-center text-muted py-4">No reviews about you yet.</td></tr>';
+            } else {
+                aboutMeBody.innerHTML = reviewsAboutMe.map((review) => `
+                    <tr>
+                        <td>${escapeHtml(review.cycle_name || '—')}</td>
+                        <td>${escapeHtml(review.reviewer_name || '—')}</td>
+                        <td>${statusPill(review.status)}</td>
+                        <td>${review.overall_rating ?? '—'}</td>
+                    </tr>
+                `).join('');
+            }
+        }
 
         const openReview = bindReviewModal();
         body.querySelectorAll('[data-open-review]').forEach((btn) => {
@@ -204,6 +369,13 @@ const initOverview = async () => {
         });
     } catch (error) {
         showAlert(getErrorMessage(error), 'danger');
+    }
+};
+
+const initReviews = async () => {
+    await initOverview();
+    if (cfg.canManage) {
+        await initReviewCycles();
     }
 };
 
@@ -215,6 +387,60 @@ const initReviewCycles = async () => {
     const cycleModal = modalEl ? Modal.getOrCreateInstance(modalEl) : null;
 
     let cycles = [];
+    let cycleEmployees = [];
+
+    const loadCycleEmployees = async () => {
+        if (cycleEmployees.length) return cycleEmployees;
+        const { data } = await api.get('/employees', { params: { status: 'active', per_page: 500 } });
+        cycleEmployees = data.data.employees || [];
+        return cycleEmployees;
+    };
+
+    const renderPairRows = (container, pairs = []) => {
+        if (!container) return;
+        const employees = cycleEmployees;
+
+        container.innerHTML = pairs.length
+            ? pairs.map((pair, i) => `
+                <div class="border rounded p-2" data-pair-index="${i}">
+                    <div class="row g-2 align-items-end">
+                        <div class="col-md-4">
+                            <label class="form-label small">Employee (reviewee)</label>
+                            <select class="form-select form-select-sm" data-pair-field="reviewee" required>
+                                <option value="">Select employee</option>
+                                ${employees.map((employee) => `<option value="${employee.id}" ${Number(pair.reviewee_employee_id) === Number(employee.id) ? 'selected' : ''}>${escapeHtml(formatEmployeeLabel(employee))}</option>`).join('')}
+                            </select>
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label small">Reviewer</label>
+                            <select class="form-select form-select-sm" data-pair-field="reviewer">
+                                <option value="">Select reviewer</option>
+                                ${employees.map((employee) => `<option value="${employee.id}" ${Number(pair.reviewer_employee_id) === Number(employee.id) ? 'selected' : ''}>${escapeHtml(formatEmployeeLabel(employee))}</option>`).join('')}
+                            </select>
+                        </div>
+                        <div class="col-md-3">
+                            <label class="form-label small">Relationship</label>
+                            <select class="form-select form-select-sm" data-pair-field="relationship">
+                                <option value="manager" ${pair.relationship === 'manager' ? 'selected' : ''}>Manager</option>
+                                <option value="peer" ${pair.relationship === 'peer' ? 'selected' : ''}>Peer</option>
+                                <option value="self" ${pair.relationship === 'self' ? 'selected' : ''}>Self</option>
+                                <option value="hr" ${pair.relationship === 'hr' ? 'selected' : ''}>HR</option>
+                            </select>
+                        </div>
+                        <div class="col-md-1 text-end">
+                            <button type="button" class="btn btn-sm btn-outline-danger" data-remove-pair="${i}">Remove</button>
+                        </div>
+                    </div>
+                </div>
+            `).join('')
+            : '<p class="text-muted small mb-0">No assignments yet. Import from org chart or add manually.</p>';
+    };
+
+    const collectPairs = (container) => Array.from(container?.querySelectorAll('[data-pair-index]') || []).map((row) => ({
+        reviewee_employee_id: Number(row.querySelector('[data-pair-field="reviewee"]')?.value || 0),
+        reviewer_employee_id: Number(row.querySelector('[data-pair-field="reviewer"]')?.value || 0) || null,
+        relationship: row.querySelector('[data-pair-field="relationship"]')?.value || 'manager',
+    })).filter((pair) => pair.reviewee_employee_id);
 
     const paginationInfo = document.getElementById('cyclesPaginationInfo');
     const paginationList = document.getElementById('cyclesPaginationList');
@@ -306,11 +532,13 @@ const initReviewCycles = async () => {
     if (cfg.canManage) {
         setHeaderAction('<button type="button" class="btn btn-primary" id="openCycleModalBtn">+ Create Cycle</button>');
 
-        document.getElementById('openCycleModalBtn')?.addEventListener('click', () => {
+        document.getElementById('openCycleModalBtn')?.addEventListener('click', async () => {
             document.getElementById('cycleEditingId').value = '';
             document.getElementById('cycleModalLabel').textContent = 'Create Review Cycle';
             document.getElementById('cycleForm').reset();
             renderQuestionRows(document.getElementById('cycleQuestionsList'), [{ question: '', weight: 1 }]);
+            await loadCycleEmployees();
+            renderPairRows(document.getElementById('cyclePairsList'), []);
             cycleModal?.show();
         });
 
@@ -330,6 +558,36 @@ const initReviewCycles = async () => {
             renderQuestionRows(list, current);
         });
 
+        document.getElementById('addCyclePairBtn')?.addEventListener('click', async () => {
+            const list = document.getElementById('cyclePairsList');
+            await loadCycleEmployees();
+            const current = collectPairs(list);
+            current.push({ reviewee_employee_id: '', reviewer_employee_id: '', relationship: 'manager' });
+            renderPairRows(list, current);
+        });
+
+        document.getElementById('importManagerPairsBtn')?.addEventListener('click', async () => {
+            await loadCycleEmployees();
+            const pairs = cycleEmployees
+                .filter((employee) => employee.manager_id)
+                .map((employee) => ({
+                    reviewee_employee_id: employee.id,
+                    reviewer_employee_id: employee.manager_id,
+                    relationship: 'manager',
+                }));
+            renderPairRows(document.getElementById('cyclePairsList'), pairs);
+            showAlert(`Imported ${pairs.length} manager assignment(s) from org chart.`);
+        });
+
+        document.getElementById('cyclePairsList')?.addEventListener('click', (e) => {
+            const btn = e.target.closest('[data-remove-pair]');
+            if (!btn) return;
+            const list = document.getElementById('cyclePairsList');
+            const current = collectPairs(list);
+            current.splice(Number(btn.dataset.removePair), 1);
+            renderPairRows(list, current);
+        });
+
         document.getElementById('cycleForm')?.addEventListener('submit', async (e) => {
             e.preventDefault();
             const id = document.getElementById('cycleEditingId').value;
@@ -339,6 +597,7 @@ const initReviewCycles = async () => {
                 period_start: document.getElementById('cyclePeriodStart').value,
                 period_end: document.getElementById('cyclePeriodEnd').value,
                 questions: collectQuestions(document.getElementById('cycleQuestionsList')),
+                pairs: collectPairs(document.getElementById('cyclePairsList')),
             };
 
             try {
@@ -373,6 +632,12 @@ const initReviewCycles = async () => {
                 document.getElementById('cyclePeriodStart').value = cycle.period_start;
                 document.getElementById('cyclePeriodEnd').value = cycle.period_end;
                 renderQuestionRows(document.getElementById('cycleQuestionsList'), cycle.questions?.length ? cycle.questions : [{ question: '', weight: 1 }]);
+                await loadCycleEmployees();
+                renderPairRows(document.getElementById('cyclePairsList'), (cycle.pairs || []).map((pair) => ({
+                    reviewee_employee_id: pair.reviewee_employee_id || pair.reviewee?.id,
+                    reviewer_employee_id: pair.reviewer_employee_id || pair.reviewer?.id,
+                    relationship: pair.relationship || 'manager',
+                })));
                 cycleModal?.show();
             }
 
@@ -399,15 +664,15 @@ const initReviewCycles = async () => {
         }
     });
 
-    if (cfg.canReview && document.getElementById('reviewModal')) {
-        bindReviewModal();
-    }
-
     document.getElementById('cycleStatusFilter')?.addEventListener('change', () => loadCycles().catch((e) => showAlert(getErrorMessage(e), 'danger')));
     document.getElementById('cycleFilterReset')?.addEventListener('click', () => {
         document.getElementById('cycleStatusFilter').value = '';
         loadCycles().catch((e) => showAlert(getErrorMessage(e), 'danger'));
     });
+
+    if (page === 'review-cycles' && document.getElementById('reviewModal')) {
+        bindReviewModal();
+    }
 
     try {
         await loadCycles();
@@ -731,14 +996,391 @@ const initFeedbackForms = async () => {
     }
 };
 
+const initContinuousFeedback = async () => {
+    const giveBody = document.getElementById('giveFeedbackTableBody');
+    const receivedBody = document.getElementById('receivedFeedbackTableBody');
+    const allBody = document.getElementById('allRequestsTableBody');
+    if (!giveBody && !receivedBody && !allBody) return;
+
+    const responseModalEl = document.getElementById('feedbackResponseModal');
+    const responseModal = responseModalEl ? Modal.getOrCreateInstance(responseModalEl) : null;
+    const assignModalEl = document.getElementById('assignFeedbackModal');
+    const assignModal = assignModalEl ? Modal.getOrCreateInstance(assignModalEl) : null;
+
+    let giveRequests = [];
+    let receivedRequests = [];
+    let allRequests = [];
+    let selectedReviewers = [];
+    let activeForms = [];
+
+    const renderReviewerChips = () => {
+        const list = document.getElementById('assignReviewersList');
+        if (!list) return;
+        list.innerHTML = selectedReviewers.map((reviewer) => `
+            <span class="badge bg-light text-dark border d-inline-flex align-items-center gap-1">
+                ${escapeHtml(reviewer.label)}
+                <button type="button" class="btn-close btn-close-sm" data-remove-reviewer="${reviewer.id}" aria-label="Remove"></button>
+            </span>
+        `).join('') || '<span class="text-muted small">No reviewers added yet.</span>';
+    };
+
+    const renderQuestionFields = (questions, answers = [], readOnly = false) => (questions || []).map((q) => {
+        const answer = answers.find((a) => Number(a.form_question_id) === Number(q.id)) || {};
+        const ratingField = q.question_type === 'rating' ? `
+            <select class="form-select mb-2" data-fb-rating="${q.id}" ${readOnly ? 'disabled' : ''}>
+                <option value="">Select rating</option>
+                ${[1, 2, 3, 4, 5].map((n) => `<option value="${n}" ${Number(answer.rating) === n ? 'selected' : ''}>${n}</option>`).join('')}
+            </select>
+        ` : '';
+        const textField = q.question_type === 'text' ? `
+            <textarea class="form-control" rows="3" data-fb-text="${q.id}" placeholder="Your response" ${readOnly ? 'readonly' : ''}>${escapeHtml(answer.response_text || '')}</textarea>
+        ` : `
+            <textarea class="form-control" rows="2" data-fb-comment="${q.id}" placeholder="Additional comments" ${readOnly ? 'readonly' : ''}>${escapeHtml(answer.response_text || '')}</textarea>
+        `;
+
+        return `
+            <div class="border rounded p-3">
+                <label class="form-label fw-medium">${escapeHtml(q.question)}</label>
+                ${ratingField}
+                ${textField}
+            </div>
+        `;
+    }).join('');
+
+    const openFeedbackModal = async (requestId, mode = 'fill') => {
+        const { data } = await api.get(`/performance-feedback-requests/${requestId}`);
+        const item = data.data.request;
+
+        document.getElementById('feedbackRequestEditingId').value = item.id;
+        document.getElementById('feedbackResponseMeta').textContent = `${item.form?.name || 'Feedback'} — About ${item.subject?.full_name || 'Employee'}`;
+
+        const contextEl = document.getElementById('feedbackContextNotes');
+        if (item.context_notes) {
+            contextEl.textContent = item.context_notes;
+            contextEl.classList.remove('d-none');
+        } else {
+            contextEl.classList.add('d-none');
+            contextEl.textContent = '';
+        }
+
+        const readOnly = mode === 'view';
+        document.getElementById('feedbackResponseModalTitle').textContent = readOnly ? 'View Feedback' : 'Submit Feedback';
+        document.getElementById('feedbackResponseSubmitBtn').classList.toggle('d-none', readOnly);
+        document.getElementById('feedbackQuestionsContainer').innerHTML = renderQuestionFields(
+            item.form?.questions,
+            item.answers,
+            readOnly,
+        );
+
+        responseModal?.show();
+    };
+
+    const setupPaginatedTable = ({
+        prefix,
+        items,
+        body,
+        renderRow,
+        emptyColspan,
+        emptyMessage,
+    }) => {
+        const perPageSelect = document.getElementById(`${prefix}PerPage`);
+        const paginationInfo = document.getElementById(`${prefix}PaginationInfo`);
+        const paginationList = document.getElementById(`${prefix}PaginationList`);
+        let bound = false;
+
+        const renderPage = (pageNum = 1) => {
+            const { items: pageItems, pagination } = paginateArray(items, pageNum, readPerPage(perPageSelect));
+
+            if (!pageItems.length) {
+                body.innerHTML = `<tr><td colspan="${emptyColspan}" class="text-center text-muted py-4">${emptyMessage}</td></tr>`;
+            } else {
+                body.innerHTML = pageItems.map(renderRow).join('');
+            }
+
+            renderListPagination({
+                infoEl: paginationInfo,
+                listEl: paginationList,
+                perPageSelectEl: perPageSelect,
+                pagination,
+                itemLabel: 'requests',
+                emptyMessage,
+            });
+
+            if (!bound && paginationList) {
+                bound = true;
+                bindPagination(paginationList, renderPage);
+                bindPerPageSelect(perPageSelect, () => renderPage(1));
+            }
+        };
+
+        return renderPage;
+    };
+
+    let renderGivePage = null;
+    let renderReceivedPage = null;
+    let renderAllPage = null;
+
+    const loadGive = async () => {
+        if (!giveBody || !cfg.canReview) return;
+        const { data } = await api.get('/performance-feedback-requests/mine');
+        giveRequests = (data.data.requests || []).filter((item) => item.status !== 'submitted');
+        renderGivePage = setupPaginatedTable({
+            prefix: 'giveFeedback',
+            items: giveRequests,
+            body: giveBody,
+            emptyColspan: 5,
+            emptyMessage: 'No pending feedback requests.',
+            renderRow: (item) => `
+                <tr>
+                    <td>${escapeHtml(item.form?.name || '—')}</td>
+                    <td>${escapeHtml(item.subject?.full_name || '—')}</td>
+                    <td>${statusPill(item.status)}</td>
+                    <td>${escapeHtml(item.due_date || '—')}</td>
+                    <td class="text-end">
+                        <button type="button" class="btn btn-sm btn-primary" data-fill-feedback="${item.id}">Complete</button>
+                    </td>
+                </tr>
+            `,
+        });
+        renderGivePage(1);
+    };
+
+    const loadReceived = async () => {
+        if (!receivedBody) return;
+        const { data } = await api.get('/performance-feedback-requests/received');
+        receivedRequests = data.data.requests || [];
+        renderReceivedPage = setupPaginatedTable({
+            prefix: 'receivedFeedback',
+            items: receivedRequests,
+            body: receivedBody,
+            emptyColspan: 5,
+            emptyMessage: 'No feedback received yet.',
+            renderRow: (item) => `
+                <tr>
+                    <td>${escapeHtml(item.form?.name || '—')}</td>
+                    <td>${escapeHtml(item.reviewer?.full_name || '—')}</td>
+                    <td>${item.overall_rating != null ? escapeHtml(String(item.overall_rating)) : '—'}</td>
+                    <td>${escapeHtml(item.submitted_at?.slice(0, 10) || '—')}</td>
+                    <td class="text-end">
+                        <button type="button" class="btn btn-sm btn-outline-primary" data-view-feedback="${item.id}">View</button>
+                    </td>
+                </tr>
+            `,
+        });
+        renderReceivedPage(1);
+    };
+
+    const loadAll = async () => {
+        if (!allBody || !cfg.canManage) return;
+        const params = {
+            status: document.getElementById('allRequestsStatusFilter')?.value || undefined,
+        };
+        const { data } = await api.get('/performance-feedback-requests', { params });
+        allRequests = data.data.requests || [];
+        renderAllPage = setupPaginatedTable({
+            prefix: 'allRequests',
+            items: allRequests,
+            body: allBody,
+            emptyColspan: 6,
+            emptyMessage: 'No feedback requests found.',
+            renderRow: (item) => `
+                <tr>
+                    <td>${escapeHtml(item.form?.name || '—')}</td>
+                    <td>${escapeHtml(item.subject?.full_name || '—')}</td>
+                    <td>${escapeHtml(item.reviewer?.full_name || '—')}</td>
+                    <td>${statusPill(item.status)}</td>
+                    <td>${escapeHtml(item.due_date || '—')}</td>
+                    <td class="text-end">${renderActionGroup([
+                        item.status === 'submitted'
+                            ? renderViewIconButton('data-view-feedback', item.id)
+                            : '',
+                        ['pending', 'in_progress'].includes(item.status)
+                            ? renderDeleteButton('data-cancel-feedback', item.id, 'Cancel')
+                            : '',
+                    ].filter(Boolean))}</td>
+                </tr>
+            `,
+        });
+        renderAllPage(1);
+    };
+
+    const loadActiveForms = async () => {
+        if (!cfg.canManage) return;
+        const { data } = await api.get('/performance-feedback-forms', { params: { status: 'active' } });
+        activeForms = (data.data.forms || []).filter((form) => (form.questions_count ?? 0) > 0);
+        const select = document.getElementById('assignFeedbackFormId');
+        if (!select) return;
+        select.innerHTML = '<option value="">Select an active form…</option>' + activeForms.map((form) => `
+            <option value="${form.id}">${escapeHtml(form.name)} (${form.questions_count} questions)</option>
+        `).join('');
+    };
+
+    if (cfg.canManage) {
+        setHeaderAction('<button type="button" class="btn btn-primary" id="openAssignFeedbackBtn">+ Request Feedback</button>');
+
+        const subjectSearch = bindEmployeeSearchSelect({
+            inputId: 'assignSubjectSearch',
+            hiddenId: 'assignSubjectEmployeeId',
+        });
+        const reviewerSearch = bindEmployeeSearchSelect({
+            inputId: 'assignReviewerSearch',
+            hiddenId: 'assignReviewerEmployeeId',
+        });
+
+        document.getElementById('openAssignFeedbackBtn')?.addEventListener('click', async () => {
+            selectedReviewers = [];
+            renderReviewerChips();
+            document.getElementById('assignFeedbackForm')?.reset();
+            subjectSearch?.clearSelection();
+            reviewerSearch?.clearSelection();
+            await loadActiveForms();
+            assignModal?.show();
+        });
+
+        document.getElementById('addReviewerBtn')?.addEventListener('click', () => {
+            const id = reviewerSearch?.getSelectedId();
+            const input = document.getElementById('assignReviewerSearch');
+            const label = input?.value?.trim();
+            if (!id || !label) {
+                showAlert('Select a reviewer to add.', 'warning');
+                return;
+            }
+            if (selectedReviewers.some((item) => Number(item.id) === Number(id))) {
+                showAlert('Reviewer already added.', 'warning');
+                return;
+            }
+            selectedReviewers.push({ id, label });
+            reviewerSearch?.clearSelection();
+            renderReviewerChips();
+        });
+
+        document.getElementById('assignReviewersList')?.addEventListener('click', (e) => {
+            const btn = e.target.closest('[data-remove-reviewer]');
+            if (!btn) return;
+            selectedReviewers = selectedReviewers.filter((item) => String(item.id) !== String(btn.dataset.removeReviewer));
+            renderReviewerChips();
+        });
+
+        document.getElementById('assignFeedbackForm')?.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const subjectId = document.getElementById('assignSubjectEmployeeId')?.value;
+            if (!subjectId) {
+                showAlert('Select the employee feedback is about.', 'danger');
+                return;
+            }
+            if (!selectedReviewers.length) {
+                showAlert('Add at least one reviewer.', 'danger');
+                return;
+            }
+
+            try {
+                await api.post('/performance-feedback-requests', {
+                    feedback_form_id: Number(document.getElementById('assignFeedbackFormId').value),
+                    subject_employee_id: Number(subjectId),
+                    reviewer_employee_ids: selectedReviewers.map((item) => item.id),
+                    context_notes: document.getElementById('assignContextNotes')?.value || null,
+                    due_date: document.getElementById('assignDueDate')?.value || null,
+                });
+                assignModal?.hide();
+                showAlert('Feedback request(s) sent.');
+                await Promise.all([loadAll(), loadGive()]);
+            } catch (error) {
+                showAlert(getErrorMessage(error), 'danger');
+            }
+        });
+
+        document.getElementById('allRequestsStatusFilter')?.addEventListener('change', () => {
+            loadAll().catch((error) => showAlert(getErrorMessage(error), 'danger'));
+        });
+
+        allBody?.addEventListener('click', async (e) => {
+            const cancelBtn = e.target.closest('[data-cancel-feedback]');
+            if (!cancelBtn) return;
+            if (!window.confirm('Cancel this feedback request?')) return;
+            try {
+                await api.delete(`/performance-feedback-requests/${cancelBtn.dataset.cancelFeedback}`);
+                showAlert('Feedback request cancelled.');
+                await loadAll();
+            } catch (error) {
+                showAlert(getErrorMessage(error), 'danger');
+            }
+        });
+    }
+
+    document.getElementById('feedbackResponseForm')?.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const requestId = document.getElementById('feedbackRequestEditingId').value;
+        const answers = [];
+
+        document.querySelectorAll('[data-fb-rating]').forEach((el) => {
+            answers.push({
+                form_question_id: Number(el.dataset.fbRating),
+                rating: el.value ? Number(el.value) : null,
+                response_text: document.querySelector(`[data-fb-comment="${el.dataset.fbRating}"]`)?.value || null,
+            });
+        });
+        document.querySelectorAll('[data-fb-text]').forEach((el) => {
+            answers.push({
+                form_question_id: Number(el.dataset.fbText),
+                response_text: el.value || null,
+            });
+        });
+
+        try {
+            await api.post(`/performance-feedback-requests/${requestId}/submit`, { answers });
+            responseModal?.hide();
+            showAlert('Feedback submitted.');
+            await Promise.all([loadGive(), loadAll()]);
+        } catch (error) {
+            showAlert(getErrorMessage(error), 'danger');
+        }
+    });
+
+    const handleFeedbackAction = async (e) => {
+        const fillBtn = e.target.closest('[data-fill-feedback]');
+        const viewBtn = e.target.closest('[data-view-feedback]');
+        try {
+            if (fillBtn) await openFeedbackModal(fillBtn.dataset.fillFeedback, 'fill');
+            if (viewBtn) await openFeedbackModal(viewBtn.dataset.viewFeedback, 'view');
+        } catch (error) {
+            showAlert(getErrorMessage(error), 'danger');
+        }
+    };
+
+    giveBody?.addEventListener('click', handleFeedbackAction);
+    receivedBody?.addEventListener('click', handleFeedbackAction);
+    allBody?.addEventListener('click', handleFeedbackAction);
+
+    document.getElementById('all-requests-tab')?.addEventListener('shown.bs.tab', () => {
+        loadAll().catch((error) => showAlert(getErrorMessage(error), 'danger'));
+    });
+
+    try {
+        await Promise.all([loadGive(), loadReceived()]);
+        if (cfg.canManage) await loadActiveForms();
+    } catch (error) {
+        showAlert(getErrorMessage(error), 'danger');
+    }
+};
+
 const initGoals = async () => {
     const body = document.getElementById('goalsTableBody');
     if (!body) return;
 
     const modalEl = document.getElementById('goalModal');
     const modal = modalEl ? Modal.getOrCreateInstance(modalEl) : null;
+    const trackingModalEl = document.getElementById('goalTrackingModal');
+    const trackingModal = trackingModalEl ? Modal.getOrCreateInstance(trackingModalEl) : null;
     let currentPage = 1;
     let departments = [];
+    let employeeKpis = [];
+    let kpiOptionsHtml = '<option value="">Manual tracking</option>';
+
+    const krStatusOptions = (selected = 'not_started') => [
+        { value: 'not_started', label: 'Not started' },
+        { value: 'in_progress', label: 'In progress' },
+        { value: 'completed', label: 'Completed' },
+    ].map((option) => `<option value="${option.value}"${option.value === selected ? ' selected' : ''}>${option.label}</option>`).join('');
 
     const levelLabel = (level) => ({
         company: 'Company',
@@ -756,10 +1398,12 @@ const initGoals = async () => {
         const level = document.getElementById('goalLevel')?.value || 'individual';
         const departmentWrap = document.getElementById('goalDepartmentWrap');
         const employeeWrap = document.getElementById('goalEmployeeWrap');
+        const selfEmployeeWrap = document.getElementById('goalSelfEmployeeWrap');
         const visibility = document.getElementById('goalVisibility');
 
         departmentWrap?.classList.toggle('d-none', level !== 'department');
-        employeeWrap?.classList.toggle('d-none', level !== 'individual');
+        employeeWrap?.classList.toggle('d-none', level !== 'individual' || !cfg.canManage);
+        selfEmployeeWrap?.classList.toggle('d-none', level !== 'individual' || cfg.canManage);
 
         if (level === 'company' && visibility) {
             visibility.value = 'company';
@@ -786,28 +1430,191 @@ const initGoals = async () => {
     const goalEmployeeSearch = bindEmployeeSearchSelect({
         inputId: 'goalEmployeeSearch',
         hiddenId: 'goalEmployeeId',
+        onSelect: (employee) => {
+            loadKpisForEmployee(employee?.id).catch((error) => showAlert(getErrorMessage(error), 'danger'));
+        },
     });
 
-    const renderKrRows = (container, items = []) => {
-        container.innerHTML = items.map((kr, i) => `
-            <div class="border rounded p-2" data-kr-index="${i}">
-                <div class="row g-2">
-                    <div class="col-md-5"><input type="text" class="form-control form-control-sm" data-kr-field="title" value="${escapeHtml(kr.title || '')}" placeholder="Key result title" required></div>
-                    <div class="col-md-2"><input type="number" class="form-control form-control-sm" data-kr-field="target_value" value="${kr.target_value ?? 100}" min="0"></div>
-                    <div class="col-md-2"><input type="number" class="form-control form-control-sm" data-kr-field="current_value" value="${kr.current_value ?? 0}" min="0"></div>
-                    <div class="col-md-2"><input type="text" class="form-control form-control-sm" data-kr-field="unit" value="${escapeHtml(kr.unit || '')}" placeholder="Unit"></div>
-                    <div class="col-md-1 text-end"><button type="button" class="btn btn-sm btn-outline-danger" data-remove-kr="${i}">×</button></div>
-                </div>
-            </div>
-        `).join('') || '<p class="text-muted small mb-0">No key results yet.</p>';
+    const resolveGoalEmployeeId = () => {
+        const level = document.getElementById('goalLevel')?.value || 'individual';
+        if (level !== 'individual') return null;
+        if (cfg.canManage) {
+            return Number(document.getElementById('goalEmployeeId')?.value || 0) || null;
+        }
+        return cfg.canParticipate ? 'self' : null;
     };
 
-    const collectKr = (container) => Array.from(container?.querySelectorAll('[data-kr-index]') || []).map((row) => ({
-        title: row.querySelector('[data-kr-field="title"]')?.value?.trim(),
-        target_value: Number(row.querySelector('[data-kr-field="target_value"]')?.value || 100),
-        current_value: Number(row.querySelector('[data-kr-field="current_value"]')?.value || 0),
-        unit: row.querySelector('[data-kr-field="unit"]')?.value || null,
-    })).filter((kr) => kr.title);
+    const canLinkKpis = () => {
+        const level = document.getElementById('goalLevel')?.value || 'individual';
+        if (level !== 'individual') return false;
+        if (!cfg.canManage) return Boolean(cfg.canParticipate);
+        return Boolean(resolveGoalEmployeeId());
+    };
+
+    const buildKpiOptions = (selectedId = null) => {
+        let html = '<option value="">Manual tracking</option>';
+        employeeKpis.forEach((kpi) => {
+            const selected = Number(selectedId) === kpi.id ? ' selected' : '';
+            html += `<option value="${kpi.id}"${selected}>${escapeHtml(kpi.title)} (${kpi.progress_percent ?? 0}%)</option>`;
+        });
+        return html;
+    };
+
+    const loadKpisForEmployee = async (employeeId = null) => {
+        const resolvedId = employeeId || resolveGoalEmployeeId();
+        if (cfg.canManage && !resolvedId) {
+            employeeKpis = [];
+            kpiOptionsHtml = buildKpiOptions();
+            return;
+        }
+
+        const params = { per_page: 100, status: 'active' };
+        if (cfg.canManage && resolvedId && resolvedId !== 'self') {
+            params.employee_id = resolvedId;
+        }
+
+        const { data } = await api.get('/performance-kpis', { params });
+        employeeKpis = data.data?.kpis || [];
+        kpiOptionsHtml = buildKpiOptions();
+    };
+
+    const collectKrRows = (container) => Array.from(container?.querySelectorAll('[data-kr-index]') || []).map((row) => ({
+        id: row.querySelector('[data-kr-field="id"]')?.value ? Number(row.querySelector('[data-kr-field="id"]').value) : undefined,
+        title: row.querySelector('[data-kr-field="title"]')?.value?.trim() || '',
+        target_value: Number(row.querySelector('[data-kr-field="target_value"]')?.value ?? 100),
+        current_value: Number(row.querySelector('[data-kr-field="current_value"]')?.value ?? 0),
+        unit: row.querySelector('[data-kr-field="unit"]')?.value?.trim() || '',
+        weight: Number(row.querySelector('[data-kr-field="weight"]')?.value ?? 1),
+        status: row.querySelector('[data-kr-field="status"]')?.value || 'not_started',
+        performance_kpi_id: row.querySelector('[data-kr-field="performance_kpi_id"]')?.value
+            ? Number(row.querySelector('[data-kr-field="performance_kpi_id"]').value)
+            : null,
+    }));
+
+    const collectKr = (container) => collectKrRows(container).filter((kr) => kr.title);
+
+    const renderKrRows = (container, items = []) => {
+        if (!container) return;
+
+        if (!items.length) {
+            container.innerHTML = '<p class="text-muted small mb-0">No tasks yet. Click + Add Task.</p>';
+            return;
+        }
+
+        const showKpiLink = canLinkKpis();
+        const header = `
+            <div class="row g-2 small text-muted fw-medium mb-1 px-1 d-none d-lg-flex">
+                <div class="col-lg-3">Task *</div>
+                <div class="col-lg-2">KPI link</div>
+                <div class="col-lg-1">Weight</div>
+                <div class="col-lg-1">Target</div>
+                <div class="col-lg-1">Current</div>
+                <div class="col-lg-1">Unit</div>
+                <div class="col-lg-2">Status</div>
+                <div class="col-lg-1"></div>
+            </div>
+        `;
+
+        container.innerHTML = header + items.map((kr, i) => {
+            const isLinked = Boolean(kr.performance_kpi_id || kr.is_kpi_linked);
+            const linkedFieldsDisabled = isLinked ? 'disabled' : '';
+
+            return `
+            <div class="border rounded p-2" data-kr-index="${i}" data-kr-linked="${isLinked ? '1' : '0'}">
+                <div class="row g-2 align-items-end">
+                    ${kr.id ? `<input type="hidden" data-kr-field="id" value="${kr.id}">` : ''}
+                    <div class="col-lg-3">
+                        <label class="form-label small mb-1 d-lg-none">Task *</label>
+                        <input type="text" class="form-control form-control-sm" data-kr-field="title" value="${escapeHtml(kr.title || '')}" placeholder="e.g. Close 50 tickets" required>
+                    </div>
+                    <div class="col-lg-2">
+                        <label class="form-label small mb-1 d-lg-none">KPI link</label>
+                        ${showKpiLink
+                            ? `<select class="form-select form-select-sm" data-kr-field="performance_kpi_id">${buildKpiOptions(kr.performance_kpi_id)}</select>`
+                            : '<span class="small text-muted d-block py-1">Set individual employee first</span>'}
+                        ${isLinked ? '<span class="badge text-bg-info mt-1">Synced from KPI</span>' : ''}
+                    </div>
+                    <div class="col-lg-1">
+                        <label class="form-label small mb-1 d-lg-none">Weight</label>
+                        <input type="number" class="form-control form-control-sm" data-kr-field="weight" value="${kr.weight ?? 1}" min="0" step="0.1" title="Weight for goal %">
+                    </div>
+                    <div class="col-lg-1">
+                        <label class="form-label small mb-1 d-lg-none">Target</label>
+                        <input type="number" class="form-control form-control-sm" data-kr-field="target_value" value="${kr.target_value ?? 100}" min="0" step="0.01" ${linkedFieldsDisabled}>
+                    </div>
+                    <div class="col-lg-1">
+                        <label class="form-label small mb-1 d-lg-none">Current</label>
+                        <input type="number" class="form-control form-control-sm" data-kr-field="current_value" value="${kr.current_value ?? 0}" min="0" step="0.01" ${linkedFieldsDisabled}>
+                    </div>
+                    <div class="col-lg-1">
+                        <label class="form-label small mb-1 d-lg-none">Unit</label>
+                        <input type="text" class="form-control form-control-sm" data-kr-field="unit" value="${escapeHtml(kr.unit || '')}" placeholder="%, ₹" ${linkedFieldsDisabled}>
+                    </div>
+                    <div class="col-lg-2">
+                        <label class="form-label small mb-1 d-lg-none">Status</label>
+                        <select class="form-select form-select-sm" data-kr-field="status" ${isLinked ? 'disabled' : ''}>${krStatusOptions(kr.status || 'not_started')}</select>
+                    </div>
+                    <div class="col-lg-1 text-end">
+                        ${i > 0 ? `<button type="button" class="btn btn-sm btn-outline-danger" data-remove-kr="${i}" title="Remove task">×</button>` : ''}
+                    </div>
+                </div>
+            </div>
+        `;
+        }).join('');
+    };
+
+    const renderGoalTracking = (goal) => {
+        const pct = Math.min(100, Math.max(0, Number(goal.progress) || 0));
+        document.getElementById('goalTrackingModalLabel').textContent = goal.title;
+        document.getElementById('goalTrackingOverallPct').textContent = `${pct}%`;
+        document.getElementById('goalTrackingOverallBar').style.width = `${pct}%`;
+        document.getElementById('goalTrackingOverallBar').setAttribute('aria-valuenow', String(pct));
+        document.getElementById('goalTrackingMeta').innerHTML = [
+            goal.level ? `Level: ${escapeHtml(levelLabel(goal.level))}` : null,
+            goal.employee?.full_name ? `Employee: ${escapeHtml(goal.employee.full_name)}` : null,
+            goal.department?.name ? `Department: ${escapeHtml(goal.department.name)}` : null,
+            goal.period_start || goal.period_end ? `Period: ${escapeHtml(goal.period_start || '—')} – ${escapeHtml(goal.period_end || '—')}` : null,
+        ].filter(Boolean).join(' · ');
+
+        const tasks = goal.key_results || [];
+        const tasksEl = document.getElementById('goalTrackingTasks');
+
+        if (!tasks.length) {
+            tasksEl.innerHTML = '<p class="text-muted small mb-0">No tasks defined for this goal.</p>';
+            return;
+        }
+
+        tasksEl.innerHTML = tasks.map((task) => {
+            const taskPct = Math.min(100, Math.max(0, Number(task.progress_percent) || 0));
+            const kpiNote = task.is_kpi_linked && task.linked_kpi
+                ? `<span class="badge text-bg-info ms-1">KPI: ${escapeHtml(task.linked_kpi.title)}</span>`
+                : '';
+            return `
+                <div class="border rounded p-3">
+                    <div class="d-flex justify-content-between align-items-start gap-2 mb-2">
+                        <div>
+                            <div class="fw-medium">${escapeHtml(task.title)}${kpiNote}</div>
+                            <div class="small text-muted">${task.current_value}/${task.target_value}${task.unit ? ` ${escapeHtml(task.unit)}` : ''} · Weight ${task.weight ?? 1}</div>
+                        </div>
+                        <span class="badge text-bg-light border">${escapeHtml((task.status || 'not_started').replace(/_/g, ' '))}</span>
+                    </div>
+                    ${progressCell(taskPct)}
+                </div>
+            `;
+        }).join('');
+    };
+
+    const progressCell = (progress) => {
+        const pct = Math.min(100, Math.max(0, Number(progress) || 0));
+        return `
+            <div class="d-flex align-items-center gap-2">
+                <div class="progress flex-grow-1" style="height: 6px; min-width: 60px;">
+                    <div class="progress-bar" role="progressbar" style="width: ${pct}%" aria-valuenow="${pct}" aria-valuemin="0" aria-valuemax="100"></div>
+                </div>
+                <span class="small text-nowrap">${pct}%</span>
+            </div>
+        `;
+    };
 
     const load = async (pageNum = 1) => {
         currentPage = pageNum;
@@ -823,13 +1630,16 @@ const initGoals = async () => {
         const goals = data.data.goals || [];
 
         if (!goals.length) {
-            body.innerHTML = '<tr><td colspan="8" class="text-center text-muted py-4">No goals found.</td></tr>';
+            body.innerHTML = '<tr><td colspan="7" class="text-center text-muted py-4">No goals found.</td></tr>';
             renderPagination('goals', data.data.pagination, load);
             return;
         }
 
         body.innerHTML = goals.map((goal) => {
-            const actions = [renderEditIconButton('data-edit-goal', goal.id)];
+            const actions = [
+                renderViewIconButton('data-view-goal', goal.id, 'View progress'),
+                renderEditIconButton('data-edit-goal', goal.id),
+            ];
             if (cfg.canManage && goal.can_cascade) {
                 actions.push(renderAddIconButton(
                     'data-cascade-goal',
@@ -843,9 +1653,8 @@ const initGoals = async () => {
                 <td>${escapeHtml(goal.title)}</td>
                 <td>${escapeHtml(levelLabel(goal.level))}</td>
                 <td>${escapeHtml(ownerLabel(goal))}</td>
-                <td>${escapeHtml(goal.parent?.title || '—')}</td>
                 <td>${escapeHtml(goal.period_start || '—')} – ${escapeHtml(goal.period_end || '—')}</td>
-                <td>${goal.progress ?? 0}%</td>
+                <td>${progressCell(goal.progress)}</td>
                 <td>${statusPill(goal.status)}</td>
                 <td class="text-end">${renderActionGroup(actions)}</td>
             </tr>
@@ -876,15 +1685,51 @@ const initGoals = async () => {
         document.getElementById('goalModalLabel').textContent = 'Create Goal';
         resetGoalForm();
         await loadDepartments();
+        await loadKpisForEmployee();
         modal?.show();
     });
 
-    document.getElementById('goalLevel')?.addEventListener('change', syncGoalLevelFields);
+    document.getElementById('goalLevel')?.addEventListener('change', () => {
+        syncGoalLevelFields();
+        loadKpisForEmployee().then(() => {
+            const list = document.getElementById('keyResultsList');
+            if (list?.querySelector('[data-kr-index]')) {
+                renderKrRows(list, collectKrRows(list));
+            }
+        }).catch((error) => showAlert(getErrorMessage(error), 'danger'));
+    });
 
-    document.getElementById('addKeyResultBtn')?.addEventListener('click', () => {
+    document.getElementById('keyResultsList')?.addEventListener('change', (e) => {
+        const select = e.target.closest('[data-kr-field="performance_kpi_id"]');
+        if (!select) return;
+
+        const row = select.closest('[data-kr-index]');
+        const kpiId = Number(select.value || 0);
+        const kpi = employeeKpis.find((item) => item.id === kpiId);
+
+        if (kpi && row) {
+            row.querySelector('[data-kr-field="target_value"]').value = kpi.target_value;
+            row.querySelector('[data-kr-field="current_value"]').value = kpi.current_value;
+            row.querySelector('[data-kr-field="unit"]').value = kpi.unit || '';
+            row.querySelector('[data-kr-field="target_value"]').disabled = true;
+            row.querySelector('[data-kr-field="current_value"]').disabled = true;
+            row.querySelector('[data-kr-field="unit"]').disabled = true;
+            row.querySelector('[data-kr-field="status"]').disabled = true;
+            row.dataset.krLinked = '1';
+        } else if (row) {
+            row.querySelector('[data-kr-field="target_value"]').disabled = false;
+            row.querySelector('[data-kr-field="current_value"]').disabled = false;
+            row.querySelector('[data-kr-field="unit"]').disabled = false;
+            row.querySelector('[data-kr-field="status"]').disabled = false;
+            row.dataset.krLinked = '0';
+        }
+    });
+
+    document.getElementById('addKeyResultBtn')?.addEventListener('click', (e) => {
+        e.preventDefault();
         const list = document.getElementById('keyResultsList');
-        const current = collectKr(list);
-        current.push({ title: '', target_value: 100, current_value: 0 });
+        const current = collectKrRows(list);
+        current.push({ title: '', target_value: 100, current_value: 0, unit: '' });
         renderKrRows(list, current);
     });
 
@@ -892,8 +1737,11 @@ const initGoals = async () => {
         const btn = e.target.closest('[data-remove-kr]');
         if (!btn) return;
         const list = document.getElementById('keyResultsList');
-        const current = collectKr(list);
+        let current = collectKrRows(list);
         current.splice(Number(btn.dataset.removeKr), 1);
+        if (!current.length) {
+            current = [{ title: '', target_value: 100, current_value: 0, unit: '' }];
+        }
         renderKrRows(list, current);
     });
 
@@ -915,9 +1763,20 @@ const initGoals = async () => {
             payload.level = level;
             if (level === 'department') {
                 payload.department_id = Number(document.getElementById('goalDepartmentId')?.value || 0) || null;
+                if (!payload.department_id) {
+                    showAlert('Please select a department.', 'danger');
+                    return;
+                }
             }
             if (level === 'individual') {
-                payload.employee_id = Number(document.getElementById('goalEmployeeId')?.value || 0) || null;
+                const employeeId = Number(document.getElementById('goalEmployeeId')?.value || 0) || null;
+                if (cfg.canManage && !employeeId) {
+                    showAlert('Please select an employee for individual goals.', 'danger');
+                    return;
+                }
+                if (employeeId) {
+                    payload.employee_id = employeeId;
+                }
             }
         }
 
@@ -933,12 +1792,26 @@ const initGoals = async () => {
     });
 
     body.addEventListener('click', async (e) => {
+        const viewBtn = e.target.closest('[data-view-goal]');
+        if (viewBtn) {
+            try {
+                const { data } = await api.get(`/goals/${viewBtn.dataset.viewGoal}`);
+                renderGoalTracking(data.data.goal);
+                trackingModal?.show();
+            } catch (error) {
+                showAlert(getErrorMessage(error), 'danger');
+            }
+
+            return;
+        }
+
         const editBtn = e.target.closest('[data-edit-goal]');
         if (editBtn) {
             try {
                 const { data } = await api.get(`/goals/${editBtn.dataset.editGoal}`);
                 const goal = data.data.goal;
                 await loadDepartments();
+                await loadKpisForEmployee(goal.employee?.id || null);
                 document.getElementById('goalEditingId').value = goal.id;
                 document.getElementById('goalModalLabel').textContent = 'Edit Goal';
                 document.getElementById('goalTitle').value = goal.title;
@@ -950,8 +1823,10 @@ const initGoals = async () => {
                 document.getElementById('goalLevel').value = goal.level || 'individual';
                 document.getElementById('goalDepartmentId').value = goal.department?.id || '';
                 if (goal.employee) {
-                    document.getElementById('goalEmployeeId').value = goal.employee.id;
-                    document.getElementById('goalEmployeeSearch').value = formatEmployeeLabel(goal.employee);
+                    goalEmployeeSearch?.setSelection?.({
+                        id: goal.employee.id,
+                        label: formatEmployeeLabel(goal.employee),
+                    });
                 } else {
                     goalEmployeeSearch?.clearSelection?.();
                 }
@@ -1002,12 +1877,57 @@ const initKpi = async () => {
 
     const modalEl = document.getElementById('kpiModal');
     const modal = modalEl ? Modal.getOrCreateInstance(modalEl) : null;
+    const progressModalEl = document.getElementById('kpiProgressModal');
+    const progressModal = progressModalEl ? Modal.getOrCreateInstance(progressModalEl) : null;
     let currentPage = 1;
+    const tableColspan = cfg.canManage ? 8 : 7;
 
-    const kpiEmployeeSearch = bindEmployeeSearchSelect({
+    const kpiEmployeeSearch = cfg.canManage ? bindEmployeeSearchSelect({
         inputId: 'kpiEmployeeSearch',
         hiddenId: 'kpiEmployeeId',
-    });
+    }) : null;
+
+    const progressCell = (progress) => {
+        const pct = Math.min(100, Math.max(0, Number(progress) || 0));
+        return `
+            <div class="d-flex align-items-center gap-2">
+                <div class="progress flex-grow-1" style="height: 6px; min-width: 60px;">
+                    <div class="progress-bar" role="progressbar" style="width: ${pct}%" aria-valuenow="${pct}" aria-valuemin="0" aria-valuemax="100"></div>
+                </div>
+                <span class="small text-nowrap">${pct}%</span>
+            </div>
+        `;
+    };
+
+    const renderKpiRow = (kpi) => {
+        const employeeCell = cfg.canManage
+            ? `<td>${escapeHtml(kpi.employee?.full_name || '—')}</td>`
+            : '';
+        const actions = cfg.canManage
+            ? renderActionGroup([
+                renderEditIconButton('data-edit-kpi', kpi.id),
+                renderDeleteButton('data-delete-kpi', kpi.id),
+            ])
+            : renderActionGroup([
+                renderEditIconButton('data-update-kpi-progress', kpi.id, 'Update progress'),
+            ]);
+
+        return `
+            <tr>
+                <td>
+                    ${escapeHtml(kpi.title)}
+                    ${kpi.linked_tasks_count ? `<span class="badge text-bg-info ms-1" title="Linked to goal tasks">${kpi.linked_tasks_count} goal task${kpi.linked_tasks_count > 1 ? 's' : ''}</span>` : ''}
+                </td>
+                ${employeeCell}
+                <td>${kpi.target_value}${kpi.unit ? ` ${escapeHtml(kpi.unit)}` : ''}</td>
+                <td>${kpi.current_value}</td>
+                <td>${progressCell(kpi.progress_percent)}</td>
+                <td>${escapeHtml(kpi.frequency)}</td>
+                <td>${statusPill(kpi.status)}</td>
+                <td class="text-end">${actions}</td>
+            </tr>
+        `;
+    };
 
     const load = async (pageNum = 1) => {
         currentPage = pageNum;
@@ -1021,28 +1941,46 @@ const initKpi = async () => {
         const kpis = data.data.kpis || [];
 
         if (!kpis.length) {
-            body.innerHTML = '<tr><td colspan="8" class="text-center text-muted py-4">No KPIs found.</td></tr>';
+            body.innerHTML = `<tr><td colspan="${tableColspan}" class="text-center text-muted py-4">No KPIs found.</td></tr>`;
             renderPagination('kpi', data.data.pagination, load);
             return;
         }
 
-        body.innerHTML = kpis.map((kpi) => `
-            <tr>
-                <td>${escapeHtml(kpi.title)}</td>
-                <td>${escapeHtml(kpi.employee?.full_name || '—')}</td>
-                <td>${kpi.target_value}${kpi.unit ? ` ${escapeHtml(kpi.unit)}` : ''}</td>
-                <td>${kpi.current_value}</td>
-                <td>${kpi.progress_percent}%</td>
-                <td>${escapeHtml(kpi.frequency)}</td>
-                <td>${statusPill(kpi.status)}</td>
-                <td class="text-end">${cfg.canManage ? renderActionGroup([
-                    renderEditIconButton('data-edit-kpi', kpi.id),
-                    renderDeleteButton('data-delete-kpi', kpi.id),
-                ]) : '—'}</td>
-            </tr>
-        `).join('');
+        body.innerHTML = kpis.map(renderKpiRow).join('');
 
         renderPagination('kpi', data.data.pagination, load);
+    };
+
+    const openProgressModal = (kpi) => {
+        document.getElementById('kpiProgressEditingId').value = kpi.id;
+        document.getElementById('kpiProgressTitle').textContent = kpi.title;
+        document.getElementById('kpiProgressTarget').textContent = `${kpi.target_value}${kpi.unit ? ` ${kpi.unit}` : ''}`;
+        document.getElementById('kpiProgressCurrent').value = kpi.current_value;
+        const meta = [
+            kpi.frequency ? `Frequency: ${kpi.frequency}` : null,
+            kpi.period_start || kpi.period_end
+                ? `Period: ${kpi.period_start || '—'} to ${kpi.period_end || '—'}`
+                : null,
+        ].filter(Boolean).join(' · ');
+        document.getElementById('kpiProgressMeta').textContent = meta || 'Update your current achievement for this KPI.';
+
+        const linkedWrap = document.getElementById('kpiLinkedGoalsWrap');
+        const linkedList = document.getElementById('kpiLinkedGoalsList');
+        const linkedGoals = kpi.linked_goals || [];
+
+        if (linkedWrap && linkedList) {
+            if (linkedGoals.length) {
+                linkedWrap.classList.remove('d-none');
+                linkedList.innerHTML = linkedGoals.map((goal) => (
+                    `<div class="mb-1">${escapeHtml(goal.title)} <span class="text-muted">(${goal.progress ?? 0}%)</span></div>`
+                )).join('');
+            } else {
+                linkedWrap.classList.add('d-none');
+                linkedList.innerHTML = '';
+            }
+        }
+
+        progressModal?.show();
     };
 
     if (cfg.canManage) {
@@ -1052,7 +1990,7 @@ const initKpi = async () => {
             document.getElementById('kpiEditingId').value = '';
             document.getElementById('kpiModalLabel').textContent = 'Create KPI';
             document.getElementById('kpiForm').reset();
-            kpiEmployeeSearch?.clearSelection();
+            kpiEmployeeSearch?.clearSelection?.();
             modal?.show();
         });
 
@@ -1082,43 +2020,73 @@ const initKpi = async () => {
                 showAlert(getErrorMessage(error), 'danger');
             }
         });
-
-        body.addEventListener('click', async (e) => {
-            const editBtn = e.target.closest('[data-edit-kpi]');
-            const deleteBtn = e.target.closest('[data-delete-kpi]');
-
-            try {
-                if (editBtn) {
-                    const { data } = await api.get(`/performance-kpis/${editBtn.dataset.editKpi}`);
-                    const kpi = data.data.kpi;
-                    document.getElementById('kpiEditingId').value = kpi.id;
-                    document.getElementById('kpiModalLabel').textContent = 'Edit KPI';
-                    document.getElementById('kpiTitle').value = kpi.title;
-                    document.getElementById('kpiDescription').value = kpi.description || '';
-                    kpiEmployeeSearch?.setSelection(kpi.employee?.id ? {
-                        id: kpi.employee.id,
-                        label: formatEmployeeLabel(kpi.employee),
-                    } : null);
-                    document.getElementById('kpiTarget').value = kpi.target_value;
-                    document.getElementById('kpiCurrent').value = kpi.current_value;
-                    document.getElementById('kpiUnit').value = kpi.unit || '';
-                    document.getElementById('kpiFrequency').value = kpi.frequency;
-                    document.getElementById('kpiPeriodStart').value = kpi.period_start || '';
-                    document.getElementById('kpiPeriodEnd').value = kpi.period_end || '';
-                    document.getElementById('kpiFormStatus').value = kpi.status;
-                    modal?.show();
-                }
-
-                if (deleteBtn && window.confirm('Delete this KPI?')) {
-                    await api.delete(`/performance-kpis/${deleteBtn.dataset.deleteKpi}`);
-                    showAlert('KPI deleted.');
-                    await load(currentPage);
-                }
-            } catch (error) {
-                showAlert(getErrorMessage(error), 'danger');
-            }
-        });
+    } else {
+        setHeaderAction('');
     }
+
+    document.getElementById('kpiProgressForm')?.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const id = document.getElementById('kpiProgressEditingId').value;
+
+        try {
+            await api.put(`/performance-kpis/${id}`, {
+                current_value: Number(document.getElementById('kpiProgressCurrent').value || 0),
+            });
+            progressModal?.hide();
+            const response = await api.put(`/performance-kpis/${id}`, {
+                current_value: Number(document.getElementById('kpiProgressCurrent').value || 0),
+            });
+            const linkedCount = response.data?.data?.kpi?.linked_tasks_count || 0;
+            showAlert(linkedCount
+                ? `KPI progress updated. ${linkedCount} linked goal task(s) and goal achievement % refreshed.`
+                : 'KPI progress updated.');
+            await load(currentPage);
+        } catch (error) {
+            showAlert(getErrorMessage(error), 'danger');
+        }
+    });
+
+    body.addEventListener('click', async (e) => {
+        const editBtn = e.target.closest('[data-edit-kpi]');
+        const deleteBtn = e.target.closest('[data-delete-kpi]');
+        const progressBtn = e.target.closest('[data-update-kpi-progress]');
+
+        try {
+            if (editBtn && cfg.canManage) {
+                const { data } = await api.get(`/performance-kpis/${editBtn.dataset.editKpi}`);
+                const kpi = data.data.kpi;
+                document.getElementById('kpiEditingId').value = kpi.id;
+                document.getElementById('kpiModalLabel').textContent = 'Edit KPI';
+                document.getElementById('kpiTitle').value = kpi.title;
+                document.getElementById('kpiDescription').value = kpi.description || '';
+                kpiEmployeeSearch?.setSelection?.(kpi.employee?.id ? {
+                    id: kpi.employee.id,
+                    label: formatEmployeeLabel(kpi.employee),
+                } : null);
+                document.getElementById('kpiTarget').value = kpi.target_value;
+                document.getElementById('kpiCurrent').value = kpi.current_value;
+                document.getElementById('kpiUnit').value = kpi.unit || '';
+                document.getElementById('kpiFrequency').value = kpi.frequency;
+                document.getElementById('kpiPeriodStart').value = kpi.period_start || '';
+                document.getElementById('kpiPeriodEnd').value = kpi.period_end || '';
+                document.getElementById('kpiFormStatus').value = kpi.status;
+                modal?.show();
+            }
+
+            if (deleteBtn && cfg.canManage && window.confirm('Delete this KPI?')) {
+                await api.delete(`/performance-kpis/${deleteBtn.dataset.deleteKpi}`);
+                showAlert('KPI deleted.');
+                await load(currentPage);
+            }
+
+            if (progressBtn) {
+                const { data } = await api.get(`/performance-kpis/${progressBtn.dataset.updateKpiProgress}`);
+                openProgressModal(data.data.kpi);
+            }
+        } catch (error) {
+            showAlert(getErrorMessage(error), 'danger');
+        }
+    });
 
     ['kpiStatusFilter', 'kpiSearchFilter'].forEach((id) => {
         document.getElementById(id)?.addEventListener('input', () => load(1).catch((e) => showAlert(getErrorMessage(e), 'danger')));
@@ -1309,16 +2277,30 @@ const initInsights = async () => {
         document.getElementById('insightsActiveGoals').textContent = overview.active_goals;
         document.getElementById('insightsActivePips').textContent = overview.active_pips;
 
-        if (!overview.my_reviews?.length) {
-            body.innerHTML = '<tr><td colspan="3" class="text-center text-muted py-4">No review data yet.</td></tr>';
+        const reviews = cfg.canManage
+            ? (overview.my_reviews || [])
+            : (overview.reviews_about_me || []);
+
+        renderPerformanceOverviewCharts('insights', overview, reviews);
+        const personKey = cfg.canManage ? 'reviewee_name' : 'reviewer_name';
+        const ratingHeader = document.getElementById('insightsReviewRatingHeader');
+        const colspan = cfg.canManage ? 3 : 4;
+
+        if (ratingHeader) {
+            ratingHeader.classList.toggle('d-none', cfg.canManage);
+        }
+
+        if (!reviews.length) {
+            body.innerHTML = `<tr><td colspan="${colspan}" class="text-center text-muted py-4">No review data yet.</td></tr>`;
             return;
         }
 
-        body.innerHTML = overview.my_reviews.map((review) => `
+        body.innerHTML = reviews.map((review) => `
             <tr>
-                <td>${escapeHtml(review.cycle_name)}</td>
-                <td>${escapeHtml(review.reviewee_name)}</td>
+                <td>${escapeHtml(review.cycle_name || '—')}</td>
+                <td>${escapeHtml(review[personKey] || '—')}</td>
                 <td>${statusPill(review.status)}</td>
+                ${cfg.canManage ? '' : `<td>${review.overall_rating ?? '—'}</td>`}
             </tr>
         `).join('');
     } catch (error) {
@@ -1401,7 +2383,15 @@ const initCalibration = async () => {
         activeSessionId = session.id;
 
         document.getElementById('calibrationDetailTitle').textContent = session.name;
-        document.getElementById('calibrationDetailMeta').textContent = `${session.cycle?.name || 'Manual session'} • ${session.entries?.length || 0} employees`;
+        const finalizedNote = session.status === 'finalized'
+            ? ` • Finalized${session.finalized_at ? ` on ${session.finalized_at.slice(0, 10)}` : ''}`
+            : '';
+        document.getElementById('calibrationDetailMeta').textContent = `${session.cycle?.name || 'Manual session'} • ${session.entries?.length || 0} employee(s)${finalizedNote}`;
+
+        const finalizedNotice = document.getElementById('calibrationFinalizedNotice');
+        if (finalizedNotice) {
+            finalizedNotice.classList.toggle('d-none', session.status !== 'finalized');
+        }
         finalizeBtn?.classList.toggle('d-none', session.status === 'finalized');
 
         if (!session.entries?.length) {
@@ -1509,6 +2499,9 @@ const initPromotions = async () => {
     const body = document.getElementById('promotionsTableBody');
     if (!body) return;
 
+    const recommendationsBody = document.getElementById('promotionRecommendationsBody');
+    const criteriaPanel = document.getElementById('promotionCriteriaPanel');
+    const criteriaList = document.getElementById('promotionCriteriaList');
     const modalEl = document.getElementById('promotionModal');
     const modal = modalEl ? Modal.getOrCreateInstance(modalEl) : null;
     let currentPage = 1;
@@ -1516,6 +2509,97 @@ const initPromotions = async () => {
         inputId: 'promotionEmployeeSearch',
         hiddenId: 'promotionEmployeeId',
     });
+
+    const promotionStatusLabel = (status) => ({
+        draft: 'Draft',
+        nominated: 'Submitted',
+        approved: 'Endorsed',
+        rejected: 'Not Endorsed',
+        cancelled: 'Cancelled',
+    }[status] || (status || 'unknown').replace(/_/g, ' '));
+
+    const promotionStatusPill = (status) => {
+        const map = {
+            draft: 'secondary',
+            nominated: 'primary',
+            approved: 'success',
+            rejected: 'danger',
+            cancelled: 'secondary',
+        };
+
+        return `<span class="badge bg-${map[status] || 'secondary'}">${escapeHtml(promotionStatusLabel(status))}</span>`;
+    };
+
+    const renderCriteriaSummary = (criteriaConfig) => {
+        if (!criteriaList || !criteriaConfig) return;
+
+        const { labels = {}, thresholds = {} } = criteriaConfig;
+        criteriaList.innerHTML = Object.entries(labels).map(([key, label]) => {
+            let detail = '';
+            if (key === 'minimum_tenure') detail = ` — ${thresholds.min_tenure_months}+ months`;
+            if (key === 'performance_rating') detail = ` — rating ${thresholds.min_performance_rating}+`;
+            return `<li>${escapeHtml(label)}${escapeHtml(detail)}</li>`;
+        }).join('');
+    };
+
+    const openRecommendationModal = (item) => {
+        document.getElementById('promotionEditingId').value = '';
+        document.getElementById('promotionModalLabel').textContent = 'Create Promotion Recommendation';
+        document.getElementById('promotionForm').reset();
+        document.getElementById('promotionCurrentDesignation').value = item.employee?.designation || '';
+        document.getElementById('promotionProposedDesignation').value = '';
+        document.getElementById('promotionJustification').value = '';
+        document.getElementById('promotionEffectiveDate').value = '';
+        promotionEmployeeSearch?.setSelection(item.employee?.id ? {
+            id: item.employee.id,
+            label: formatEmployeeLabel(item.employee),
+        } : null);
+        modal?.show();
+    };
+
+    let cachedRecommendations = [];
+
+    const loadRecommendations = async () => {
+        if (!recommendationsBody) return;
+
+        const params = {
+            eligible_only: true,
+            search: document.getElementById('promotionRecommendSearch')?.value || undefined,
+        };
+
+        const { data } = await api.get('/promotions/recommendations', { params });
+        cachedRecommendations = data.data.recommendations || [];
+        renderCriteriaSummary(data.data.criteria);
+
+        if (!cachedRecommendations.length) {
+            recommendationsBody.innerHTML = '<tr><td colspan="7" class="text-center text-muted py-4">No eligible employees match the current promotion criteria.</td></tr>';
+            return;
+        }
+
+        recommendationsBody.innerHTML = cachedRecommendations.map((item) => {
+            const criteriaHtml = (item.criteria || []).map((criterion) => `
+                <div class="small ${criterion.passed ? 'text-success' : 'text-danger'}">${criterion.passed ? '&#10003;' : '&#10007;'} ${escapeHtml(criterion.label)}</div>
+            `).join('');
+
+            return `
+                <tr>
+                    <td>
+                        <div class="fw-semibold">${escapeHtml(item.employee?.full_name || '—')}</div>
+                        <div class="small text-muted">${escapeHtml(item.employee?.employee_code || '')}</div>
+                    </td>
+                    <td>${escapeHtml(item.employee?.designation || '—')}</td>
+                    <td>${item.metrics?.tenure_months != null ? `${item.metrics.tenure_months} mo` : '—'}</td>
+                    <td>${item.metrics?.latest_rating != null ? Number(item.metrics.latest_rating).toFixed(2) : '—'}</td>
+                    <td><span class="badge bg-success">${escapeHtml(String(item.score))}%</span></td>
+                    <td>${criteriaHtml}</td>
+                    <td class="text-end">${(cfg.canManage || cfg.canReview)
+                        ? `<button type="button" class="btn btn-sm btn-outline-primary" data-recommend-promotion="${item.employee.id}">Recommend</button>`
+                        : '—'
+                    }</td>
+                </tr>
+            `;
+        }).join('');
+    };
 
     const load = async (pageNum = 1) => {
         currentPage = pageNum;
@@ -1529,7 +2613,7 @@ const initPromotions = async () => {
         const nominations = data.data.nominations || [];
 
         if (!nominations.length) {
-            body.innerHTML = '<tr><td colspan="6" class="text-center text-muted py-4">No promotion nominations found.</td></tr>';
+            body.innerHTML = '<tr><td colspan="6" class="text-center text-muted py-4">No promotion recommendations found.</td></tr>';
             renderPagination('promotions', data.data.pagination, load);
             return;
         }
@@ -1538,11 +2622,11 @@ const initPromotions = async () => {
             const actions = [];
             if (item.status === 'draft') {
                 actions.push(renderEditIconButton('data-edit-promotion', item.id));
-                actions.push(`<button type="button" class="table-action-btn table-action-btn--approve" title="Nominate" data-nominate-promotion="${item.id}">&#9654;</button>`);
+                actions.push(`<button type="button" class="table-action-btn table-action-btn--approve" title="Submit" data-nominate-promotion="${item.id}">&#9654;</button>`);
             }
             if (cfg.canManage && item.status === 'nominated') {
-                actions.push(`<button type="button" class="table-action-btn table-action-btn--approve" title="Approve" data-approve-promotion="${item.id}">&#10003;</button>`);
-                actions.push(`<button type="button" class="table-action-btn table-action-btn--reject" title="Reject" data-reject-promotion="${item.id}">&#10007;</button>`);
+                actions.push(`<button type="button" class="table-action-btn table-action-btn--approve" title="Endorse recommendation" data-approve-promotion="${item.id}">&#10003;</button>`);
+                actions.push(`<button type="button" class="table-action-btn table-action-btn--reject" title="Decline recommendation" data-reject-promotion="${item.id}">&#10007;</button>`);
             }
 
             return `
@@ -1551,7 +2635,7 @@ const initPromotions = async () => {
                 <td>${escapeHtml(item.current_designation || item.employee?.designation || '—')}</td>
                 <td>${escapeHtml(item.proposed_designation)}</td>
                 <td>${escapeHtml(item.effective_date || '—')}</td>
-                <td>${statusPill(item.status)}</td>
+                <td>${promotionStatusPill(item.status)}</td>
                 <td class="text-end">${actions.length ? renderActionGroup(actions) : '—'}</td>
             </tr>
         `;
@@ -1561,11 +2645,11 @@ const initPromotions = async () => {
     };
 
     if (cfg.canManage || cfg.canReview) {
-        setHeaderAction('<button type="button" class="btn btn-primary" id="openPromotionModalBtn">+ Nominate Promotion</button>');
+        setHeaderAction('<button type="button" class="btn btn-primary" id="openPromotionModalBtn">+ New Recommendation</button>');
 
         document.getElementById('openPromotionModalBtn')?.addEventListener('click', () => {
             document.getElementById('promotionEditingId').value = '';
-            document.getElementById('promotionModalLabel').textContent = 'Create Promotion Nomination';
+            document.getElementById('promotionModalLabel').textContent = 'Create Promotion Recommendation';
             document.getElementById('promotionForm').reset();
             promotionEmployeeSearch?.clearSelection();
             modal?.show();
@@ -1586,13 +2670,30 @@ const initPromotions = async () => {
                 if (id) await api.put(`/promotions/${id}`, payload);
                 else await api.post('/promotions', payload);
                 modal?.hide();
-                showAlert('Promotion nomination saved.');
-                await load(currentPage);
+                showAlert('Promotion recommendation saved.');
+                await Promise.all([load(currentPage), loadRecommendations()]);
             } catch (error) {
                 showAlert(getErrorMessage(error), 'danger');
             }
         });
     }
+
+    recommendationsBody?.addEventListener('click', async (e) => {
+        const recommendBtn = e.target.closest('[data-recommend-promotion]');
+        if (!recommendBtn) return;
+
+        const employeeId = Number(recommendBtn.dataset.recommendPromotion);
+        const match = cachedRecommendations.find((item) => item.employee?.id === employeeId);
+        if (match) openRecommendationModal(match);
+    });
+
+    document.getElementById('promotionCriteriaToggle')?.addEventListener('click', () => {
+        criteriaPanel?.classList.toggle('d-none');
+    });
+
+    document.getElementById('promotionRecommendSearch')?.addEventListener('input', () => {
+        loadRecommendations().catch((err) => showAlert(getErrorMessage(err), 'danger'));
+    });
 
     body.addEventListener('click', async (e) => {
         const editBtn = e.target.closest('[data-edit-promotion]');
@@ -1605,7 +2706,7 @@ const initPromotions = async () => {
                 const { data } = await api.get(`/promotions/${editBtn.dataset.editPromotion}`);
                 const item = data.data.nomination;
                 document.getElementById('promotionEditingId').value = item.id;
-                document.getElementById('promotionModalLabel').textContent = 'Edit Promotion Nomination';
+                document.getElementById('promotionModalLabel').textContent = 'Edit Promotion Recommendation';
                 document.getElementById('promotionProposedDesignation').value = item.proposed_designation;
                 document.getElementById('promotionCurrentDesignation').value = item.current_designation || '';
                 document.getElementById('promotionJustification').value = item.justification || '';
@@ -1620,21 +2721,21 @@ const initPromotions = async () => {
 
             if (nominateBtn) {
                 await api.patch(`/promotions/${nominateBtn.dataset.nominatePromotion}/status`, { status: 'nominated' });
-                showAlert('Promotion nominated.');
+                showAlert('Recommendation submitted for review.');
                 await load(currentPage);
                 return;
             }
 
             if (approveBtn) {
                 await api.patch(`/promotions/${approveBtn.dataset.approvePromotion}/status`, { status: 'approved' });
-                showAlert('Promotion approved.');
+                showAlert('Recommendation endorsed. Employee designation was not changed automatically.');
                 await load(currentPage);
                 return;
             }
 
             if (rejectBtn) {
                 await api.patch(`/promotions/${rejectBtn.dataset.rejectPromotion}/status`, { status: 'rejected' });
-                showAlert('Promotion rejected.');
+                showAlert('Recommendation declined.');
                 await load(currentPage);
             }
         } catch (error) {
@@ -1648,7 +2749,7 @@ const initPromotions = async () => {
     });
 
     try {
-        await load();
+        await Promise.all([load(), loadRecommendations()]);
     } catch (error) {
         showAlert(getErrorMessage(error), 'danger');
     }
@@ -2088,11 +3189,11 @@ const initSkills = async () => {
 document.addEventListener('DOMContentLoaded', () => {
     const inits = {
         overview: initOverview,
-        reviews: initOverview,
+        reviews: initReviews,
         insights: initInsights,
         'review-cycles': initReviewCycles,
         'feedback-forms': initFeedbackForms,
-        'continuous-feedback': initFeedbackForms,
+        'continuous-feedback': initContinuousFeedback,
         'question-bank': initQuestionBank,
         goals: initGoals,
         kpi: initKpi,

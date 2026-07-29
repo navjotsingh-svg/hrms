@@ -77,12 +77,13 @@ class AttendanceRegularizationController extends Controller
         $validated = $request->validate([
             'date' => ['nullable', 'date', 'before_or_equal:today'],
             'month' => ['nullable', 'date_format:Y-m'],
+            'employee_id' => ['nullable', 'integer', 'exists:employees,id'],
         ]);
 
         return $this->success(
             $this->regularizationService->eligibleDatesForUser(
                 $request->user(),
-                null,
+                isset($validated['employee_id']) ? (int) $validated['employee_id'] : null,
                 $validated['date'] ?? null,
                 $validated['month'] ?? null,
             ),
@@ -93,7 +94,7 @@ class AttendanceRegularizationController extends Controller
     {
         $validated = $request->validated();
 
-        if (! empty($validated['dates'])) {
+        if (! empty($validated['entries']) || ! empty($validated['dates'])) {
             $requests = $this->regularizationService->createBulk(
                 $request->user(),
                 $validated,

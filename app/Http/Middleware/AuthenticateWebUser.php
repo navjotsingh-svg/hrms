@@ -2,6 +2,7 @@
 
 namespace App\Http\Middleware;
 
+use App\Services\CompanyOrganizationService;
 use Closure;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -10,6 +11,8 @@ use Symfony\Component\HttpFoundation\Response;
 
 class AuthenticateWebUser
 {
+    public function __construct(private CompanyOrganizationService $companyOrganizationService) {}
+
     public function handle(Request $request, Closure $next): Response
     {
         if (! Auth::check()) {
@@ -28,7 +31,32 @@ class AuthenticateWebUser
             return redirect()->route('login');
         }
 
-        $request->user()->loadMissing('role', 'company');
+        $user = $request->user();
+        $user->loadMissing('role', 'company');
+
+        if (
+            $user->company_id
+            && ! $user->isSuperAdmin()
+            && ! $this->companyOrganizationService->hasActiveAdministrator((int) $user->company_id)
+        ) {
+            Auth::guard('web')->logout();
+            $request->session()->invalidate();
+            $request->session()->regenerateToken();
+
+            return redirect()
+                ->route('login')
+                ->with('login_error', $this->companyOrganizationService->organizationUnavailableMessage());
+        }
+
+        if (! $user->canSignIn()) {
+            Auth::guard('web')->logout();
+            $request->session()->invalidate();
+            $request->session()->regenerateToken();
+
+            return redirect()
+                ->route('login')
+                ->with('login_error', 'Your portal access has been disabled. Contact your administrator.');
+        }
 
         return $next($request);
     }

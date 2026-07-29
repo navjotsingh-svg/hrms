@@ -9,7 +9,7 @@ use Illuminate\Support\Facades\Route;
 Route::prefix('v1')->name('api.')->group(function () {
     Route::post('auth/login', [AuthController::class, 'login'])->name('auth.login');
 
-    Route::middleware(['auth:sanctum', 'log.activity'])->group(function () {
+    Route::middleware(['auth:sanctum', 'portal.access', 'log.activity'])->group(function () {
         Route::get('auth/me', [AuthController::class, 'me'])->name('auth.me');
         Route::post('auth/logout', [AuthController::class, 'logout'])->name('auth.logout');
 
@@ -27,6 +27,12 @@ Route::prefix('v1')->name('api.')->group(function () {
         Route::get('profile/employee', [ProfileController::class, 'showEmployee'])->name('profile.employee.show');
         Route::get('profile/journey', [ProfileController::class, 'journey'])->name('profile.journey.show');
         Route::post('profile/family-members', [ProfileController::class, 'storeFamilyMembers'])->name('profile.family-members.store');
+        Route::delete('profile/family-members/{employeeFamilyMember}', [ProfileController::class, 'destroyFamilyMember'])
+            ->name('profile.family-members.destroy')
+            ->whereNumber('employeeFamilyMember');
+        Route::delete('employee-family-members/{employeeFamilyMember}', [\App\Http\Controllers\Api\V1\EmployeeFamilyMemberController::class, 'destroy'])
+            ->name('employee-family-members.destroy')
+            ->whereNumber('employeeFamilyMember');
         Route::post('profile/personal-sections', [ProfileController::class, 'storePersonalSection'])->name('profile.personal-sections.store');
         Route::post('profile/compliance-fields', [ProfileController::class, 'storeComplianceField'])->name('profile.compliance-fields.store');
         Route::post('profile/payment-methods', [ProfileController::class, 'storePaymentMethod'])->name('profile.payment-methods.store');
@@ -102,6 +108,8 @@ Route::prefix('v1')->name('api.')->group(function () {
 
             Route::get('request-hub/summary', [\App\Http\Controllers\Api\V1\RequestHubController::class, 'summary'])
                 ->name('request-hub.summary');
+            Route::get('request-hub/stats', [\App\Http\Controllers\Api\V1\RequestHubController::class, 'stats'])
+                ->name('request-hub.stats');
             Route::get('request-hub/{category}/{entityId}', [\App\Http\Controllers\Api\V1\RequestHubController::class, 'show'])
                 ->name('request-hub.show')
                 ->where('category', '[a-z_]+')
@@ -793,6 +801,8 @@ Route::prefix('v1')->name('api.')->group(function () {
                     ->whereNumber('exit_survey_question');
                 Route::post('exit-survey-questions/reseed', [\App\Http\Controllers\Api\V1\ExitSurveyQuestionController::class, 'reseed'])
                     ->name('exit-survey-questions.reseed');
+                Route::post('exit-cases', [\App\Http\Controllers\Api\V1\ExitCaseController::class, 'store'])
+                    ->name('exit-cases.store');
             });
 
             Route::middleware('company.member')->group(function () {
@@ -858,6 +868,8 @@ Route::prefix('v1')->name('api.')->group(function () {
                     ->name('attendance.network-settings.update');
                 Route::put('attendance/face-settings', [\App\Http\Controllers\Api\V1\AttendanceSettingsController::class, 'updateFace'])
                     ->name('attendance.face-settings.update');
+                Route::put('attendance/regularization-settings', [\App\Http\Controllers\Api\V1\AttendanceSettingsController::class, 'updateRegularization'])
+                    ->name('attendance.regularization-settings.update');
                 Route::post('holidays', [\App\Http\Controllers\Api\V1\HolidayController::class, 'store'])
                     ->name('holidays.store');
                 Route::put('holidays/{holiday}', [\App\Http\Controllers\Api\V1\HolidayController::class, 'update'])
@@ -938,6 +950,15 @@ Route::prefix('v1')->name('api.')->group(function () {
             Route::middleware('company.permission:performance.participate')->group(function () {
                 Route::get('performance/overview', [\App\Http\Controllers\Api\V1\PerformanceOverviewController::class, 'show'])
                     ->name('performance.overview');
+
+                Route::get('performance-reviews/mine', [\App\Http\Controllers\Api\V1\PerformanceReviewCycleController::class, 'myReviews'])
+                    ->name('performance-reviews.mine');
+                Route::get('performance-reviews/{performanceReview}', [\App\Http\Controllers\Api\V1\PerformanceReviewController::class, 'show'])
+                    ->name('performance-reviews.show')
+                    ->whereNumber('performanceReview');
+                Route::post('performance-reviews/{performanceReview}/submit', [\App\Http\Controllers\Api\V1\PerformanceReviewController::class, 'submit'])
+                    ->name('performance-reviews.submit')
+                    ->whereNumber('performanceReview');
             });
 
             Route::middleware('company.permission:performance.manage')->group(function () {
@@ -966,16 +987,16 @@ Route::prefix('v1')->name('api.')->group(function () {
                     ->name('performance-feedback-forms.destroy')
                     ->whereNumber('performanceFeedbackForm');
 
-                Route::get('performance-kpis', [\App\Http\Controllers\Api\V1\PerformanceKpiController::class, 'index'])
-                    ->name('performance-kpis.index');
+                Route::get('performance-feedback-requests', [\App\Http\Controllers\Api\V1\PerformanceFeedbackRequestController::class, 'index'])
+                    ->name('performance-feedback-requests.index');
+                Route::post('performance-feedback-requests', [\App\Http\Controllers\Api\V1\PerformanceFeedbackRequestController::class, 'store'])
+                    ->name('performance-feedback-requests.store');
+                Route::delete('performance-feedback-requests/{performanceFeedbackRequest}', [\App\Http\Controllers\Api\V1\PerformanceFeedbackRequestController::class, 'cancel'])
+                    ->name('performance-feedback-requests.cancel')
+                    ->whereNumber('performanceFeedbackRequest');
+
                 Route::post('performance-kpis', [\App\Http\Controllers\Api\V1\PerformanceKpiController::class, 'store'])
                     ->name('performance-kpis.store');
-                Route::get('performance-kpis/{performanceKpi}', [\App\Http\Controllers\Api\V1\PerformanceKpiController::class, 'show'])
-                    ->name('performance-kpis.show')
-                    ->whereNumber('performanceKpi');
-                Route::put('performance-kpis/{performanceKpi}', [\App\Http\Controllers\Api\V1\PerformanceKpiController::class, 'update'])
-                    ->name('performance-kpis.update')
-                    ->whereNumber('performanceKpi');
                 Route::delete('performance-kpis/{performanceKpi}', [\App\Http\Controllers\Api\V1\PerformanceKpiController::class, 'destroy'])
                     ->name('performance-kpis.destroy')
                     ->whereNumber('performanceKpi');
@@ -1012,6 +1033,10 @@ Route::prefix('v1')->name('api.')->group(function () {
                 Route::delete('performance/praise/{moment}', [\App\Http\Controllers\Api\V1\PerformancePraiseController::class, 'destroy'])
                     ->name('performance.praise.destroy')
                     ->whereNumber('moment');
+                Route::get('performance/praise', [\App\Http\Controllers\Api\V1\PerformancePraiseController::class, 'index'])
+                    ->name('performance.praise.index');
+                Route::post('performance/praise', [\App\Http\Controllers\Api\V1\PerformancePraiseController::class, 'store'])
+                    ->name('performance.praise.store');
 
                 Route::get('performance-calibration', [\App\Http\Controllers\Api\V1\PerformanceCalibrationController::class, 'index'])
                     ->name('performance-calibration.index');
@@ -1047,21 +1072,19 @@ Route::prefix('v1')->name('api.')->group(function () {
             });
 
             Route::middleware('company.permission:performance.review')->group(function () {
-                Route::get('performance-reviews/mine', [\App\Http\Controllers\Api\V1\PerformanceReviewCycleController::class, 'myReviews'])
-                    ->name('performance-reviews.mine');
-                Route::get('performance-reviews/{performanceReview}', [\App\Http\Controllers\Api\V1\PerformanceReviewController::class, 'show'])
-                    ->name('performance-reviews.show')
-                    ->whereNumber('performanceReview');
-                Route::post('performance-reviews/{performanceReview}/submit', [\App\Http\Controllers\Api\V1\PerformanceReviewController::class, 'submit'])
-                    ->name('performance-reviews.submit')
-                    ->whereNumber('performanceReview');
+                Route::get('performance-feedback-requests/mine', [\App\Http\Controllers\Api\V1\PerformanceFeedbackRequestController::class, 'mine'])
+                    ->name('performance-feedback-requests.mine');
+                Route::post('performance-feedback-requests/{performanceFeedbackRequest}/submit', [\App\Http\Controllers\Api\V1\PerformanceFeedbackRequestController::class, 'submit'])
+                    ->name('performance-feedback-requests.submit')
+                    ->whereNumber('performanceFeedbackRequest');
             });
 
             Route::middleware('company.permission:performance.participate')->group(function () {
-                Route::get('performance/praise', [\App\Http\Controllers\Api\V1\PerformancePraiseController::class, 'index'])
-                    ->name('performance.praise.index');
-                Route::post('performance/praise', [\App\Http\Controllers\Api\V1\PerformancePraiseController::class, 'store'])
-                    ->name('performance.praise.store');
+                Route::get('performance-feedback-requests/received', [\App\Http\Controllers\Api\V1\PerformanceFeedbackRequestController::class, 'received'])
+                    ->name('performance-feedback-requests.received');
+                Route::get('performance-feedback-requests/{performanceFeedbackRequest}', [\App\Http\Controllers\Api\V1\PerformanceFeedbackRequestController::class, 'show'])
+                    ->name('performance-feedback-requests.show')
+                    ->whereNumber('performanceFeedbackRequest');
                 Route::get('performance/one-on-one/meta', [\App\Http\Controllers\Api\V1\OneOnOneMeetingController::class, 'meta'])
                     ->name('performance.one-on-one.meta');
                 Route::get('performance/one-on-one', [\App\Http\Controllers\Api\V1\OneOnOneMeetingController::class, 'index'])
@@ -1106,6 +1129,17 @@ Route::prefix('v1')->name('api.')->group(function () {
                     ->name('goals.key-results.destroy')
                     ->whereNumber(['goal', 'goalKeyResult']);
 
+                Route::get('performance-kpis', [\App\Http\Controllers\Api\V1\PerformanceKpiController::class, 'index'])
+                    ->name('performance-kpis.index');
+                Route::get('performance-kpis/{performanceKpi}', [\App\Http\Controllers\Api\V1\PerformanceKpiController::class, 'show'])
+                    ->name('performance-kpis.show')
+                    ->whereNumber('performanceKpi');
+                Route::put('performance-kpis/{performanceKpi}', [\App\Http\Controllers\Api\V1\PerformanceKpiController::class, 'update'])
+                    ->name('performance-kpis.update')
+                    ->whereNumber('performanceKpi');
+
+                Route::get('promotions/recommendations', [\App\Http\Controllers\Api\V1\PromotionController::class, 'recommendations'])
+                    ->name('promotions.recommendations');
                 Route::get('promotions', [\App\Http\Controllers\Api\V1\PromotionController::class, 'index'])
                     ->name('promotions.index');
                 Route::post('promotions', [\App\Http\Controllers\Api\V1\PromotionController::class, 'store'])
@@ -1216,6 +1250,8 @@ Route::prefix('v1')->name('api.')->group(function () {
                     ->name('hiring-offers.send')
                     ->whereNumber('hiringOffer');
 
+                Route::get('hiring-templates/meta', [\App\Http\Controllers\Api\V1\HiringOfferController::class, 'templatesMeta'])
+                    ->name('hiring-templates.meta');
                 Route::get('hiring-templates', [\App\Http\Controllers\Api\V1\HiringOfferController::class, 'templates'])
                     ->name('hiring-templates.index');
                 Route::post('hiring-templates', [\App\Http\Controllers\Api\V1\HiringOfferController::class, 'storeTemplate'])

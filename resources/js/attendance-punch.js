@@ -6,6 +6,18 @@ import { getDeviceMacAddress } from './device-utils';
 
 const loadFaceVerification = () => import('./face-verification');
 
+const buildMapEmbedUrl = (latitude, longitude) => {
+    const lat = Number(latitude);
+    const lng = Number(longitude);
+    const delta = 0.012;
+    const west = (lng - delta).toFixed(6);
+    const south = (lat - delta).toFixed(6);
+    const east = (lng + delta).toFixed(6);
+    const north = (lat + delta).toFixed(6);
+
+    return `https://www.openstreetmap.org/export/embed.html?bbox=${west}%2C${south}%2C${east}%2C${north}&layer=mapnik&marker=${lat}%2C${lng}`;
+};
+
 export function initAttendancePunch({
     prefix,
     onPunched,
@@ -20,11 +32,13 @@ export function initAttendancePunch({
     const cameraCanvas = document.getElementById(`${prefix}CameraCanvas`);
     const cameraPlaceholder = document.getElementById(`${prefix}CameraPlaceholder`);
     const punchModalEl = document.getElementById(`${prefix}PunchModal`);
+    const punchModalLayout = document.getElementById(`${prefix}PunchModalLayout`);
     const punchModalTitle = document.getElementById(`${prefix}PunchModalTitle`);
     const modalLocationStatus = document.getElementById(`${prefix}ModalLocationStatus`);
-    const modalFaceStatus = document.getElementById(`${prefix}ModalFaceStatus`);
-    const modalIpStatus = document.getElementById(`${prefix}ModalIpStatus`);
-    const modalHint = document.getElementById(`${prefix}ModalHint`);
+    const modalLocationCoords = document.getElementById(`${prefix}ModalLocationCoords`);
+    const modalLocationBadge = document.getElementById(`${prefix}ModalLocationBadge`);
+    const modalLocationMap = document.getElementById(`${prefix}ModalLocationMap`);
+    const modalLocationMapLoading = document.getElementById(`${prefix}ModalLocationMapLoading`);
     const captureBtn = document.getElementById(`${prefix}CaptureBtn`);
     const liveMatchOverlay = document.getElementById(`${prefix}LiveMatchOverlay`);
     const liveMatchValue = document.getElementById(`${prefix}LiveMatchValue`);
@@ -32,6 +46,10 @@ export function initAttendancePunch({
 
     if (!punchBtn || !cameraVideo || !cameraCanvas || !punchModalEl || !captureBtn) {
         return { refreshStatus: async () => {}, destroy: () => {} };
+    }
+
+    if (punchModalEl.parentElement !== document.body) {
+        document.body.appendChild(punchModalEl);
     }
 
     const punchModal = Modal.getOrCreateInstance(punchModalEl);
@@ -43,10 +61,10 @@ export function initAttendancePunch({
     let cachedPosition = null;
     let cachedLocationName = null;
     let profilePhotoUrl = null;
-    let faceMatchThreshold = 80;
+    let faceMatchThreshold = 90;
     let requireFaceMatch = true;
+    let requirePunchPhoto = true;
     let hasProfilePhoto = false;
-    let clientIpAddress = null;
     let clientMacAddress = null;
     let livePreviewRunning = false;
     let livePreviewTimer = null;
@@ -65,6 +83,80 @@ export function initAttendancePunch({
     };
 
     const actionLabel = () => (nextPunchType === 'out' ? 'Punch Out' : 'Punch In');
+
+    const captureBtnLabel = () => (
+        requirePunchPhoto ? `Take Photo & ${actionLabel()}` : actionLabel()
+    );
+
+    const setLocationOnlyMode = (enabled) => {
+        punchModalLayout?.classList.toggle('attendance-punch-modal-layout--location-only', enabled);
+    };
+
+    const updateLocationPanel = ({
+        latitude = null,
+        longitude = null,
+        locationName = '',
+        state = 'loading',
+    } = {}) => {
+        const isReady = state === 'ready' && latitude != null && longitude != null;
+        const isError = state === 'error';
+
+        if (modalLocationBadge) {
+            modalLocationBadge.textContent = isReady ? 'Confirmed' : isError ? 'Unavailable' : 'Detecting';
+            modalLocationBadge.className = `attendance-punch-location-badge${
+                isReady ? ' attendance-punch-location-badge--ready' : isError ? ' attendance-punch-location-badge--error' : ''
+            }`;
+        }
+
+        if (modalLocationStatus) {
+            modalLocationStatus.textContent = locationName
+                || (isError ? 'Could not detect location' : 'Getting location…');
+        }
+
+        if (modalLocationCoords) {
+            modalLocationCoords.textContent = isReady
+                ? formatCoordinates(latitude, longitude)
+                : '';
+        }
+
+        if (!modalLocationMap || !modalLocationMapLoading) {
+            return;
+        }
+
+        if (isReady) {
+            modalLocationMapLoading.classList.add('d-none');
+            modalLocationMap.onload = () => {
+                modalLocationMap.classList.remove('d-none');
+            };
+            modalLocationMap.onerror = () => {
+                modalLocationMap.classList.add('d-none');
+                modalLocationMapLoading.innerHTML = '<span>Map preview unavailable</span>';
+                modalLocationMapLoading.classList.remove('d-none');
+            };
+            modalLocationMap.src = buildMapEmbedUrl(latitude, longitude);
+            window.setTimeout(() => {
+                if (modalLocationMap.src && modalLocationMap.classList.contains('d-none')) {
+                    modalLocationMap.classList.remove('d-none');
+                    modalLocationMapLoading.classList.add('d-none');
+                }
+            }, 1200);
+            return;
+        }
+
+        modalLocationMap.classList.add('d-none');
+        modalLocationMap.src = 'about:blank';
+        modalLocationMapLoading.classList.remove('d-none');
+
+        if (isError) {
+            modalLocationMapLoading.innerHTML = `<span>${locationName || 'Location unavailable'}</span>`;
+            return;
+        }
+
+        modalLocationMapLoading.innerHTML = `
+            <span class="attendance-punch-location-map-spinner" aria-hidden="true"></span>
+            <span>Getting your location…</span>
+        `;
+    };
 
     const stopCamera = () => {
         stopLivePreview();
@@ -151,18 +243,18 @@ export function initAttendancePunch({
         }
 
         profilePhotoUrl = status.profile_photo_url || null;
-        faceMatchThreshold = Number(status.face_match_threshold) || 80;
+        faceMatchThreshold = Number(status.face_match_threshold) || 90;
         requireFaceMatch = status.require_face_match !== false;
+        requirePunchPhoto = status.require_punch_photo !== false;
         hasProfilePhoto = Boolean(status.has_profile_photo);
 
-        if (modalHint) {
-            modalHint.textContent = requireFaceMatch
-                ? `Hold the device at arm's length. Watch the live match % on the camera and adjust until it stays at or above ${faceMatchThreshold}%.`
-                : 'Take a clear photo to mark your attendance. Face recognition is disabled for your company.';
+        if (Array.isArray(status.profile_face_descriptor) && status.profile_face_descriptor.length >= 64) {
+            loadFaceVerification().then(({ setStoredProfileDescriptor }) => {
+                setStoredProfileDescriptor(status.profile_face_descriptor);
+            }).catch(() => {});
         }
 
-        modalFaceStatus?.classList.toggle('d-none', !requireFaceMatch);
-        if (!requireFaceMatch) {
+        if (!requirePunchPhoto || !requireFaceMatch) {
             liveMatchOverlay?.classList.add('d-none');
         }
 
@@ -170,14 +262,15 @@ export function initAttendancePunch({
     };
 
     const syncFaceReference = async () => {
-        if (!requireFaceMatch || !profilePhotoUrl) {
+        if (!requirePunchPhoto || !requireFaceMatch || !profilePhotoUrl) {
             return;
         }
 
         try {
-            const { ensureFaceModelsLoaded, getProfileDescriptor, descriptorToArray } = await loadFaceVerification();
+            const { ensureFaceModelsLoaded, getProfileDescriptor, descriptorToArray, setStoredProfileDescriptor } = await loadFaceVerification();
             await ensureFaceModelsLoaded();
-            const descriptor = await getProfileDescriptor(profilePhotoUrl);
+            const descriptor = await getProfileDescriptor(profilePhotoUrl, { forceRefresh: true });
+            setStoredProfileDescriptor(descriptorToArray(descriptor));
             await api.post('/attendance/face-reference', {
                 descriptor: descriptorToArray(descriptor),
             });
@@ -187,36 +280,7 @@ export function initAttendancePunch({
     };
 
     const loadClientNetwork = async () => {
-        const { getDeviceMacAddress } = await import('./device-utils');
-
-        try {
-            const { data } = await api.get('/attendance/current-ip');
-            clientIpAddress = data.data?.ip_address || null;
-        } catch {
-            clientIpAddress = null;
-        }
-
         clientMacAddress = await getDeviceMacAddress();
-
-        if (modalIpStatus) {
-            const ipText = clientIpAddress
-                ? `Your IPv4: ${clientIpAddress}`
-                : 'Your IPv4 address will be recorded with this punch.';
-            const macText = clientMacAddress
-                ? ` · MAC address: ${clientMacAddress}`
-                : ' · Device MAC address will be recorded with this punch.';
-
-            modalIpStatus.textContent = `${ipText}${macText}`;
-        }
-    };
-
-    const setFaceStatus = (message, type = 'muted') => {
-        if (!modalFaceStatus) {
-            return;
-        }
-
-        modalFaceStatus.className = `small attendance-face-status attendance-face-status--${type}`;
-        modalFaceStatus.textContent = message;
     };
 
     const updateLiveMatchOverlay = (similarity) => {
@@ -287,23 +351,8 @@ export function initAttendancePunch({
 
             if (result.detected) {
                 updateLiveMatchOverlay(result.similarity);
-
-                if (requireFaceMatch) {
-                    setFaceStatus(
-                        result.matched
-                            ? `Live match ${result.similarity}% — ready to punch (need ${faceMatchThreshold}%). Adjust distance until stable.`
-                            : `Live match ${result.similarity}% — need ${faceMatchThreshold}%. Move back slightly and center your face.`,
-                        result.matched ? 'success' : 'warning',
-                    );
-                } else {
-                    setFaceStatus(
-                        `Live match ${result.similarity}% (target ${faceMatchThreshold}%). Adjust position until the score is stable.`,
-                        result.matched ? 'success' : 'muted',
-                    );
-                }
             } else {
                 updateLiveMatchOverlay(null);
-                setFaceStatus('No face detected — look at the camera and keep your face in the frame.', 'warning');
             }
         } catch {
             if (livePreviewRunning) {
@@ -316,11 +365,14 @@ export function initAttendancePunch({
     };
 
     const startLivePreview = () => {
-        if (!requireFaceMatch) {
+        if (!requirePunchPhoto || !requireFaceMatch) {
             return;
         }
 
         stopLivePreview();
+        loadFaceVerification().then(({ resetLiveMatchHistory }) => {
+            resetLiveMatchHistory();
+        }).catch(() => {});
         livePreviewRunning = true;
         liveMatchOverlay?.classList.remove('d-none');
         updateLiveMatchOverlay(null);
@@ -431,19 +483,9 @@ export function initAttendancePunch({
         cachedPosition = null;
         cachedLocationName = null;
         captureBtn.disabled = true;
-        captureBtn.textContent = 'Take Photo & Punch';
-        if (modalLocationStatus) {
-            modalLocationStatus.textContent = 'Getting location...';
-        }
-        if (modalIpStatus) {
-            modalIpStatus.textContent = 'Checking network IP and MAC address...';
-        }
-        setFaceStatus(
-            requireFaceMatch
-                ? 'Face verification uses your approved profile photo.'
-                : 'Take a clear photo to save your punch.',
-            'muted',
-        );
+        captureBtn.textContent = captureBtnLabel();
+        setLocationOnlyMode(false);
+        updateLocationPanel({ state: 'loading' });
         stopLivePreview();
         stopCamera();
     };
@@ -453,7 +495,7 @@ export function initAttendancePunch({
             return;
         }
 
-        if (requireFaceMatch && !hasProfilePhoto) {
+        if (requirePunchPhoto && requireFaceMatch && !hasProfilePhoto) {
             showAlert('Upload and get an approved profile photo before marking attendance.', 'warning');
             return;
         }
@@ -464,34 +506,36 @@ export function initAttendancePunch({
         if (punchModalTitle) {
             punchModalTitle.textContent = label;
         }
-        captureBtn.textContent = `Take Photo & ${label}`;
+        captureBtn.textContent = captureBtnLabel();
 
         punchModal.show();
 
         loadClientNetwork();
 
-        if (requireFaceMatch) {
+        if (requirePunchPhoto && requireFaceMatch) {
             try {
-                setFaceStatus('Loading face verification models...', 'muted');
                 const { ensureFaceModelsLoaded } = await loadFaceVerification();
                 await ensureFaceModelsLoaded();
                 await syncFaceReference();
-                setFaceStatus('Starting live face match preview...', 'muted');
             } catch (error) {
-                setFaceStatus(getErrorMessage(error, 'Face verification is unavailable right now.'), 'danger');
+                showAlert(getErrorMessage(error, 'Face verification unavailable.'), 'danger');
                 captureBtn.disabled = true;
             }
         } else {
             liveMatchOverlay?.classList.add('d-none');
         }
 
-        try {
-            await startCamera();
-            startLivePreview();
-        } catch (error) {
-            showCameraMessage(getErrorMessage(error, 'Unable to access the camera. Please allow camera permission and try again.'));
-            captureBtn.disabled = true;
-            return;
+        if (requirePunchPhoto) {
+            try {
+                await startCamera();
+                startLivePreview();
+            } catch (error) {
+                showCameraMessage(getErrorMessage(error, 'Unable to access the camera. Please allow camera permission and try again.'));
+                captureBtn.disabled = true;
+                return;
+            }
+        } else {
+            setLocationOnlyMode(true);
         }
 
         try {
@@ -500,15 +544,17 @@ export function initAttendancePunch({
             cachedPosition = position;
             cachedLocationName = await resolveLocationName(position);
 
-            if (modalLocationStatus) {
-                modalLocationStatus.textContent = cachedLocationName;
-            }
+            updateLocationPanel({
+                latitude: position.coords.latitude,
+                longitude: position.coords.longitude,
+                locationName: cachedLocationName,
+                state: 'ready',
+            });
         } catch (error) {
-            // Location will be retried when the punch is submitted.
-            if (modalLocationStatus) {
-                modalLocationStatus.textContent = describeLocationError(error)
-                    || getErrorMessage(error, 'Could not fetch location. It will be retried when you punch.');
-            }
+            updateLocationPanel({
+                locationName: describeLocationError(error) || 'Location will be captured on punch',
+                state: 'error',
+            });
         }
 
         captureBtn.disabled = false;
@@ -522,7 +568,10 @@ export function initAttendancePunch({
         isSubmitting = true;
         punchBtn.disabled = true;
         captureBtn.disabled = true;
-        stopLivePreview();
+
+        if (requirePunchPhoto) {
+            stopLivePreview();
+        }
 
         try {
             setSubmitLoading(captureBtn, true, { submittingText: 'Saving...' });
@@ -530,37 +579,36 @@ export function initAttendancePunch({
             const position = cachedPosition || await getPositionWithFallback();
             const locationName = cachedLocationName || await resolveLocationName(position);
 
-            const selfieBlob = await captureSelfieBlob();
             const formData = new FormData();
-            formData.append('selfie', selfieBlob, 'selfie.jpg');
             formData.append('latitude', String(position.coords.latitude));
             formData.append('longitude', String(position.coords.longitude));
             formData.append('location_name', locationName);
 
-            if (requireFaceMatch) {
-                setFaceStatus('Verifying face against your profile photo...', 'muted');
-                const { verifySelfieAgainstProfile, descriptorToArray } = await loadFaceVerification();
-                const faceResult = await verifySelfieAgainstProfile({
-                    profilePhotoUrl,
-                    videoElement: cameraVideo,
-                    threshold: faceMatchThreshold,
-                });
+            if (requirePunchPhoto) {
+                const selfieBlob = await captureSelfieBlob();
+                formData.append('selfie', selfieBlob, 'selfie.jpg');
 
-                if (!faceResult.matched) {
-                    throw new Error(`Face match ${faceResult.similarity}% — at least ${faceMatchThreshold}% is required.`);
+                if (requireFaceMatch) {
+                    const { verifySelfieAgainstProfile, descriptorToArray } = await loadFaceVerification();
+                    const faceResult = await verifySelfieAgainstProfile({
+                        profilePhotoUrl,
+                        videoElement: cameraVideo,
+                        threshold: faceMatchThreshold,
+                    });
+
+                    if (!faceResult.matched) {
+                        throw new Error(`Face match ${faceResult.similarity}% — need ${faceMatchThreshold}%.`);
+                    }
+
+                    formData.append('face_match_score', String(faceResult.similarity));
+
+                    descriptorToArray(faceResult.selfieDescriptor).forEach((value, index) => {
+                        formData.append(`selfie_face_descriptor[${index}]`, String(value));
+                    });
                 }
-
-                setFaceStatus(`Face verified (${faceResult.similarity}% match). Saving punch...`, 'success');
-                formData.append('face_match_score', String(faceResult.similarity));
-
-                descriptorToArray(faceResult.selfieDescriptor).forEach((value, index) => {
-                    formData.append(`selfie_face_descriptor[${index}]`, String(value));
-                });
-            } else {
-                setFaceStatus('Saving punch...', 'muted');
             }
 
-            const macAddress = await getDeviceMacAddress();
+            const macAddress = clientMacAddress || await getDeviceMacAddress();
 
             if (macAddress) {
                 formData.append('mac_address', macAddress);
@@ -581,23 +629,24 @@ export function initAttendancePunch({
 
             if (describeCameraError(error)) {
                 showCameraMessage(message);
-            } else if (modalFaceStatus && (error?.message || '').toLowerCase().includes('face')) {
-                setFaceStatus(message, 'danger');
-            } else if (modalLocationStatus) {
-                modalLocationStatus.textContent = message;
+            } else if (describeLocationError(error)) {
+                updateLocationPanel({
+                    locationName: message,
+                    state: 'error',
+                });
             }
 
             showAlert(message, 'danger');
         } finally {
             isSubmitting = false;
             setSubmitLoading(captureBtn, false);
-            captureBtn.textContent = `Take Photo & ${actionLabel()}`;
+            captureBtn.textContent = captureBtnLabel();
 
             if (canMark && nextPunchType !== null) {
                 punchBtn.textContent = actionLabel();
                 punchBtn.disabled = false;
                 captureBtn.disabled = false;
-                if (punchModalEl.classList.contains('show') && cameraStream) {
+                if (requirePunchPhoto && punchModalEl.classList.contains('show') && cameraStream) {
                     startLivePreview();
                 }
             }
@@ -610,7 +659,7 @@ export function initAttendancePunch({
         const { data } = await api.get('/attendance/status');
         updatePanel(data.data);
 
-        if (requireFaceMatch) {
+        if (requirePunchPhoto && requireFaceMatch) {
             await syncFaceReference();
         }
 

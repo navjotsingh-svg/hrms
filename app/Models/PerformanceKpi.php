@@ -55,6 +55,11 @@ class PerformanceKpi extends Model
         return $this->belongsTo(User::class, 'created_by_user_id');
     }
 
+    public function linkedKeyResults(): \Illuminate\Database\Eloquent\Relations\HasMany
+    {
+        return $this->hasMany(GoalKeyResult::class, 'performance_kpi_id');
+    }
+
     public function progressPercent(): float
     {
         if ((float) $this->target_value <= 0) {

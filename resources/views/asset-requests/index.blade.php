@@ -50,7 +50,12 @@
                 </div>
             </div>
         </div>
-        @include('partials.list-pagination-header', ['perPageId' => 'assetRequestsPerPage'])
+        @include('partials.list-pagination-top', [
+    'infoId' => 'assetRequestsPaginationInfo',
+    'listId' => 'assetRequestsPaginationList',
+    'perPageId' => 'assetRequestsPerPage',
+    'ariaLabel' => 'Asset requests pagination',
+])
         <div class="table-responsive">
             <table class="companies-table table mb-0">
                 <thead>

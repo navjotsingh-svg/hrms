@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Mail\EmployeeWelcomeMail;
+use App\Mail\PortalCredentialsMail;
 use App\Models\Employee;
 use App\Models\EmployeeSalary;
 use App\Models\EmployeeSalaryRevision;
@@ -30,6 +31,8 @@ class EmployeeService
         private ActivityLogService $activityLogService,
         private CompanyPayrollSettingsService $companyPayrollSettingsService,
         private CompanyAdminEmployeeService $companyAdminEmployeeService,
+        private CompanyOrganizationService $companyOrganizationService,
+        private WorkflowNotificationService $workflowNotificationService,
     ) {}
 
     public function listForCompany(int $companyId, array $filters = [], ?array $visibleEmployeeIds = null): LengthAwarePaginator
@@ -90,6 +93,7 @@ class EmployeeService
         $this->normalizeProbationData($data);
         $this->normalizePaidEmployeeData($data);
         $plainPassword = null;
+        $reusedPortalUser = false;
         $employeeCode = $data['employee_code'];
         $isPaidEmployee = (bool) ($data['is_paid_employee'] ?? true);
 
@@ -97,23 +101,40 @@ class EmployeeService
             $salaryData = null;
         }
 
-        $employee = DB::transaction(function () use ($companyId, $data, $givePortalAccess, $salaryData, $departmentIds, $weeklyOffData, $leaveTypeIds, &$plainPassword, $employeeCode) {
+        $employee = DB::transaction(function () use ($companyId, $data, $givePortalAccess, $salaryData, $departmentIds, $weeklyOffData, $leaveTypeIds, &$plainPassword, &$reusedPortalUser, $employeeCode) {
             $userId = null;
 
             if ($givePortalAccess) {
                 $plainPassword = Str::password(12, symbols: false);
                 $fullName = trim("{$data['first_name']} ".($data['last_name'] ?? ''));
 
-                $user = User::create([
-                    'company_id' => $companyId,
-                    'role_id' => $data['role_id'],
-                    'name' => $fullName,
-                    'email' => $data['email'],
-                    'password' => $plainPassword,
-                    'email_verified_at' => now(),
-                ]);
+                $existingUser = User::query()
+                    ->where('company_id', $companyId)
+                    ->where('email', $data['email'])
+                    ->first();
 
-                $userId = $user->id;
+                if ($existingUser) {
+                    $existingUser->update([
+                        'role_id' => $data['role_id'],
+                        'name' => $fullName,
+                        'password' => $plainPassword,
+                        'email_verified_at' => $existingUser->email_verified_at ?? now(),
+                    ]);
+                    $this->invalidatePortalSessions($existingUser);
+                    $userId = $existingUser->id;
+                    $reusedPortalUser = true;
+                } else {
+                    $user = User::create([
+                        'company_id' => $companyId,
+                        'role_id' => $data['role_id'],
+                        'name' => $fullName,
+                        'email' => $data['email'],
+                        'password' => $plainPassword,
+                        'email_verified_at' => now(),
+                    ]);
+
+                    $userId = $user->id;
+                }
             }
 
             $employee = Employee::create([
@@ -138,8 +159,13 @@ class EmployeeService
 
         if ($givePortalAccess && $plainPassword) {
             try {
-                Mail::to($employee->email)->send(new EmployeeWelcomeMail($employee, $plainPassword));
-                $message = 'Employee created and welcome email sent with login credentials.';
+                if ($reusedPortalUser) {
+                    Mail::to($employee->email)->send(new PortalCredentialsMail($employee, $plainPassword, true));
+                    $message = 'Employee created and portal credentials email sent with a new login password.';
+                } else {
+                    Mail::to($employee->email)->send(new EmployeeWelcomeMail($employee, $plainPassword));
+                    $message = 'Employee created and welcome email sent with login credentials.';
+                }
             } catch (\Throwable $exception) {
                 report($exception);
                 $message = 'Employee created but welcome email could not be sent. Please share credentials manually.';
@@ -187,6 +213,16 @@ class EmployeeService
             : null;
         unset($data['give_portal_access']);
 
+        $actor = request()?->user();
+
+        if ($actor && isset($data['status']) && $data['status'] === 'inactive') {
+            $this->companyOrganizationService->assertActorMayOffboardEmployee($actor, $employee);
+        }
+
+        if ($actor && $givePortalAccess === false) {
+            $this->companyOrganizationService->assertActorMayManageAdministratorAccess($actor, $employee);
+        }
+
         $salaryData = $this->extractSalaryData($data, (int) $employee->company_id);
         $salaryRevisionNotes = $this->extractSalaryRevisionNotes($data);
         $departmentIds = $this->extractDepartmentIds($data);
@@ -195,12 +231,14 @@ class EmployeeService
         $this->normalizeProbationData($data);
         $this->normalizePaidEmployeeData($data);
         $plainPassword = null;
+        $isFirstPortalIssue = false;
+        $hadPortalAccess = (bool) $employee->user_id;
+        $newlyGrantingPortal = $givePortalAccess === true && ! $hadPortalAccess;
         $trackedFields = [
             'first_name', 'last_name', 'email', 'employee_code', 'department_id', 'role_id',
             'status', 'employment_type', 'is_paid_employee', 'designation', 'manager_id', 'shift_id', 'phone', 'date_of_joining', 'probation_status',
         ];
         $before = $employee->only($trackedFields);
-        $actor = request()?->user();
         $salaryWasInitialSync = false;
         $isPaidEmployee = (bool) ($data['is_paid_employee'] ?? $employee->isPaidEmployee());
 
@@ -208,7 +246,7 @@ class EmployeeService
             $salaryData = null;
         }
 
-        DB::transaction(function () use ($employee, $data, $givePortalAccess, $salaryData, $salaryRevisionNotes, $departmentIds, $weeklyOffData, $leaveTypeIds, $actor, &$plainPassword, &$salaryWasInitialSync) {
+        DB::transaction(function () use ($employee, $data, $givePortalAccess, $newlyGrantingPortal, $salaryData, $salaryRevisionNotes, $departmentIds, $weeklyOffData, $leaveTypeIds, $actor, &$plainPassword, &$isFirstPortalIssue, &$salaryWasInitialSync) {
             $employee->update($data);
 
             if ($salaryData !== null) {
@@ -231,23 +269,10 @@ class EmployeeService
             $this->syncWeeklyOffDays($employee, $weeklyOffData);
             $this->syncLeaveTypes($employee, $leaveTypeIds);
 
-            if ($givePortalAccess === true && ! $employee->user_id) {
-                $plainPassword = Str::password(12, symbols: false);
-                $fullName = trim("{$employee->first_name} ".($employee->last_name ?? ''));
-
-                $user = User::create([
-                    'company_id' => $employee->company_id,
-                    'role_id' => $employee->role_id,
-                    'name' => $fullName,
-                    'email' => $employee->email,
-                    'password' => $plainPassword,
-                    'email_verified_at' => now(),
-                ]);
-
-                $employee->update([
-                    'user_id' => $user->id,
-                    'portal_access_date' => now()->toDateString(),
-                ]);
+            if ($newlyGrantingPortal) {
+                $credentials = $this->issuePortalCredentials($employee);
+                $plainPassword = $credentials['plain_password'];
+                $isFirstPortalIssue = $credentials['is_first_issue'];
             }
 
             if ($employee->user_id && ! $employee->portal_access_date) {
@@ -270,7 +295,7 @@ class EmployeeService
             }
 
             if ($employee->status === 'inactive' && $employee->user_id) {
-                $this->blockPortalLogin($employee);
+                $this->blockPortalLogin($employee->fresh());
             }
         });
 
@@ -305,6 +330,42 @@ class EmployeeService
                     $newValues,
                     request(),
                 );
+
+                if (array_key_exists('status', $newValues)) {
+                    $this->workflowNotificationService->notifyEmployeeStatusChanged(
+                        $employee,
+                        (string) ($oldValues['status'] ?? $employee->status),
+                        (string) $newValues['status'],
+                        $actor,
+                    );
+                }
+
+                if (
+                    array_key_exists('probation_status', $newValues)
+                    && ($newValues['probation_status'] ?? null) === 'confirmed'
+                    && in_array($oldValues['probation_status'] ?? '', ['on_probation', 'extended'], true)
+                ) {
+                    $this->activityLogService->write([
+                        'user' => $actor,
+                        'company_id' => (int) $employee->company_id,
+                        'employee_id' => (int) $employee->id,
+                        'module' => 'employees',
+                        'action' => 'probation.completed',
+                        'subject' => $employee,
+                        'message' => $actor
+                            ? 'Probation marked as completed by administrator.'
+                            : 'Probation period completed.',
+                        'old_values' => ['probation_status' => $oldValues['probation_status'] ?? null],
+                        'new_values' => ['probation_status' => 'confirmed'],
+                        'metadata' => [
+                            'probation_end_date' => $employee->probation_end_date?->toDateString(),
+                            'automated' => false,
+                        ],
+                        'request' => request(),
+                    ]);
+
+                    $this->workflowNotificationService->notifyProbationCompleted($employee, $actor);
+                }
             }
 
             if ($salaryWasInitialSync) {
@@ -321,7 +382,7 @@ class EmployeeService
                 );
             }
 
-            if ($givePortalAccess === true && $employee->user_id) {
+            if ($newlyGrantingPortal && $employee->user_id) {
                 $this->activityLogService->logChange(
                     $actor,
                     'employees',
@@ -337,11 +398,7 @@ class EmployeeService
         }
 
         if ($plainPassword) {
-            try {
-                Mail::to($employee->email)->send(new EmployeeWelcomeMail($employee, $plainPassword));
-            } catch (\Throwable $exception) {
-                report($exception);
-            }
+            $this->sendPortalAccessEmail($employee, $plainPassword, $isFirstPortalIssue);
         }
 
         return $employee;
@@ -513,28 +570,26 @@ class EmployeeService
             throw new \InvalidArgumentException('This employee does not have portal access.');
         }
 
-        $employee->loadMissing(['user', 'company']);
+        $employee->loadMissing(['user', 'company', 'department', 'role']);
 
         if (! $employee->user) {
             throw new \InvalidArgumentException('This employee does not have portal access.');
         }
 
-        $plainPassword = Str::password(12, symbols: false);
-
-        $employee->user->update([
-            'password' => $plainPassword,
-        ]);
-
-        $employee->user->tokens()->delete();
+        $credentials = DB::transaction(fn () => $this->issuePortalCredentials($employee));
 
         try {
-            Mail::to($employee->email)->send(new EmployeeWelcomeMail($employee, $plainPassword));
+            Mail::to($employee->email)->send(new PortalCredentialsMail(
+                $employee->fresh()->load(['company', 'department', 'role']),
+                $credentials['plain_password'],
+                true,
+            ));
 
-            return 'Welcome email sent with a new login password.';
+            return 'Login credentials email sent with a new password. Previous passwords no longer work.';
         } catch (\Throwable $exception) {
             report($exception);
 
-            throw new \RuntimeException('Welcome email could not be sent. Please try again or share credentials manually.');
+            throw new \RuntimeException('Credentials email could not be sent. Please try again or share credentials manually.');
         }
     }
 
@@ -548,34 +603,12 @@ class EmployeeService
         }
 
         $employee->loadMissing(['user', 'role', 'company']);
+        $hadPortalAccess = (bool) $employee->user_id;
 
-        if ($employee->user_id) {
-            return [
-                'employee' => $employee,
-                'message' => 'Employee already has portal access.',
-                'plain_password' => null,
-            ];
-        }
+        $credentials = DB::transaction(function () use ($employee, $actor, $hadPortalAccess) {
+            $result = $this->issuePortalCredentials($employee);
 
-        $plainPassword = Str::password(12, symbols: false);
-        $fullName = trim("{$employee->first_name} ".($employee->last_name ?? ''));
-
-        DB::transaction(function () use ($employee, $plainPassword, $fullName, $actor) {
-            $user = User::create([
-                'company_id' => $employee->company_id,
-                'role_id' => $employee->role_id,
-                'name' => $fullName,
-                'email' => $employee->email,
-                'password' => $plainPassword,
-                'email_verified_at' => now(),
-            ]);
-
-            $employee->update([
-                'user_id' => $user->id,
-                'portal_access_date' => now()->toDateString(),
-            ]);
-
-            if ($actor) {
+            if ($actor && ! $hadPortalAccess) {
                 $this->activityLogService->logChange(
                     $actor,
                     'employees',
@@ -584,24 +617,39 @@ class EmployeeService
                     (int) $employee->id,
                     'Portal access granted to employee.',
                     [],
-                    ['portal_access_date' => $employee->portal_access_date],
+                    ['portal_access_date' => $employee->fresh()->portal_access_date],
+                    request(),
+                );
+            } elseif ($actor && $hadPortalAccess) {
+                $this->activityLogService->logChange(
+                    $actor,
+                    'employees',
+                    'portal_access.credentials_reset',
+                    $employee,
+                    (int) $employee->id,
+                    'Portal login credentials re-issued for employee.',
+                    [],
+                    ['portal_access_date' => $employee->fresh()->portal_access_date],
                     request(),
                 );
             }
+
+            return $result;
         });
 
         $employee = $employee->fresh()->load(['department', 'departments', 'role', 'manager', 'shift', 'company']);
+        $this->sendPortalAccessEmail($employee, $credentials['plain_password'], $credentials['is_first_issue']);
 
-        try {
-            Mail::to($employee->email)->send(new EmployeeWelcomeMail($employee, $plainPassword));
-        } catch (\Throwable $exception) {
-            report($exception);
-        }
+        $message = $credentials['is_first_issue']
+            ? 'Portal access enabled. Welcome email sent with login credentials.'
+            : ($hadPortalAccess
+                ? 'Portal credentials reset. A new password has been emailed and previous passwords no longer work.'
+                : 'Portal access restored. New login credentials have been emailed and previous passwords no longer work.');
 
         return [
             'employee' => $employee,
-            'message' => 'Portal access enabled. Welcome email sent with login credentials.',
-            'plain_password' => $plainPassword,
+            'message' => $message,
+            'plain_password' => $credentials['plain_password'],
         ];
     }
 
@@ -650,12 +698,104 @@ class EmployeeService
             ]);
         }
 
-        $user?->tokens()->delete();
+        if ($user) {
+            $this->invalidatePortalSessions($user);
+        }
+    }
+
+    /** @return array{plain_password: string, is_first_issue: bool} */
+    private function issuePortalCredentials(Employee $employee): array
+    {
+        $employee->loadMissing(['user', 'role', 'company']);
+
+        $plainPassword = Str::password(12, symbols: false);
+        $fullName = trim("{$employee->first_name} ".($employee->last_name ?? ''));
+        $isFirstIssue = false;
+
+        if ($employee->user_id && $employee->user) {
+            $user = $employee->user;
+        } else {
+            $user = User::query()
+                ->where('company_id', $employee->company_id)
+                ->where('email', $employee->email)
+                ->first();
+
+            if ($user) {
+                $employee->update([
+                    'user_id' => $user->id,
+                    'portal_access_date' => $employee->portal_access_date ?? now()->toDateString(),
+                ]);
+            } else {
+                $user = User::create([
+                    'company_id' => $employee->company_id,
+                    'role_id' => $employee->role_id,
+                    'name' => $fullName,
+                    'email' => $employee->email,
+                    'password' => $plainPassword,
+                    'email_verified_at' => now(),
+                ]);
+
+                $employee->update([
+                    'user_id' => $user->id,
+                    'portal_access_date' => now()->toDateString(),
+                ]);
+
+                $this->invalidatePortalSessions($user);
+
+                return [
+                    'plain_password' => $plainPassword,
+                    'is_first_issue' => true,
+                ];
+            }
+        }
+
+        $user->update([
+            'name' => $fullName,
+            'email' => $employee->email,
+            'role_id' => $employee->role_id,
+            'password' => $plainPassword,
+        ]);
+
+        if (! $employee->portal_access_date) {
+            $employee->update(['portal_access_date' => now()->toDateString()]);
+        }
+
+        $this->invalidatePortalSessions($user);
+
+        return [
+            'plain_password' => $plainPassword,
+            'is_first_issue' => $isFirstIssue,
+        ];
+    }
+
+    private function invalidatePortalSessions(User $user): void
+    {
+        $user->tokens()->delete();
+        DB::table('sessions')->where('user_id', $user->id)->delete();
+    }
+
+    private function sendPortalAccessEmail(Employee $employee, string $plainPassword, bool $isFirstIssue): void
+    {
+        $employee->loadMissing(['company', 'department', 'role']);
+
+        try {
+            if ($isFirstIssue) {
+                Mail::to($employee->email)->send(new EmployeeWelcomeMail($employee, $plainPassword));
+            } else {
+                Mail::to($employee->email)->send(new PortalCredentialsMail($employee, $plainPassword, true));
+            }
+        } catch (\Throwable $exception) {
+            report($exception);
+        }
     }
 
     /** @return array{employee: Employee, message: string} */
     public function updatePortalAccess(Employee $employee, bool $enabled, ?User $actor = null): array
     {
+        if (! $enabled && $actor) {
+            $this->companyOrganizationService->assertActorMayManageAdministratorAccess($actor, $employee);
+        }
+
         if ($enabled) {
             $result = $this->grantPortalAccess($employee, $actor);
 
@@ -675,13 +815,17 @@ class EmployeeService
 
     public function updateStatus(Employee $employee, string $status, ?User $actor = null): Employee
     {
-        DB::transaction(function () use ($employee, $status, $actor) {
-            $previousStatus = $employee->status;
+        if ($status === 'inactive' && $actor) {
+            $this->companyOrganizationService->assertActorMayOffboardEmployee($actor, $employee);
+        }
 
+        $previousStatus = $employee->status;
+
+        DB::transaction(function () use ($employee, $status, $actor, $previousStatus) {
             $employee->update(['status' => $status]);
 
             if ($status === 'inactive' && $employee->user_id) {
-                $this->blockPortalLogin($employee);
+                $this->blockPortalLogin($employee->fresh());
 
                 if ($actor) {
                     $this->activityLogService->logChange(
@@ -696,10 +840,33 @@ class EmployeeService
                         request(),
                     );
                 }
+            } elseif ($status === 'active' && $actor) {
+                $this->activityLogService->logChange(
+                    $actor,
+                    'employees',
+                    'status.active',
+                    $employee,
+                    (int) $employee->id,
+                    'Employee reactivated.',
+                    ['status' => $previousStatus],
+                    ['status' => 'active'],
+                    request(),
+                );
             }
         });
 
-        return $employee->fresh()->load(['department', 'departments', 'role', 'manager', 'shift', 'company']);
+        $employee = $employee->fresh()->load(['department', 'departments', 'role', 'manager', 'shift', 'company']);
+
+        if ($previousStatus !== $status) {
+            $this->workflowNotificationService->notifyEmployeeStatusChanged(
+                $employee,
+                $previousStatus,
+                $status,
+                $actor,
+            );
+        }
+
+        return $employee;
     }
 
     public function delete(Employee $employee): void

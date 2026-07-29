@@ -2,6 +2,8 @@
 
 namespace App\Services;
 
+use App\Mail\EmployeeStatusChangedMail;
+use App\Mail\ProbationCompletedMail;
 use App\Mail\WorkflowActionMail;
 use App\Models\AttendanceRegularizationRequest;
 use App\Models\EmployeeDocument;
@@ -57,13 +59,27 @@ class WorkflowNotificationService
             relatedType: 'leave_request',
             relatedId: $request->id,
             emailSubject: 'Leave request submitted – '.$employee->full_name,
-            emailIntro: 'A new leave request requires your attention.',
+            emailPurpose: 'This email notifies the employee\'s direct manager that a new leave request has been submitted. All request details are included below so they can evaluate coverage and approve or reject the request.',
+            emailIntro: 'A leave request has been submitted and is waiting for the direct manager\'s review. Please read the employee, dates, duration, and reason below, then sign in to the HRMS portal to take action.',
+            emailSummary: sprintf(
+                '%s has applied for %s from %s, totaling %s day(s). Reason: %s',
+                $employee->full_name,
+                $request->leaveType?->name ?? 'leave',
+                $dateSummary,
+                $request->total_days,
+                $request->reason ?: 'Not provided',
+            ),
             emailDetails: [
                 'Employee' => $employee->full_name,
                 'Leave type' => $request->leaveType?->name ?? '—',
                 'Dates' => $dateSummary,
                 'Duration' => $request->total_days.' day(s)',
                 'Reason' => $request->reason ?: '—',
+            ],
+            emailNextSteps: [
+                'Verify the requested dates against team schedules and blackout periods.',
+                'Review the leave type balance and reason provided by the employee.',
+                'Approve or reject the request in HRMS and add remarks for the record.',
             ],
         );
     }
@@ -99,12 +115,25 @@ class WorkflowNotificationService
             relatedType: 'wfh_request',
             relatedId: $request->id,
             emailSubject: 'WFH request submitted – '.$employee->full_name,
-            emailIntro: 'A new Work From Home request requires your attention.',
+            emailPurpose: 'This email notifies the employee\'s direct manager that a Work From Home (WFH) request has been submitted. The complete request information is included so they can approve or reject it promptly.',
+            emailIntro: 'A Work From Home request has been submitted and requires the direct manager\'s approval. Review the employee, dates, duration, and reason below before taking action in the HRMS portal.',
+            emailSummary: sprintf(
+                '%s has requested to work from home for %s (%s day(s)). Reason: %s',
+                $employee->full_name,
+                $dateSummary,
+                $request->total_days,
+                $request->reason ?: 'Not provided',
+            ),
             emailDetails: [
                 'Employee' => $employee->full_name,
                 'Dates' => $dateSummary,
                 'Duration' => $request->total_days.' day(s)',
                 'Reason' => $request->reason ?: '—',
+            ],
+            emailNextSteps: [
+                'Confirm the WFH dates align with team and company remote-work policy.',
+                'Review the reason and any operational impact on the team.',
+                'Approve or reject the request in HRMS with clear remarks.',
             ],
         );
     }
@@ -138,11 +167,18 @@ class WorkflowNotificationService
             relatedType: 'asset_request',
             relatedId: $request->id,
             emailSubject: 'Asset request submitted – '.$employee->full_name,
-            emailIntro: 'A new asset request requires your attention.',
+            emailPurpose: 'This email notifies the employee\'s direct manager that company equipment or resources have been requested. Review the item and justification below before approving allocation.',
+            emailIntro: 'An asset request has been submitted and requires the direct manager\'s review. The employee, requested item, and business reason are listed below.',
+            emailSummary: sprintf('%s requested %s. Reason: %s', $employee->full_name, $assetName, $request->reason ?: 'Not provided'),
             emailDetails: [
                 'Employee' => $employee->full_name,
                 'Asset' => $assetName,
                 'Reason' => $request->reason ?: '—',
+            ],
+            emailNextSteps: [
+                'Confirm inventory availability for the requested asset.',
+                'Validate the business justification provided by the employee.',
+                'Approve or reject the request and notify the employee through HRMS.',
             ],
         );
     }
@@ -173,11 +209,23 @@ class WorkflowNotificationService
             relatedType: 'resignation_request',
             relatedId: $request->id,
             emailSubject: 'Resignation submitted – '.$employee->full_name,
-            emailIntro: 'A resignation request requires your attention.',
+            emailPurpose: 'This email notifies the employee\'s direct manager that a resignation request has been submitted. Early visibility helps plan knowledge transfer, exit formalities, and backfill timing.',
+            emailIntro: 'A resignation request has been submitted to the employee\'s direct manager. Please review the employee details, proposed last working date, and reason below.',
+            emailSummary: sprintf(
+                '%s submitted a resignation with proposed last working date %s. Reason: %s',
+                $employee->full_name,
+                $request->proposed_last_working_date?->format('d M Y') ?? 'Not specified',
+                $request->reason ?: 'Not provided',
+            ),
             emailDetails: [
                 'Employee' => $employee->full_name,
                 'Proposed LWD' => $request->proposed_last_working_date?->format('d M Y') ?? '—',
                 'Reason' => $request->reason ?: '—',
+            ],
+            emailNextSteps: [
+                'Review the resignation reason and proposed last working date.',
+                'Schedule a discussion with the employee and reporting manager if required.',
+                'Initiate offboarding steps after the request is approved.',
             ],
         );
     }
@@ -224,8 +272,19 @@ class WorkflowNotificationService
             relatedType: 'resignation_request',
             relatedId: $request->id,
             emailSubject: 'Resignation '.$statusLabel,
-            emailIntro: 'Your resignation request has been '.$statusLabel.'.',
+            emailPurpose: 'This email confirms the outcome of your resignation request. It includes the reviewer decision, approved last working date if applicable, and any remarks recorded by HR or management.',
+            emailIntro: 'Your resignation request has been '.$statusLabel.' by '.$reviewedBy->name.'. Please review the decision details below and follow the next steps for exit formalities if approved.',
+            emailSummary: $body,
             emailDetails: $details,
+            emailNextSteps: $approved ? [
+                'Review your approved last working date and offboarding checklist.',
+                'Coordinate handover activities with your manager.',
+                'Complete exit formalities shown in the offboarding module.',
+            ] : [
+                'Review the remarks provided by the reviewer.',
+                'Speak with HR or your manager if you need clarification.',
+                'Submit an updated request if your circumstances have changed.',
+            ],
         );
     }
 
@@ -254,12 +313,262 @@ class WorkflowNotificationService
             relatedType: 'exit_case',
             relatedId: $exitCase->id,
             emailSubject: 'Offboarding completed – '.$employee->full_name,
-            emailIntro: 'Your offboarding process has been completed.',
+            emailPurpose: 'This email confirms that your employee offboarding process has been fully completed in HRMS. It summarizes your last working date and who processed the exit.',
+            emailIntro: 'Your offboarding for '.$employee->full_name.' has been marked complete. This message serves as a confirmation record of your exit processing.',
+            emailSummary: $body,
             emailDetails: [
                 'Last working date' => $exitCase->last_working_date?->format('d M Y') ?? '—',
                 'Processed by' => $processedBy->name,
             ],
+            emailNextSteps: [
+                'Retain this email for your personal records.',
+                'Return any pending company assets if not already handed over.',
+                'Contact HR if any clearance item remains unresolved.',
+            ],
         );
+    }
+
+    public function notifyOffboardingInitiated(ExitCase $exitCase, ?User $initiatedBy = null): void
+    {
+        $exitCase->loadMissing(['employee.user']);
+        $employee = $exitCase->employee;
+
+        if (! $employee) {
+            return;
+        }
+
+        $lwd = $exitCase->last_working_date?->format('d M Y') ?? '—';
+        $exitTypeLabel = ucfirst(str_replace('_', ' ', (string) $exitCase->exit_type));
+        $body = sprintf(
+            'Your offboarding process has started. Last working date: %s. Exit type: %s.',
+            $lwd,
+            $exitTypeLabel,
+        );
+
+        $this->notifyApplicant(
+            applicant: $employee->user,
+            companyId: (int) $employee->company_id,
+            type: UserNotification::TYPE_OFFBOARDING_INITIATED,
+            title: 'Offboarding started',
+            body: $body,
+            actionUrl: route('web.offboarding.show', $exitCase->id),
+            relatedType: 'exit_case',
+            relatedId: $exitCase->id,
+            emailSubject: 'Offboarding process started – '.$employee->full_name,
+            emailPurpose: 'This email confirms that your employee offboarding process has been initiated in HRMS. It includes your last working date and links to your exit checklist (clearance, asset return, exit survey, and F&F settlement).',
+            emailIntro: 'Your offboarding at '.$employee->company?->name.' has been initiated'.($initiatedBy ? ' by '.$initiatedBy->name : '').'. Please review the details below and complete the required steps before your last working date.',
+            emailSummary: $body,
+            emailDetails: [
+                'Employee' => $employee->full_name,
+                'Exit type' => $exitTypeLabel,
+                'Last working date' => $lwd,
+                'Initiated by' => $initiatedBy?->name ?? 'HR',
+            ],
+            emailNextSteps: [
+                'Open your offboarding checklist in HRMS.',
+                'Complete the exit survey and coordinate asset returns.',
+                'Work with HR on clearance and full & final settlement.',
+            ],
+        );
+    }
+
+    public function notifyEmployeeStatusChanged(
+        Employee $employee,
+        string $previousStatus,
+        string $newStatus,
+        ?User $changedBy = null,
+    ): void {
+        if ($previousStatus === $newStatus || ! filled($employee->email)) {
+            return;
+        }
+
+        $employee->loadMissing(['user', 'company']);
+        $statusLabel = $newStatus === 'active' ? 'reactivated' : 'deactivated';
+        $body = sprintf(
+            'Your employee account has been %s in HRMS.',
+            $statusLabel,
+        );
+
+        if ($employee->user) {
+            $this->persistNotification(
+                companyId: (int) $employee->company_id,
+                userId: $employee->user->id,
+                type: UserNotification::TYPE_EMPLOYEE_STATUS_CHANGED,
+                title: 'Account '.ucfirst($statusLabel),
+                body: $body,
+                actionUrl: route('web.profile'),
+                relatedType: 'employee',
+                relatedId: (int) $employee->id,
+            );
+        }
+
+        try {
+            Mail::to($employee->email)->send(new EmployeeStatusChangedMail(
+                employee: $employee,
+                previousStatus: $previousStatus,
+                newStatus: $newStatus,
+                changedBy: $changedBy,
+            ));
+        } catch (\Throwable $exception) {
+            Log::warning('Employee status change email failed.', [
+                'employee_id' => $employee->id,
+                'message' => $exception->getMessage(),
+            ]);
+        }
+    }
+
+    public function notifyProbationCompleted(Employee $employee, ?User $processedBy = null): void
+    {
+        $employee->loadMissing(['user', 'company', 'manager.user', 'role']);
+        $endDate = $employee->probation_end_date?->format('d M Y') ?? '—';
+        $body = sprintf(
+            '%s has completed probation. Probation status updated to Confirmed (end date: %s).',
+            $employee->full_name,
+            $endDate,
+        );
+        $employeeProfileUrl = route('web.employees.show', $employee->id);
+
+        if ($employee->user) {
+            $this->persistNotification(
+                companyId: (int) $employee->company_id,
+                userId: $employee->user->id,
+                type: UserNotification::TYPE_PROBATION_COMPLETED,
+                title: 'Probation completed',
+                body: 'Your probation period has ended and your employment is now confirmed.',
+                actionUrl: route('web.profile'),
+                relatedType: 'employee',
+                relatedId: (int) $employee->id,
+            );
+        }
+
+        if (filled($employee->email)) {
+            try {
+                Mail::to($employee->email)->send(new ProbationCompletedMail($employee));
+            } catch (\Throwable $exception) {
+                Log::warning('Probation completed email failed.', [
+                    'employee_id' => $employee->id,
+                    'message' => $exception->getMessage(),
+                ]);
+            }
+        }
+
+        $stakeholderDetails = [
+            'Employee' => $employee->full_name,
+            'Employee code' => $employee->employee_code ?? '—',
+            'Probation end date' => $endDate,
+            'New status' => 'Confirmed',
+            'Designation' => $employee->designation ?? '—',
+        ];
+
+        if ($processedBy) {
+            $stakeholderDetails['Processed by'] = $processedBy->name;
+        }
+
+        $this->notifyProbationStakeholders(
+            employee: $employee,
+            type: UserNotification::TYPE_PROBATION_COMPLETED,
+            title: 'Probation completed',
+            body: $body,
+            actionUrl: $employeeProfileUrl,
+            emailSubject: 'Probation completed – '.$employee->full_name,
+            emailIntro: 'An employee has completed their probation period. Their probation status has been automatically updated to Confirmed in HRMS.',
+            emailPurpose: 'This email notifies HR and the reporting manager that an employee\'s probation period has ended and their employment has been confirmed.',
+            emailSummary: $body,
+            emailDetails: $stakeholderDetails,
+            emailNextSteps: [
+                'Review the employee\'s performance during probation.',
+                'Update compensation or role details in HRMS if applicable.',
+                'Schedule a confirmation discussion with the employee if not already done.',
+            ],
+        );
+    }
+
+    public function notifyProbationEndingSoon(Employee $employee): void
+    {
+        $employee->loadMissing(['company', 'manager.user', 'role']);
+        $endDate = $employee->probation_end_date?->format('d M Y') ?? '—';
+        $daysRemaining = $employee->probation_end_date
+            ? max(0, (int) now()->startOfDay()->diffInDays($employee->probation_end_date->copy()->startOfDay(), false))
+            : 0;
+        $body = sprintf(
+            '%s\'s probation ends on %s (%d day(s) remaining).',
+            $employee->full_name,
+            $endDate,
+            $daysRemaining,
+        );
+        $employeeProfileUrl = route('web.employees.show', $employee->id);
+
+        $this->notifyProbationStakeholders(
+            employee: $employee,
+            type: UserNotification::TYPE_PROBATION_ENDING_SOON,
+            title: 'Probation ending soon',
+            body: $body,
+            actionUrl: $employeeProfileUrl,
+            emailSubject: 'Probation ending soon – '.$employee->full_name,
+            emailIntro: 'An employee\'s probation period is approaching its end date. Review their performance and confirm or extend probation before the deadline.',
+            emailPurpose: 'This email is an advance reminder that an employee\'s probation period will end soon. HR and the reporting manager should evaluate confirmation, extension, or further action.',
+            emailSummary: $body,
+            emailDetails: [
+                'Employee' => $employee->full_name,
+                'Employee code' => $employee->employee_code ?? '—',
+                'Probation end date' => $endDate,
+                'Days remaining' => (string) $daysRemaining,
+                'Current status' => ucfirst(str_replace('_', ' ', (string) $employee->probation_status)),
+            ],
+            emailNextSteps: [
+                'Review the employee\'s performance and attendance during probation.',
+                'Confirm, extend, or update probation status in HRMS before the end date.',
+                'Discuss outcomes with the employee and document any decisions.',
+            ],
+        );
+    }
+
+    /** @param  array<string, string>  $emailDetails */
+    /** @param  array<int, string>  $emailNextSteps */
+    private function notifyProbationStakeholders(
+        Employee $employee,
+        string $type,
+        string $title,
+        string $body,
+        string $actionUrl,
+        string $emailSubject,
+        string $emailIntro,
+        string $emailPurpose,
+        string $emailSummary,
+        array $emailDetails,
+        array $emailNextSteps,
+    ): void {
+        $recipients = $this->recipientService
+            ->hrRecipientsForCompany((int) $employee->company_id)
+            ->merge($this->recipientService->directManagerRecipientsForEmployee($employee))
+            ->unique('id')
+            ->values();
+
+        foreach ($recipients as $recipient) {
+            $this->persistNotification(
+                companyId: (int) $employee->company_id,
+                userId: $recipient->id,
+                type: $type,
+                title: $title,
+                body: $body,
+                actionUrl: $actionUrl,
+                relatedType: 'employee',
+                relatedId: (int) $employee->id,
+            );
+
+            $this->sendWorkflowEmail(
+                recipient: $recipient,
+                subjectLine: $emailSubject,
+                intro: $emailIntro,
+                details: $emailDetails,
+                actionUrl: $actionUrl,
+                actionLabel: 'View employee',
+                purpose: $emailPurpose,
+                summary: $emailSummary,
+                nextSteps: $emailNextSteps,
+                logContext: ['type' => $type, 'related_id' => $employee->id, 'channel' => 'probation'],
+            );
+        }
     }
 
     public function notifyDocumentVerification(EmployeeDocument $document, User $submittedBy): void
@@ -283,8 +592,8 @@ class WorkflowNotificationService
             $document->original_name,
         );
 
-        $this->notifyStakeholders(
-            employee: $employee,
+        $this->notifyDocumentReviewers(
+            companyId: (int) $employee->company_id,
             exclude: $submittedBy,
             type: UserNotification::TYPE_DOCUMENT_VERIFICATION,
             title: 'Document verification',
@@ -293,11 +602,18 @@ class WorkflowNotificationService
             relatedType: 'employee_document',
             relatedId: $document->id,
             emailSubject: 'Document verification requested – '.$employee->full_name,
-            emailIntro: 'An employee document requires your verification.',
+            emailPurpose: 'This email notifies HR or document verifiers that an employee uploaded a document that requires review. The file name and document type are included for quick verification.',
+            emailIntro: 'An employee document has been uploaded and is pending verification. Please confirm authenticity and compliance using the details below.',
+            emailSummary: $body,
             emailDetails: [
                 'Employee' => $employee->full_name,
                 'Document type' => $document->documentType?->name ?? '—',
                 'File' => $document->original_name,
+            ],
+            emailNextSteps: [
+                'Open the document in HRMS and verify legibility and validity.',
+                'Approve the document if it meets policy requirements.',
+                'Reject with clear notes if the upload is incomplete or invalid.',
             ],
         );
     }
@@ -336,11 +652,18 @@ class WorkflowNotificationService
             relatedType: 'attendance_regularization',
             relatedId: $request->id,
             emailSubject: 'Attendance regularization submitted – '.$employee->full_name,
-            emailIntro: 'A new attendance regularization request requires your review.',
+            emailPurpose: 'This email notifies HR administrators that an employee submitted an attendance regularization request to correct missed or incorrect attendance records.',
+            emailIntro: 'An attendance regularization request needs HR review. Verify the affected date(s) and employee explanation before approving.',
+            emailSummary: $body,
             emailDetails: [
                 'Employee' => $employee->full_name,
                 'Date(s)' => $dateLabel,
                 'Reason' => $request->reason ?: '—',
+            ],
+            emailNextSteps: [
+                'Cross-check attendance logs for the listed date(s).',
+                'Confirm the regularization reason with policy guidelines.',
+                'Approve or reject the correction in HRMS with remarks.',
             ],
         );
     }
@@ -379,10 +702,10 @@ class WorkflowNotificationService
             );
 
             try {
-                Mail::to($recipient->email)->send(new WorkflowActionMail(
-                    recipientName: $recipient->name,
+                $this->sendWorkflowEmail(
+                    recipient: $recipient,
                     subjectLine: 'Daily report submitted – '.$employee->full_name,
-                    intro: 'A team member submitted their daily status report.',
+                    intro: 'A team member has submitted their daily status report. The summary below includes hours logged and projects covered so you can review progress without opening the portal first.',
                     details: [
                         'Employee' => $employee->full_name,
                         'Date' => $dateLabel,
@@ -391,7 +714,19 @@ class WorkflowNotificationService
                     ],
                     actionUrl: route('web.timesheets.index').'?employee_id='.$employee->id.'&work_date='.$workDate,
                     actionLabel: 'View report',
-                ));
+                    purpose: 'This email notifies managers that an employee submitted a daily timesheet or status report. It includes logged hours and project coverage for your review.',
+                    summary: $body,
+                    nextSteps: [
+                        'Review the hours and projects listed above.',
+                        'Open the full report in HRMS if you need task-level detail.',
+                        'Add feedback or comments if follow-up is required.',
+                    ],
+                    logContext: [
+                        'type' => UserNotification::TYPE_TIMESHEET_SUBMITTED,
+                        'related_id' => $employee->id,
+                        'channel' => 'timesheet',
+                    ],
+                );
             } catch (\Throwable $exception) {
                 Log::warning('Workflow notification email failed.', [
                     'recipient_id' => $recipient->id,
@@ -452,8 +787,8 @@ class WorkflowNotificationService
             );
 
             try {
-                Mail::to($recipient->email)->send(new WorkflowActionMail(
-                    recipientName: $recipient->name,
+                $this->sendWorkflowEmail(
+                    recipient: $recipient,
                     subjectLine: $title.' – '.$employee->full_name,
                     intro: $intro,
                     details: [
@@ -464,7 +799,21 @@ class WorkflowNotificationService
                     ],
                     actionUrl: $actionUrl,
                     actionLabel: 'View report',
-                ));
+                    purpose: $authorIsEmployee
+                        ? 'This email notifies managers that an employee replied to feedback on their daily report. The full comment is included below.'
+                        : 'This email notifies an employee that their manager left feedback on a daily report submission. The complete comment is included below.',
+                    summary: $intro,
+                    nextSteps: [
+                        'Read the comment text included in this email.',
+                        'Open the daily report in HRMS to view context and respond if needed.',
+                        'Continue the discussion until the report is finalized.',
+                    ],
+                    logContext: [
+                        'type' => UserNotification::TYPE_TIMESHEET_COMMENT,
+                        'related_id' => $comment->id,
+                        'channel' => 'timesheet_comment',
+                    ],
+                );
             } catch (\Throwable $exception) {
                 Log::warning('Workflow notification email failed.', [
                     'recipient_id' => $recipient->id,
@@ -522,8 +871,19 @@ class WorkflowNotificationService
             relatedType: 'leave_request',
             relatedId: $request->id,
             emailSubject: 'Leave request '.$statusLabel.' – '.$dateSummary,
-            emailIntro: 'Your leave request has been '.$statusLabel.'.',
+            emailPurpose: 'This email confirms the decision on your leave request. It includes leave type, dates, duration, reviewer name, and remarks if the request was rejected.',
+            emailIntro: 'Your leave request has been '.$statusLabel.' by '.$reviewedBy->name.'. Please review the complete decision summary below.',
+            emailSummary: $body,
             emailDetails: $details,
+            emailNextSteps: $approved ? [
+                'Add the approved leave dates to your calendar.',
+                'Coordinate handover with your team before your leave begins.',
+                'View the request in HRMS for your records.',
+            ] : [
+                'Review the reason or remarks provided by the reviewer.',
+                'Contact your manager or HR if you need clarification.',
+                'Submit a revised request if your dates or leave type can change.',
+            ],
         );
     }
 
@@ -571,8 +931,18 @@ class WorkflowNotificationService
             relatedType: 'wfh_request',
             relatedId: $request->id,
             emailSubject: 'WFH request '.$statusLabel.' – '.$dateSummary,
-            emailIntro: 'Your Work From Home request has been '.$statusLabel.'.',
+            emailPurpose: 'This email confirms the decision on your Work From Home request, including dates, duration, reviewer, and any remarks.',
+            emailIntro: 'Your Work From Home request has been '.$statusLabel.' by '.$reviewedBy->name.'. The full decision details are listed below.',
+            emailSummary: $body,
             emailDetails: $details,
+            emailNextSteps: $approved ? [
+                'Ensure you have remote-work access and equipment ready for the approved dates.',
+                'Stay reachable on official channels during WFH days.',
+                'Follow company security and availability guidelines while remote.',
+            ] : [
+                'Review the remarks provided by the reviewer.',
+                'Discuss alternative dates or arrangements with your manager if needed.',
+            ],
         );
     }
 
@@ -616,8 +986,17 @@ class WorkflowNotificationService
             relatedType: 'asset_request',
             relatedId: $request->id,
             emailSubject: 'Asset request '.$statusLabel.' – '.$assetName,
-            emailIntro: 'Your asset request has been '.$statusLabel.'.',
+            emailPurpose: 'This email confirms the decision on your asset request, including the item requested, reviewer, status, and any remarks.',
+            emailIntro: 'Your asset request has been '.$statusLabel.' by '.$reviewedBy->name.'. See the full summary below.',
+            emailSummary: $body,
             emailDetails: $details,
+            emailNextSteps: $approved ? [
+                'Coordinate with IT or admin for asset pickup or delivery.',
+                'Acknowledge receipt once the asset is issued to you.',
+            ] : [
+                'Review the remarks to understand why the request was not approved.',
+                'Contact HR or IT if you need an alternative arrangement.',
+            ],
         );
     }
 
@@ -666,8 +1045,15 @@ class WorkflowNotificationService
             relatedType: 'asset_request',
             relatedId: $request->id,
             emailSubject: 'Asset request '.$statusLabel.' – '.$assetName,
-            emailIntro: 'An asset in your request has been '.$statusLabel.'.',
+            emailPurpose: 'This email confirms the decision on one item within your asset request. Each line item may be approved or rejected independently.',
+            emailIntro: 'An item in your asset request has been '.$statusLabel.' by '.$reviewedBy->name.'. Review the item details below.',
+            emailSummary: $body,
             emailDetails: $details,
+            emailNextSteps: [
+                'Check whether other items in the same request remain pending.',
+                'Follow up with IT or admin for approved items.',
+                'Contact HR if you need clarification on a rejection.',
+            ],
         );
     }
 
@@ -712,8 +1098,18 @@ class WorkflowNotificationService
             relatedType: 'employee_document',
             relatedId: $document->id,
             emailSubject: 'Document '.$statusLabel.' – '.$document->original_name,
-            emailIntro: 'Your document verification request has been '.$statusLabel.'.',
+            emailPurpose: 'This email confirms the verification outcome for a document you uploaded to HRMS, including document type, file name, reviewer, and rejection reason if applicable.',
+            emailIntro: 'Your document verification request has been '.$statusLabel.' by '.$reviewedBy->name.'. See the complete details below.',
+            emailSummary: $body,
             emailDetails: $details,
+            emailNextSteps: $approved ? [
+                'No further action is required for this document.',
+                'Keep a personal copy if needed for your records.',
+            ] : [
+                'Review the rejection reason carefully.',
+                'Upload a corrected document version if required.',
+                'Contact HR if you need help meeting document standards.',
+            ],
         );
     }
 
@@ -761,8 +1157,17 @@ class WorkflowNotificationService
             relatedType: 'attendance_regularization',
             relatedId: $request->id,
             emailSubject: 'Attendance regularization '.$statusLabel.' – '.$dateLabel,
-            emailIntro: 'Your attendance regularization request has been '.$statusLabel.'.',
+            emailPurpose: 'This email confirms the decision on your attendance regularization request, including affected date, reviewer, and remarks if rejected.',
+            emailIntro: 'Your attendance regularization request has been '.$statusLabel.' by '.$reviewedBy->name.'. The decision summary is below.',
+            emailSummary: $body,
             emailDetails: $details,
+            emailNextSteps: $approved ? [
+                'Verify your attendance record reflects the correction in HRMS.',
+                'Report any remaining discrepancies to HR promptly.',
+            ] : [
+                'Review the rejection reason provided.',
+                'Submit supporting evidence or a revised request if appropriate.',
+            ],
         );
     }
 
@@ -785,8 +1190,8 @@ class WorkflowNotificationService
             $employee->full_name,
         );
 
-        $this->notifyStakeholders(
-            employee: $employee,
+        $this->notifyDocumentReviewers(
+            companyId: (int) $employee->company_id,
             exclude: $submittedBy,
             type: UserNotification::TYPE_PROFILE_PHOTO_SUBMITTED,
             title: 'Profile photo approval',
@@ -795,10 +1200,17 @@ class WorkflowNotificationService
             relatedType: 'employee_profile_photo',
             relatedId: $photo->id,
             emailSubject: 'Profile photo submitted – '.$employee->full_name,
-            emailIntro: 'An employee profile photo is pending your approval.',
+            emailPurpose: 'This email notifies HR or profile approvers that an employee submitted a new profile photo that requires approval before it appears across HRMS.',
+            emailIntro: 'An employee profile photo is pending approval. Review the submission details below and approve or reject in HRMS.',
+            emailSummary: $body,
             emailDetails: [
                 'Employee' => $employee->full_name,
                 'Status' => 'Pending approval',
+            ],
+            emailNextSteps: [
+                'Open the photo request in HRMS and verify it meets company guidelines.',
+                'Approve if the photo is professional and clearly identifies the employee.',
+                'Reject with guidance if the image does not meet policy.',
             ],
         );
     }
@@ -840,13 +1252,23 @@ class WorkflowNotificationService
             relatedType: 'employee_profile_photo',
             relatedId: $photo->id,
             emailSubject: 'Profile photo '.$statusLabel,
-            emailIntro: 'Your profile photo request has been '.$statusLabel.'.',
+            emailPurpose: 'This email confirms the outcome of your profile photo approval request, including reviewer and rejection reason if applicable.',
+            emailIntro: 'Your profile photo request has been '.$statusLabel.' by '.$reviewedBy->name.'. See the decision details below.',
+            emailSummary: $body,
             emailDetails: $details,
             actionLabel: 'View profile',
+            emailNextSteps: $approved ? [
+                'Your updated photo should now appear on your HRMS profile.',
+                'Contact HR if the photo does not update within a few minutes.',
+            ] : [
+                'Review the rejection reason and upload a compliant photo.',
+                'Ensure the image is clear, professional, and recent.',
+            ],
         );
     }
 
     /** @param  array<string, string>  $emailDetails */
+    /** @param  array<int, string>  $emailNextSteps */
     private function notifyApplicant(
         ?User $applicant,
         int $companyId,
@@ -860,6 +1282,9 @@ class WorkflowNotificationService
         string $emailIntro,
         array $emailDetails,
         string $actionLabel = 'View details',
+        string $emailPurpose = '',
+        ?string $emailSummary = null,
+        array $emailNextSteps = [],
     ): void {
         if (! $applicant || ! filled($applicant->email)) {
             return;
@@ -876,23 +1301,18 @@ class WorkflowNotificationService
             relatedId: $relatedId,
         );
 
-        try {
-            Mail::to($applicant->email)->send(new WorkflowActionMail(
-                recipientName: $applicant->name,
-                subjectLine: $emailSubject,
-                intro: $emailIntro,
-                details: $emailDetails,
-                actionUrl: $actionUrl,
-                actionLabel: $actionLabel,
-            ));
-        } catch (\Throwable $exception) {
-            Log::warning('Workflow applicant notification email failed.', [
-                'recipient_id' => $applicant->id,
-                'type' => $type,
-                'related_id' => $relatedId,
-                'message' => $exception->getMessage(),
-            ]);
-        }
+        $this->sendWorkflowEmail(
+            recipient: $applicant,
+            subjectLine: $emailSubject,
+            intro: $emailIntro,
+            details: $emailDetails,
+            actionUrl: $actionUrl,
+            actionLabel: $actionLabel,
+            purpose: $emailPurpose ?: 'This email is an official update from your organization\'s HRMS platform regarding a workflow decision that affects you. All relevant details are included below.',
+            summary: $emailSummary,
+            nextSteps: $emailNextSteps,
+            logContext: ['type' => $type, 'related_id' => $relatedId, 'channel' => 'applicant'],
+        );
     }
 
     private function applicantForLeave(LeaveRequest $request): ?User
@@ -924,6 +1344,54 @@ class WorkflowNotificationService
     }
 
     /** @param  array<string, string>  $emailDetails */
+    /** @param  array<int, string>  $emailNextSteps */
+    private function notifyDocumentReviewers(
+        int $companyId,
+        ?User $exclude,
+        string $type,
+        string $title,
+        string $body,
+        string $actionUrl,
+        string $relatedType,
+        int $relatedId,
+        string $emailSubject,
+        string $emailIntro,
+        array $emailDetails,
+        string $emailPurpose = '',
+        ?string $emailSummary = null,
+        array $emailNextSteps = [],
+    ): void {
+        $recipients = $this->recipientService->documentReviewRecipientsForCompany($companyId, $exclude);
+
+        foreach ($recipients as $recipient) {
+            $this->persistNotification(
+                companyId: $companyId,
+                userId: $recipient->id,
+                type: $type,
+                title: $title,
+                body: $body,
+                actionUrl: $actionUrl,
+                relatedType: $relatedType,
+                relatedId: $relatedId,
+            );
+
+            $this->sendWorkflowEmail(
+                recipient: $recipient,
+                subjectLine: $emailSubject,
+                intro: $emailIntro,
+                details: $emailDetails,
+                actionUrl: $actionUrl,
+                actionLabel: 'Review request',
+                purpose: $emailPurpose ?: 'This email notifies HR or document reviewers that an employee submission requires review. Full details are included below.',
+                summary: $emailSummary,
+                nextSteps: $emailNextSteps,
+                logContext: ['type' => $type, 'related_id' => $relatedId, 'channel' => 'document_review'],
+            );
+        }
+    }
+
+    /** @param  array<string, string>  $emailDetails */
+    /** @param  array<int, string>  $emailNextSteps */
     private function notifyHrAndAdminStakeholders(
         int $companyId,
         ?User $exclude,
@@ -936,6 +1404,9 @@ class WorkflowNotificationService
         string $emailSubject,
         string $emailIntro,
         array $emailDetails,
+        string $emailPurpose = '',
+        ?string $emailSummary = null,
+        array $emailNextSteps = [],
     ): void {
         $recipients = $this->recipientService->hrAndAdminRecipientsForCompany($companyId, $exclude);
 
@@ -951,27 +1422,23 @@ class WorkflowNotificationService
                 relatedId: $relatedId,
             );
 
-            try {
-                Mail::to($recipient->email)->send(new WorkflowActionMail(
-                    recipientName: $recipient->name,
-                    subjectLine: $emailSubject,
-                    intro: $emailIntro,
-                    details: $emailDetails,
-                    actionUrl: $actionUrl,
-                    actionLabel: 'Review request',
-                ));
-            } catch (\Throwable $exception) {
-                Log::warning('Workflow notification email failed.', [
-                    'recipient_id' => $recipient->id,
-                    'type' => $type,
-                    'related_id' => $relatedId,
-                    'message' => $exception->getMessage(),
-                ]);
-            }
+            $this->sendWorkflowEmail(
+                recipient: $recipient,
+                subjectLine: $emailSubject,
+                intro: $emailIntro,
+                details: $emailDetails,
+                actionUrl: $actionUrl,
+                actionLabel: 'Review request',
+                purpose: $emailPurpose ?: 'This email notifies HR that an employee request requires review. Full details are included below.',
+                summary: $emailSummary,
+                nextSteps: $emailNextSteps,
+                logContext: ['type' => $type, 'related_id' => $relatedId, 'channel' => 'hr_admin'],
+            );
         }
     }
 
     /** @param  array<string, string>  $emailDetails */
+    /** @param  array<int, string>  $emailNextSteps */
     private function notifyStakeholders(
         $employee,
         ?User $exclude,
@@ -984,6 +1451,9 @@ class WorkflowNotificationService
         string $emailSubject,
         string $emailIntro,
         array $emailDetails,
+        string $emailPurpose = '',
+        ?string $emailSummary = null,
+        array $emailNextSteps = [],
     ): void {
         $recipients = $this->recipientService->stakeholdersForEmployee($employee, $exclude);
 
@@ -999,23 +1469,57 @@ class WorkflowNotificationService
                 relatedId: $relatedId,
             );
 
-            try {
-                Mail::to($recipient->email)->send(new WorkflowActionMail(
-                    recipientName: $recipient->name,
-                    subjectLine: $emailSubject,
-                    intro: $emailIntro,
-                    details: $emailDetails,
-                    actionUrl: $actionUrl,
-                    actionLabel: 'Review request',
-                ));
-            } catch (\Throwable $exception) {
-                Log::warning('Workflow notification email failed.', [
-                    'recipient_id' => $recipient->id,
-                    'type' => $type,
-                    'related_id' => $relatedId,
-                    'message' => $exception->getMessage(),
-                ]);
-            }
+            $this->sendWorkflowEmail(
+                recipient: $recipient,
+                subjectLine: $emailSubject,
+                intro: $emailIntro,
+                details: $emailDetails,
+                actionUrl: $actionUrl,
+                actionLabel: 'Review request',
+                purpose: $emailPurpose ?: 'This email notifies the employee\'s direct manager that a request requires review. All details are included below.',
+                summary: $emailSummary,
+                nextSteps: $emailNextSteps,
+                logContext: ['type' => $type, 'related_id' => $relatedId, 'channel' => 'stakeholder'],
+            );
+        }
+    }
+
+    /** @param  array<string, string>  $details */
+    /** @param  array<int, string>  $nextSteps */
+    /** @param  array<string, mixed>  $logContext */
+    private function sendWorkflowEmail(
+        User $recipient,
+        string $subjectLine,
+        string $intro,
+        array $details,
+        string $actionUrl,
+        string $actionLabel,
+        string $purpose,
+        ?string $summary = null,
+        array $nextSteps = [],
+        array $logContext = [],
+    ): void {
+        if (! filled($recipient->email)) {
+            return;
+        }
+
+        try {
+            Mail::to($recipient->email)->send(new WorkflowActionMail(
+                recipientName: $recipient->name,
+                subjectLine: $subjectLine,
+                intro: $intro,
+                details: $details,
+                actionUrl: $actionUrl,
+                actionLabel: $actionLabel,
+                purpose: $purpose,
+                summary: $summary,
+                nextSteps: $nextSteps,
+            ));
+        } catch (\Throwable $exception) {
+            Log::warning('Workflow notification email failed.', array_merge($logContext, [
+                'recipient_id' => $recipient->id,
+                'message' => $exception->getMessage(),
+            ]));
         }
     }
 

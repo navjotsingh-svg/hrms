@@ -4,6 +4,8 @@ namespace App\Http\Requests;
 
 use App\Models\Employee;
 use App\Models\EmployeePersonalSection;
+use App\Support\EmergencyContactPayload;
+use App\Support\FamilyRelationOptions;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
 
@@ -18,6 +20,9 @@ class StoreEmployeePersonalSectionRequest extends FormRequest
     {
         return [
             'phone.digits' => 'Mobile number must be exactly 10 digits.',
+            'contacts.*.phones.*.digits' => 'Each mobile number must be exactly 10 digits.',
+            'contacts.*.phones.min' => 'Add at least one mobile number for each emergency contact.',
+            'contacts.min' => 'Add at least one emergency contact.',
         ];
     }
 
@@ -52,13 +57,19 @@ class StoreEmployeePersonalSectionRequest extends FormRequest
             ],
             'emergency_contact' => [
                 'section_type' => 'emergency_contact',
-                'payload' => [
-                    'name' => trim($validated['name']),
-                    'relation' => trim($validated['relation']),
-                    'phone' => isset($validated['phone']) && trim($validated['phone']) !== ''
-                        ? trim($validated['phone'])
-                        : null,
-                ],
+                'payload' => EmergencyContactPayload::normalize([
+                    'contacts' => collect($validated['contacts'] ?? [])
+                        ->map(fn (array $contact) => [
+                            'name' => trim($contact['name']),
+                            'relation' => trim($contact['relation']),
+                            'phones' => collect($contact['phones'] ?? [])
+                                ->map(fn ($phone) => trim((string) $phone))
+                                ->filter(fn (string $phone) => $phone !== '')
+                                ->values()
+                                ->all(),
+                        ])
+                        ->all(),
+                ]),
             ],
             default => $validated,
         };
@@ -87,9 +98,11 @@ class StoreEmployeePersonalSectionRequest extends FormRequest
     private function emergencyRules(?Employee $employee): array
     {
         return [
-            'name' => ['required', 'string', 'max:100'],
-            'relation' => ['required', 'string', 'max:50'],
-            'phone' => ['nullable', 'digits:10'],
+            'contacts' => ['required', 'array', 'min:1'],
+            'contacts.*.name' => ['required', 'string', 'max:100'],
+            'contacts.*.relation' => ['required', 'string', 'max:50', FamilyRelationOptions::validationRule()],
+            'contacts.*.phones' => ['required', 'array', 'min:1'],
+            'contacts.*.phones.*' => ['required', 'digits:10'],
         ];
     }
 

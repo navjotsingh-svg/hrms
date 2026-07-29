@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Mail\HiringOfferMail;
 use App\Models\Candidate;
 use App\Models\CandidateInterview;
 use App\Models\CandidateStageLog;
@@ -17,6 +18,9 @@ use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Mail;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
 
@@ -27,10 +31,6 @@ class HiringService
         $companyId = $user->company_id;
 
         $openJobs = JobPosting::query()->where('company_id', $companyId)->where('status', JobPosting::STATUS_OPEN)->count();
-        $pendingRequisitions = JobRequisition::query()
-            ->where('company_id', $companyId)
-            ->where('status', JobRequisition::STATUS_PENDING)
-            ->count();
         $activeCandidates = Candidate::query()
             ->where('company_id', $companyId)
             ->whereNotIn('stage', [Candidate::STAGE_HIRED, Candidate::STAGE_REJECTED])
@@ -51,7 +51,10 @@ class HiringService
 
         return [
             'open_jobs' => $openJobs,
-            'pending_requisitions' => $pendingRequisitions,
+            'draft_jobs' => JobPosting::query()
+                ->where('company_id', $companyId)
+                ->where('status', JobPosting::STATUS_DRAFT)
+                ->count(),
             'active_candidates' => $activeCandidates,
             'upcoming_interviews' => $upcomingInterviews,
             'pipeline' => $pipeline,
@@ -477,15 +480,31 @@ class HiringService
         $candidate = Candidate::query()->findOrFail($data['candidate_id']);
         $this->assertSameCompany($user, $candidate);
 
+        if (empty($data['template_id'])) {
+            throw ValidationException::withMessages([
+                'template_id' => ['Please select an offer template.'],
+            ]);
+        }
+
+        $template = HiringTemplate::query()
+            ->where('company_id', $user->company_id)
+            ->find($data['template_id']);
+
+        if (! $template) {
+            throw ValidationException::withMessages([
+                'template_id' => ['Selected offer template is invalid.'],
+            ]);
+        }
+
         return HiringOffer::query()->create([
             'company_id' => $user->company_id,
             'candidate_id' => $candidate->id,
             'job_id' => $data['job_id'] ?? $candidate->job_id,
-            'template_id' => $data['template_id'] ?? null,
+            'template_id' => $template->id,
             'title' => $data['title'],
             'offered_ctc' => $data['offered_ctc'] ?? null,
             'joining_date' => $data['joining_date'] ?? null,
-            'letter_html' => $data['letter_html'] ?? null,
+            'letter_html' => null,
             'status' => HiringOffer::STATUS_DRAFT,
             'created_by_user_id' => $user->id,
         ]);
@@ -496,14 +515,135 @@ class HiringService
         $this->assertSameCompany($user, $offer);
         $this->assertCanManageHiring($user);
 
+        if ($offer->status !== HiringOffer::STATUS_DRAFT) {
+            throw ValidationException::withMessages([
+                'status' => ['Only draft offers can be sent.'],
+            ]);
+        }
+
+        $offer->loadMissing(['candidate', 'job.department', 'job.hiringManager', 'template', 'company']);
+
+        $candidate = $offer->candidate;
+        if (! $candidate || ! filled($candidate->email)) {
+            throw ValidationException::withMessages([
+                'candidate' => ['Candidate does not have an email address. Add an email on the candidate profile before sending the offer.'],
+            ]);
+        }
+
+        $bodyHtml = trim((string) ($offer->template?->body_html ?: ''));
+        if ($bodyHtml === '') {
+            throw ValidationException::withMessages([
+                'template_id' => ['The selected offer template has no content. Edit the template before sending.'],
+            ]);
+        }
+
+        $renderedHtml = $this->renderOfferLetterHtml($offer, $bodyHtml);
+        $companyName = $offer->company?->name ?? config('app.name', 'HRMS');
+        $pdfService = app(HiringOfferPdfService::class);
+        $candidateOfferService = app(CandidateOfferService::class);
+        $pdfBinary = $pdfService->output($offer, $renderedHtml);
+        $pdfFilename = $pdfService->filename($offer);
+
+        $candidateOfferService->generateAccessToken($offer);
+        $candidateOfferService->storePdf($offer->fresh(), $pdfBinary);
+        $reviewUrl = $candidateOfferService->reviewUrl($offer->fresh());
+
+        try {
+            Mail::to($candidate->email)->send(new HiringOfferMail(
+                recipientName: trim($candidate->first_name.' '.$candidate->last_name) ?: 'Candidate',
+                subjectLine: $offer->title ?: "Job Offer from {$companyName}",
+                companyName: $companyName,
+                offerTitle: $offer->title,
+                reviewUrl: $reviewUrl,
+                pdfBinary: $pdfBinary,
+                pdfFilename: $pdfFilename,
+                offerDetails: array_filter([
+                    'Position' => $offer->job?->title,
+                    'Department' => $offer->job?->department?->name,
+                    'Offer title' => $offer->title,
+                    'Offered CTC' => $offer->offered_ctc ? number_format((float) $offer->offered_ctc, 2) : null,
+                    'Proposed joining date' => $offer->joining_date?->format('d M Y'),
+                    'Candidate email' => $candidate->email,
+                    'Sent on' => now()->format('d M Y, h:i A'),
+                ]),
+            ));
+        } catch (\Throwable $exception) {
+            Log::error('Hiring offer email failed.', [
+                'offer_id' => $offer->id,
+                'candidate_id' => $candidate->id,
+                'email' => $candidate->email,
+                'message' => $exception->getMessage(),
+            ]);
+
+            throw ValidationException::withMessages([
+                'email' => ['Offer email could not be delivered. Please verify mail settings and the candidate email address.'],
+            ]);
+        }
+
         $offer->update([
             'status' => HiringOffer::STATUS_SENT,
             'sent_at' => now(),
+            'letter_html' => $renderedHtml,
         ]);
 
         $this->updateCandidateStage($user, $offer->candidate, Candidate::STAGE_OFFER, 'Offer sent');
 
         return $offer->fresh(['candidate', 'job', 'template']);
+    }
+
+    public function renderOfferLetterHtml(HiringOffer $offer, ?string $bodyHtml = null): string
+    {
+        $offer->loadMissing(['candidate', 'job.department', 'job.hiringManager', 'company']);
+
+        $bodyHtml ??= trim((string) ($offer->template?->body_html ?: $offer->letter_html ?: ''));
+        $candidate = $offer->candidate;
+        $job = $offer->job;
+        $company = $offer->company;
+        $timezone = $company?->timezone ?: 'UTC';
+
+        $candidateName = trim(($candidate?->first_name ?? '').' '.($candidate?->last_name ?? ''));
+        $placeholders = [
+            'candidate_name' => $candidateName,
+            'candidate_first_name' => $candidate?->first_name ?? '',
+            'candidate_email' => $candidate?->email ?? '',
+            'candidate_phone' => $candidate?->phone ?? '',
+            'job_title' => $job?->title ?? $offer->title ?? '',
+            'department' => $job?->department?->name ?? '',
+            'employment_type' => $this->formatEmploymentType($job?->employment_type),
+            'work_location' => $job?->location ?? '',
+            'salary' => $offer->offered_ctc !== null
+                ? number_format((float) $offer->offered_ctc, 2)
+                : '',
+            'joining_date' => $offer->joining_date?->format('d M Y') ?? '',
+            'offer_expiry_date' => Carbon::now($timezone)->addDays(7)->format('d M Y'),
+            'manager_name' => $job?->hiringManager?->full_name ?? '',
+            'company_name' => $company?->name ?? '',
+            'company_legal_name' => $company?->legal_name ?? $company?->name ?? '',
+            'company_address' => collect([
+                $company?->address_line_1,
+                $company?->address_line_2,
+                $company?->city,
+                $company?->state,
+                $company?->postal_code,
+                $company?->country,
+            ])->filter()->implode(', '),
+            'today_date' => Carbon::now($timezone)->format('d M Y'),
+        ];
+
+        return preg_replace_callback('/\{([a-z0-9_]+)\}/i', function (array $matches) use ($placeholders) {
+            $key = strtolower($matches[1]);
+
+            return e($placeholders[$key] ?? $matches[0]);
+        }, $bodyHtml) ?? $bodyHtml;
+    }
+
+    private function formatEmploymentType(?string $employmentType): string
+    {
+        if (! filled($employmentType)) {
+            return '';
+        }
+
+        return Str::headline(str_replace('_', ' ', $employmentType));
     }
 
     public function listTemplates(User $user, array $filters = []): LengthAwarePaginator
@@ -574,11 +714,16 @@ class HiringService
         $settings->fill([
             'hero_title' => $data['hero_title'] ?? $settings->hero_title,
             'hero_subtitle' => $data['hero_subtitle'] ?? $settings->hero_subtitle,
+            'hero_cta_text' => $data['hero_cta_text'] ?? $settings->hero_cta_text,
+            'hero_cta_url' => $data['hero_cta_url'] ?? $settings->hero_cta_url,
             'about_html' => $data['about_html'] ?? $settings->about_html,
             'header_html' => $data['header_html'] ?? $settings->header_html,
             'footer_html' => $data['footer_html'] ?? $settings->footer_html,
             'banner_path' => $data['banner_path'] ?? $settings->banner_path,
             'logo_path' => $data['logo_path'] ?? $settings->logo_path,
+            'theme_primary' => $data['theme_primary'] ?? $settings->theme_primary ?? '#0f172a',
+            'theme_accent' => $data['theme_accent'] ?? $settings->theme_accent ?? '#2563eb',
+            'sections' => array_key_exists('sections', $data) ? $data['sections'] : $settings->sections,
             'is_published' => array_key_exists('is_published', $data) ? (bool) $data['is_published'] : $settings->is_published,
             'embed_snippet' => $data['embed_snippet'] ?? $settings->embed_snippet,
             'meta_title' => $data['meta_title'] ?? $settings->meta_title,
@@ -588,11 +733,20 @@ class HiringService
         return $settings->fresh();
     }
 
-    public function publicCareersPage(Company $company): array
+    public function publicCareersPage(Company $company, bool $allowUnpublished = false): array
     {
         $settings = CareersPageSetting::query()->where('company_id', $company->id)->first();
 
-        if (! $settings?->is_published) {
+        if (! $settings) {
+            if (! $allowUnpublished) {
+                throw ValidationException::withMessages(['careers' => 'This careers page is not published.']);
+            }
+
+            $settings = new CareersPageSetting([
+                'company_id' => $company->id,
+                'is_published' => false,
+            ]);
+        } elseif (! $settings->is_published && ! $allowUnpublished) {
             throw ValidationException::withMessages(['careers' => 'This careers page is not published.']);
         }
 
@@ -606,6 +760,7 @@ class HiringService
         return [
             'company' => $company,
             'settings' => $settings,
+            'sections' => $settings->resolvedSections(),
             'jobs' => $jobs,
         ];
     }

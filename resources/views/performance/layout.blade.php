@@ -8,7 +8,7 @@
         'one-on-one' => 'One-on-one Meetings',
         'reviews' => 'Performance Reviews',
         'calibration' => 'Performance Calibration',
-        'promotions' => 'Promotions',
+        'promotions' => 'Promotion Recommendations',
         'insights' => 'Performance Insights',
         'compensation' => 'Basic Compensation Plans',
         'skills' => 'Skills and Competencies',
@@ -22,16 +22,16 @@
     $subtitles = [
         'overview' => 'Performance dashboard with active cycles, goals, reviews, and PIPs.',
         'praise-recognition' => 'Celebrate achievements and recognize colleagues across the organization.',
-        'continuous-feedback' => 'Create reusable feedback form templates from your question bank.',
+        'continuous-feedback' => 'Request feedback from colleagues, submit responses, and view feedback received about you.',
         'one-on-one' => 'Schedule and track manager–employee one-on-one meetings.',
-        'reviews' => 'View pending reviews, submit self-assessments, and complete manager reviews.',
+        'reviews' => 'View pending reviews, submit assessments, and configure review cycles.',
         'calibration' => 'Align ratings across teams before finalizing performance scores.',
-        'promotions' => 'Manage promotion nominations and approvals.',
+        'promotions' => 'Review eligible employees and submit promotion recommendations for leadership endorsement.',
         'insights' => 'Organization-wide performance metrics, trends, and completion rates.',
         'compensation' => 'Salary bands and merit increase planning linked to reviews.',
         'skills' => 'Role competencies and employee skill profiles.',
         'review-cycles' => 'Configure review periods, questions, reviewer pairs, and track completion.',
-        'feedback-forms' => 'Create reusable feedback form templates from your question bank.',
+        'feedback-forms' => 'Create reusable feedback form templates for continuous feedback requests.',
         'question-bank' => 'Maintain a library of rating and text questions for reviews and forms.',
         'goals' => 'Cascade company goals into department and employee objectives. Track progress at every level.',
         'kpi' => 'Track employee KPIs with targets, current values, and progress.',
@@ -54,8 +54,10 @@
 @endsection
 
 @section('content')
-    <div id="performanceAlert" class="alert alert-dismissible fade show d-none" role="alert"></div>
-    @yield('performance-content')
+    <div class="hrms-module-shell">
+        <div id="performanceAlert" class="alert alert-dismissible fade show d-none" role="alert"></div>
+        @yield('performance-content')
+    </div>
 @endsection
 
 @push('scripts')
@@ -65,7 +67,9 @@
             page: @json($performancePage),
             canManage: @json($canManage),
             canReview: @json($canReview),
+            canParticipate: @json($canParticipate),
             canManagePips: @json($canManagePips),
+            continuousFeedbackUrl: @json(route('web.performance.continuous-feedback')),
         };
     </script>
 @endpush

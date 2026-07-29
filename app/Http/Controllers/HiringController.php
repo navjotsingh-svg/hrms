@@ -11,11 +11,6 @@ class HiringController extends Controller
         return view('hiring.overview', $this->pageData('overview'));
     }
 
-    public function requisitions(): View
-    {
-        return view('hiring.requisitions', $this->pageData('requisitions'));
-    }
-
     public function jobs(): View
     {
         return view('hiring.jobs', $this->pageData('jobs'));
@@ -53,8 +48,6 @@ class HiringController extends Controller
         return [
             'hiringPage' => $page,
             'canManage' => $user->canManageHiring(),
-            'canCreateRequisition' => $user->canCreateRequisition(),
-            'canApproveRequisitions' => $user->canApproveRequisitions(),
             'canInterview' => $user->canInterviewCandidates(),
             'canPublishCareers' => $user->canPublishCareers(),
             'companySlug' => $user->company?->slug,

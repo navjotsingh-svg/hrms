@@ -48,7 +48,12 @@
         <div class="content-card-header border-bottom d-flex flex-wrap justify-content-between align-items-center gap-2">
             <h2 class="content-card-title mb-0" id="balancesOverviewTitle">Leave balance overview</h2>
         </div>
-        @include('partials.list-pagination-header', ['perPageId' => 'balancesPerPage'])
+        @include('partials.list-pagination-top', [
+    'infoId' => 'balancesPaginationInfo',
+    'listId' => 'balancesPaginationList',
+    'perPageId' => 'balancesPerPage',
+    'ariaLabel' => 'Leave balances pagination',
+])
         <div class="companies-table-wrap leave-balance-matrix-wrap">
             <table class="companies-table leave-balance-matrix mb-0">
                 <thead id="leaveBalanceMatrixHead">

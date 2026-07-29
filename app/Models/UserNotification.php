@@ -33,6 +33,14 @@ class UserNotification extends Model
 
     public const TYPE_OFFBOARDING_COMPLETED = 'offboarding_completed';
 
+    public const TYPE_OFFBOARDING_INITIATED = 'offboarding_initiated';
+
+    public const TYPE_EMPLOYEE_STATUS_CHANGED = 'employee_status_changed';
+
+    public const TYPE_PROBATION_COMPLETED = 'probation_completed';
+
+    public const TYPE_PROBATION_ENDING_SOON = 'probation_ending_soon';
+
     public const TYPE_MOMENT_NEW = 'moment_new';
 
     public const TYPE_HELPDESK_SUBMITTED = 'helpdesk_submitted';

@@ -178,6 +178,8 @@ class PerformanceReviewCycleController extends Controller
         $data['pairs'] = $cycle->relationLoaded('pairs')
             ? $cycle->pairs->map(fn ($pair) => [
                 'id' => $pair->id,
+                'reviewee_employee_id' => $pair->reviewee_employee_id,
+                'reviewer_employee_id' => $pair->reviewer_employee_id,
                 'reviewee' => $this->employeeBrief($pair->reviewee),
                 'reviewer' => $this->employeeBrief($pair->reviewer),
                 'relationship' => $pair->relationship,

@@ -18,6 +18,8 @@ use Illuminate\Http\Request;
 
 use Illuminate\View\View;
 
+use Illuminate\Validation\ValidationException;
+
 
 
 class PublicCareersController extends Controller
@@ -28,33 +30,39 @@ class PublicCareersController extends Controller
 
 
 
-    public function show(string $slug): View
+    public function show(Request $request, string $slug): View
 
     {
 
         $company = Company::query()->where('slug', $slug)->firstOrFail();
 
+        $canPreview = $this->canPreviewUnpublished($request, $company);
+
 
 
         try {
 
-            $data = $this->hiringService->publicCareersPage($company);
+            $data = $this->hiringService->publicCareersPage($company, $canPreview);
 
-        } catch (\Illuminate\Validation\ValidationException) {
+        } catch (ValidationException) {
 
-            abort(404, 'Careers page not available.');
+            return view('careers.unavailable', ['company' => $company]);
 
         }
 
 
 
-        return view('careers.show', $data);
+        return view('careers.show', array_merge($data, [
+
+            'isPreview' => $canPreview && ! $data['settings']->is_published,
+
+        ]));
 
     }
 
 
 
-    public function job(string $slug, JobPosting $jobPosting): View
+    public function job(Request $request, string $slug, JobPosting $jobPosting): View
 
     {
 
@@ -70,11 +78,15 @@ class PublicCareersController extends Controller
 
 
 
+        $canPreview = $this->canPreviewUnpublished($request, $company);
+
+
+
         try {
 
-            $data = $this->hiringService->publicCareersPage($company);
+            $data = $this->hiringService->publicCareersPage($company, $canPreview);
 
-        } catch (\Illuminate\Validation\ValidationException) {
+        } catch (ValidationException) {
 
             abort(404);
 
@@ -82,7 +94,13 @@ class PublicCareersController extends Controller
 
 
 
-        return view('careers.job', array_merge($data, ['selectedJob' => $jobPosting]));
+        return view('careers.job', array_merge($data, [
+
+            'selectedJob' => $jobPosting,
+
+            'isPreview' => $canPreview && ! $data['settings']->is_published,
+
+        ]));
 
     }
 
@@ -206,6 +224,17 @@ class PublicCareersController extends Controller
 
         return $request->validate($rules);
 
+    }
+
+    private function canPreviewUnpublished(Request $request, Company $company): bool
+    {
+        $user = $request->user();
+
+        if (! $user) {
+            return false;
+        }
+
+        return (int) $user->company_id === (int) $company->id && $user->canPublishCareers();
     }
 
 }

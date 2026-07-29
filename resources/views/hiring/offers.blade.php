@@ -17,7 +17,12 @@
                 </div>
             </div>
         </div>
-        @include('partials.list-pagination-header', ['perPageId' => 'offersPerPage'])
+        @include('partials.list-pagination-top', [
+    'infoId' => 'offersPaginationInfo',
+    'listId' => 'offersPaginationList',
+    'perPageId' => 'offersPerPage',
+    'ariaLabel' => 'Offers pagination',
+])
         <div class="table-responsive">
             <table class="companies-table table mb-0">
                 <thead>
@@ -72,10 +77,11 @@
                             <input type="text" class="form-control" id="offerTitle" required>
                         </div>
                         <div class="col-md-4">
-                            <label class="form-label" for="offerTemplate">Template</label>
-                            <select class="form-select" id="offerTemplate">
+                            <label class="form-label" for="offerTemplate">Template *</label>
+                            <select class="form-select" id="offerTemplate" required>
                                 <option value="">Select template</option>
                             </select>
+                            <div class="form-text">Offer letter is generated from the template and sent as a PDF.</div>
                         </div>
                         <div class="col-md-4">
                             <label class="form-label" for="offerCtc">Offered CTC</label>
@@ -84,10 +90,6 @@
                         <div class="col-md-4">
                             <label class="form-label" for="offerJoiningDate">Joining Date</label>
                             <input type="date" class="form-control" id="offerJoiningDate">
-                        </div>
-                        <div class="col-12">
-                            <label class="form-label" for="offerLetterHtml">Letter (HTML)</label>
-                            <textarea class="form-control font-monospace" id="offerLetterHtml" rows="6"></textarea>
                         </div>
                     </div>
                 </form>

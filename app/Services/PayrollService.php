@@ -22,6 +22,7 @@ class PayrollService
         private AttendanceService $attendanceService,
         private PortalStartService $portalStartService,
         private EmployeeService $employeeService,
+        private WorkflowNotificationService $workflowNotificationService,
     ) {}
 
     public function listPeriods(int $companyId): Collection
@@ -433,6 +434,12 @@ class PayrollService
 
         if ($period->employee && $period->employee->status === 'active') {
             $this->employeeService->updateStatus($period->employee, 'inactive', $user);
+        }
+
+        $exitCase->refresh()->load(['employee', 'resignationRequest']);
+
+        if ($exitCase->status === ExitCase::STATUS_COMPLETED) {
+            $this->workflowNotificationService->notifyOffboardingCompleted($exitCase, $user);
         }
     }
 

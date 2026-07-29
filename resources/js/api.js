@@ -33,6 +33,19 @@ export const clearToken = () => {
 
 const csrfToken = () => document.querySelector('meta[name="csrf-token"]')?.getAttribute('content');
 
+let csrfRefreshPromise = null;
+
+const refreshCsrfCookie = async () => {
+    if (!csrfRefreshPromise) {
+        csrfRefreshPromise = axios.get('/sanctum/csrf-cookie', { withCredentials: true })
+            .finally(() => {
+                csrfRefreshPromise = null;
+            });
+    }
+
+    return csrfRefreshPromise;
+};
+
 export const establishWebSession = async (token = getToken()) => {
     if (!token) {
         throw new Error('Missing authentication token.');
@@ -92,9 +105,23 @@ api.interceptors.request.use((config) => {
 
 api.interceptors.response.use(
     (response) => response,
-    (error) => {
-        if (error.response?.status === 419) {
-            window.location.reload();
+    async (error) => {
+        const config = error.config;
+
+        if (error.response?.status === 419 && config && !config._csrfRetried) {
+            config._csrfRetried = true;
+
+            try {
+                await refreshCsrfCookie();
+
+                if (!hasXsrfCookie() && csrfToken()) {
+                    config.headers['X-CSRF-TOKEN'] = csrfToken();
+                }
+
+                return api.request(config);
+            } catch {
+                window.location.reload();
+            }
         }
 
         return Promise.reject(error);

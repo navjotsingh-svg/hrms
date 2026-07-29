@@ -98,7 +98,12 @@
         </div>
     </div>
 
-    @include('partials.list-pagination-header', ['perPageId' => 'momentsPerPage'])
+    @include('partials.list-pagination-top', [
+    'infoId' => 'momentsPaginationInfo',
+    'listId' => 'momentsPagination',
+    'perPageId' => 'momentsPerPage',
+    'ariaLabel' => 'Moments pagination',
+])
     <div id="momentsFeed" class="moments-feed"></div>
     <div id="momentsEmpty" class="text-center text-muted py-5 d-none">No posts yet. Share the first update on your social wall.</div>
     @include('partials.list-pagination-footer', [

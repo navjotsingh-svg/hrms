@@ -2,9 +2,13 @@
 
 @php
     $canReviewRequests = Auth::user()->canApproveLeave()
+        || Auth::user()->canApproveWfh()
+        || Auth::user()->canApproveAssets()
         || Auth::user()->canApproveRegularization()
         || Auth::user()->canReviewEmployeeDocuments()
-        || Auth::user()->canApproveExpenses();
+        || Auth::user()->canApproveExpenses()
+        || Auth::user()->canApproveRequisitions();
+    $showMyRequestsTab = ! Auth::user()->isCompanyAdmin();
 @endphp
 
 @section('title', 'Requests - ' . config('app.name', 'HRMS'))
@@ -13,7 +17,7 @@
     <div class="d-flex flex-wrap align-items-center justify-content-between gap-2">
         <div>
             <h1 class="page-title mb-1">Requests</h1>
-            <p class="page-subtitle mb-0">Review pending approvals, track employee request outcomes, and view your own submissions.</p>
+            <p class="page-subtitle mb-0">{{ $canReviewRequests && ! $showMyRequestsTab ? 'Review pending approvals and track employee request outcomes.' : ($canReviewRequests ? 'Review pending approvals, track employee request outcomes, and view your own submissions.' : 'Track your request submissions and outcomes.') }}</p>
         </div>
     </div>
 @endsection
@@ -119,6 +123,7 @@
                         <span class="requests-view-tab-label">Employee requests</span>
                     </button>
                     @endif
+                    @if ($showMyRequestsTab)
                     <button
                         type="button"
                         class="requests-view-tab {{ $canReviewRequests ? '' : 'active' }}"
@@ -133,6 +138,7 @@
                         </span>
                         <span class="requests-view-tab-label">My requests</span>
                     </button>
+                    @endif
                 </div>
 
                 <div class="requests-filters ms-auto">
@@ -200,7 +206,13 @@
             </div>
         </div>
 
-        @include('partials.list-pagination-header', ['perPageId' => 'requestsPerPage'])
+        @include('partials.list-pagination-top', [
+    'infoId' => 'requestsPaginationInfo',
+    'listId' => 'requestsPaginationList',
+    'perPageId' => 'requestsPerPage',
+    'wrapId' => 'requestsPagination',
+    'ariaLabel' => 'Requests pagination',
+])
         <div class="table-responsive">
             <table class="companies-table table mb-0">
                 <thead>

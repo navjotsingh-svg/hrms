@@ -27,6 +27,20 @@ class RequestHubController extends Controller
         return $this->success($this->requestHubService->summaryForUser($request->user()));
     }
 
+    public function stats(Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'date_from' => ['nullable', 'date'],
+            'date_to' => ['nullable', 'date'],
+        ]);
+
+        return $this->success($this->requestHubService->statsForUser(
+            $request->user(),
+            $validated['date_from'] ?? null,
+            $validated['date_to'] ?? null,
+        ));
+    }
+
     public function pending(Request $request): JsonResponse
     {
         $validated = $request->validate([

@@ -16,6 +16,7 @@ use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 use Symfony\Component\HttpKernel\Exception\AccessDeniedHttpException;
+use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
 
 class ExitCaseService
 {
@@ -41,6 +42,7 @@ class ExitCaseService
         private ActivityLogService $activityLogService,
         private WorkflowNotificationService $workflowNotificationService,
         private ExitSurveyQuestionService $exitSurveyQuestionService,
+        private CompanyOrganizationService $companyOrganizationService,
     ) {}
 
     public function listForUser(User $user, array $filters = []): LengthAwarePaginator
@@ -98,11 +100,90 @@ class ExitCaseService
     {
         $request->loadMissing('employee');
 
+        return $this->bootstrapExitCase(
+            (int) $request->company_id,
+            (int) $request->employee_id,
+            $request->approved_last_working_date,
+            'resignation',
+            (int) $request->id,
+        );
+    }
+
+    public function createDirect(User $user, array $data): ExitCase
+    {
+        if (! $user->canManageOffboarding()) {
+            throw new AccessDeniedHttpException('You are not allowed to initiate offboarding.');
+        }
+
+        $employee = Employee::query()
+            ->where('company_id', $user->company_id)
+            ->where('id', (int) $data['employee_id'])
+            ->first();
+
+        if (! $employee) {
+            throw new NotFoundHttpException('Employee not found.');
+        }
+
+        if ($employee->status !== 'active') {
+            throw ValidationException::withMessages([
+                'employee_id' => ['Only active employees can be offboarded.'],
+            ]);
+        }
+
+        $this->companyOrganizationService->assertActorMayOffboardEmployee($user, $employee);
+
+        $hasActiveCase = ExitCase::query()
+            ->where('employee_id', $employee->id)
+            ->where('status', ExitCase::STATUS_IN_PROGRESS)
+            ->exists();
+
+        if ($hasActiveCase) {
+            throw ValidationException::withMessages([
+                'employee_id' => ['This employee already has an active offboarding case.'],
+            ]);
+        }
+
+        $exitType = $data['exit_type'] ?? 'termination';
+
+        return DB::transaction(function () use ($user, $employee, $data, $exitType) {
+            $exitCase = $this->bootstrapExitCase(
+                (int) $user->company_id,
+                (int) $employee->id,
+                $data['last_working_date'],
+                $exitType,
+                null,
+            );
+
+            $this->activityLogService->logWorkflowRequest(
+                $user,
+                'exit_case',
+                $exitCase,
+                (int) $employee->id,
+                'initiated',
+                'Offboarding initiated by HR.',
+                isset($data['notes']) ? trim((string) $data['notes']) : null,
+                request(),
+            );
+
+            $this->workflowNotificationService->notifyOffboardingInitiated($exitCase, $user);
+
+            return $this->showForUser($user, $exitCase);
+        });
+    }
+
+    private function bootstrapExitCase(
+        int $companyId,
+        int $employeeId,
+        $lastWorkingDate,
+        string $exitType,
+        ?int $resignationRequestId,
+    ): ExitCase {
         $exitCase = ExitCase::create([
-            'company_id' => $request->company_id,
-            'employee_id' => $request->employee_id,
-            'resignation_request_id' => $request->id,
-            'last_working_date' => $request->approved_last_working_date,
+            'company_id' => $companyId,
+            'employee_id' => $employeeId,
+            'exit_type' => $exitType,
+            'resignation_request_id' => $resignationRequestId,
+            'last_working_date' => $lastWorkingDate,
             'stage' => ExitCase::STAGE_CLEARANCE,
             'status' => ExitCase::STATUS_IN_PROGRESS,
         ]);
@@ -119,7 +200,7 @@ class ExitCaseService
 
         $assignedAssets = EmployeeAsset::query()
             ->with('assetType')
-            ->where('employee_id', $request->employee_id)
+            ->where('employee_id', $employeeId)
             ->where('is_assigned', true)
             ->get();
 
@@ -134,22 +215,23 @@ class ExitCaseService
 
         ExitSurveyResponse::create([
             'exit_case_id' => $exitCase->id,
-            'employee_id' => $request->employee_id,
+            'employee_id' => $employeeId,
             'responses' => [],
         ]);
 
         FullAndFinalSettlement::create([
             'exit_case_id' => $exitCase->id,
-            'employee_id' => $request->employee_id,
+            'employee_id' => $employeeId,
             'status' => FullAndFinalSettlement::STATUS_DRAFT,
         ]);
 
-        $request->employee?->update([
-            'last_working_date' => $request->approved_last_working_date,
-            'exit_type' => 'resignation',
+        Employee::query()->whereKey($employeeId)->update([
+            'last_working_date' => $lastWorkingDate,
+            'exit_type' => $exitType,
         ]);
 
         return $this->findExitCaseOrFail((int) $exitCase->id, [
+            'employee',
             'clearanceItems',
             'assetReturnItems',
             'surveyResponse',

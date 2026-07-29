@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Mail\PerformanceReviewReminderMail;
 use App\Models\Employee;
 use App\Models\PerformanceReview;
 use App\Models\PerformanceReviewAnswer;
@@ -157,10 +158,30 @@ class PerformanceReviewCycleService
             }
 
             try {
-                Mail::raw(
-                    "Reminder: Please complete your performance review for {$review->reviewee?->full_name} in cycle \"{$cycle->name}\".",
-                    fn ($message) => $message->to($email)->subject("Performance review reminder — {$cycle->name}")
-                );
+                $reviewerName = $review->reviewer?->full_name ?? $review->reviewerUser?->name ?? 'Reviewer';
+                $revieweeName = $review->reviewee?->full_name ?? 'Employee';
+                $statusLabel = match ($review->status) {
+                    PerformanceReview::STATUS_IN_PROGRESS => 'In progress',
+                    default => 'Not started',
+                };
+
+                Mail::to($email)->send(new PerformanceReviewReminderMail(
+                    recipientName: $reviewerName,
+                    cycleName: $cycle->name,
+                    revieweeName: $revieweeName,
+                    actionUrl: route('web.performance.reviews'),
+                    reviewDetails: array_filter([
+                        'Review cycle' => $cycle->name,
+                        'Employee being reviewed' => $revieweeName,
+                        'Assigned reviewer' => $reviewerName,
+                        'Current status' => $statusLabel,
+                        'Cycle period' => collect([
+                            $cycle->period_start?->format('d M Y'),
+                            $cycle->period_end?->format('d M Y'),
+                        ])->filter()->implode(' – '),
+                        'Reminder sent on' => now()->format('d M Y, h:i A'),
+                    ]),
+                ));
                 $sent++;
             } catch (\Throwable $e) {
                 report($e);
@@ -179,8 +200,24 @@ class PerformanceReviewCycleService
         }
 
         return PerformanceReview::query()
-            ->with(['cycle', 'reviewee', 'answers.question'])
+            ->with(['cycle', 'reviewee', 'reviewer', 'answers.question'])
             ->where('reviewer_employee_id', $employee->id)
+            ->whereHas('cycle', fn ($q) => $q->where('company_id', $user->company_id))
+            ->orderByDesc('updated_at')
+            ->get();
+    }
+
+    public function reviewsAboutMe(User $user): Collection
+    {
+        $employee = $this->employeeAccessService->linkedEmployee($user);
+
+        if (! $employee) {
+            return collect();
+        }
+
+        return PerformanceReview::query()
+            ->with(['cycle', 'reviewee', 'reviewer', 'answers.question'])
+            ->where('reviewee_employee_id', $employee->id)
             ->whereHas('cycle', fn ($q) => $q->where('company_id', $user->company_id))
             ->orderByDesc('updated_at')
             ->get();
@@ -239,7 +276,22 @@ class PerformanceReviewCycleService
             throw new NotFoundHttpException('Review not found.');
         }
 
-        return $review->load(['cycle.questions', 'reviewee', 'answers.question']);
+        if (! $user->canManagePerformance()) {
+            $employee = $this->employeeAccessService->linkedEmployee($user);
+
+            if (! $employee) {
+                throw new AccessDeniedHttpException('No employee profile linked to your account.');
+            }
+
+            $isReviewer = (int) $review->reviewer_employee_id === (int) $employee->id;
+            $isReviewee = (int) $review->reviewee_employee_id === (int) $employee->id;
+
+            if (! $isReviewer && ! $isReviewee) {
+                throw new AccessDeniedHttpException('You do not have permission to access this review.');
+            }
+        }
+
+        return $review->load(['cycle.questions', 'reviewee', 'reviewer', 'answers.question']);
     }
 
     private function syncQuestions(PerformanceReviewCycle $cycle, array $questions): void

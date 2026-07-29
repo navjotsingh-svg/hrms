@@ -17,7 +17,6 @@
     <div id="profilePhotoStatus" class="profile-photo-status d-none"></div>
 
     <div class="profile-card-actions">
-        <button type="button" class="btn btn-outline-secondary btn-sm" id="profileEditTabBtn">Edit</button>
         <button type="button" class="btn btn-outline-primary btn-sm" id="profileViewWorkBtn">View more &rarr;</button>
     </div>
 
@@ -36,3 +35,5 @@
         </div>
     </div>
 </div>
+
+@include('partials.profile-photo-crop-modal')

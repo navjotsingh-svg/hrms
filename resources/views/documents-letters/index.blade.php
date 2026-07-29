@@ -80,7 +80,12 @@
                             </div>
                         </div>
                     </div>
-        @include('partials.list-pagination-header', ['perPageId' => 'docLettersPerPage'])
+        @include('partials.list-pagination-top', [
+    'infoId' => 'docLettersPaginationInfo',
+    'listId' => 'docLettersPaginationList',
+    'perPageId' => 'docLettersPerPage',
+    'ariaLabel' => 'Document letters pagination',
+])
         <div class="table-responsive">
                         <table class="companies-table table mb-0">
                             <thead>
@@ -141,7 +146,12 @@
                                 </div>
                             </div>
                         </div>
-        @include('partials.list-pagination-header', ['perPageId' => 'docTemplatesPerPage'])
+        @include('partials.list-pagination-top', [
+    'infoId' => 'docTemplatesPaginationInfo',
+    'listId' => 'docTemplatesPaginationList',
+    'perPageId' => 'docTemplatesPerPage',
+    'ariaLabel' => 'Document templates pagination',
+])
         <div class="table-responsive">
                             <table class="companies-table table mb-0">
                                 <thead>

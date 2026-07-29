@@ -53,6 +53,29 @@ class RequestHubService
         ];
     }
 
+    /** @return array{total: int, pending: int, approved: int, rejected: int, cancelled: int} */
+    public function statsForUser(User $user, ?string $dateFrom = null, ?string $dateTo = null): array
+    {
+        $requests = $this->visibleRequestsForStats($user);
+        $requests = $this->filterByDateRange($requests, $dateFrom, $dateTo);
+
+        $counts = [
+            'total' => 0,
+            'pending' => 0,
+            'approved' => 0,
+            'rejected' => 0,
+            'cancelled' => 0,
+        ];
+
+        foreach ($requests as $request) {
+            $counts['total']++;
+            $bucket = $this->statsStatusBucket($request['status'] ?? '');
+            $counts[$bucket]++;
+        }
+
+        return $counts;
+    }
+
     /** @return array{requests: array<int, array<string, mixed>>, pagination: array<string, int|null>} */
     public function pendingForUserPaginated(User $user, int $page = 1, int $perPage = 5): array
     {
@@ -202,32 +225,79 @@ class RequestHubService
 
         $statuses = $status ? [$status] : ['pending', 'approved', 'rejected', 'cancelled'];
         $items = collect();
+        $viewAll = $this->canViewAllCompanyRequests($user);
 
         if ($user->canApproveLeave()) {
-            LeaveRequest::query()
+            $leaveQuery = LeaveRequest::query()
                 ->with(['employee', 'leaveType', 'appliedBy', 'reviewedBy'])
                 ->where('company_id', $user->company_id)
                 ->whereIn('status', $statuses)
-                ->latest('reviewed_at')
-                ->latest('updated_at')
-                ->limit(100)
-                ->get()
-                ->filter(fn (LeaveRequest $request) => $this->canViewTeamLeave($user, $request))
+                ->orderByDesc('reviewed_at')
+                ->orderByDesc('updated_at');
+
+            if (! $viewAll) {
+                $leaveQuery->limit(100);
+            }
+
+            $leaveQuery->get()
+                ->when(! $viewAll, fn ($collection) => $collection->filter(fn (LeaveRequest $request) => $this->canViewTeamLeave($user, $request)))
                 ->each(function (LeaveRequest $request) use ($user, $items) {
                     $items->push($this->normalizeLeave($request, false, $user));
                 });
         }
 
-        if ($user->canApproveRegularization()) {
-            $requests = AttendanceRegularizationRequest::query()
+        if ($user->canApproveWfh()) {
+            $wfhQuery = WfhRequest::query()
                 ->with(['employee', 'appliedBy', 'reviewedBy'])
                 ->where('company_id', $user->company_id)
                 ->whereIn('status', $statuses)
-                ->latest('reviewed_at')
-                ->latest('updated_at')
-                ->limit(200)
-                ->get()
-                ->filter(fn (AttendanceRegularizationRequest $request) => $this->canViewTeamRegularization($user, $request));
+                ->orderByDesc('reviewed_at')
+                ->orderByDesc('updated_at');
+
+            if (! $viewAll) {
+                $wfhQuery->limit(100);
+            }
+
+            $wfhQuery->get()
+                ->when(! $viewAll, fn ($collection) => $collection->filter(fn (WfhRequest $request) => $user->canViewWfhRequest($request)))
+                ->each(function (WfhRequest $request) use ($user, $items) {
+                    $items->push($this->normalizeWfh($request, false, $user));
+                });
+        }
+
+        if ($user->canApproveAssets()) {
+            $assetQuery = AssetRequest::query()
+                ->with(['employee', 'appliedBy', 'items', 'reviewedBy'])
+                ->where('company_id', $user->company_id)
+                ->whereIn('status', array_merge($statuses, [AssetRequest::STATUS_PARTIALLY_REVIEWED]))
+                ->orderByDesc('reviewed_at')
+                ->orderByDesc('updated_at');
+
+            if (! $viewAll) {
+                $assetQuery->limit(100);
+            }
+
+            $assetQuery->get()
+                ->when(! $viewAll, fn ($collection) => $collection->filter(fn (AssetRequest $request) => $user->canViewAssetRequest($request)))
+                ->each(function (AssetRequest $request) use ($user, $items) {
+                    $items->push($this->normalizeAssetRequest($request, false, $user));
+                });
+        }
+
+        if ($user->canApproveRegularization()) {
+            $regularizationQuery = AttendanceRegularizationRequest::query()
+                ->with(['employee', 'appliedBy', 'reviewedBy'])
+                ->where('company_id', $user->company_id)
+                ->whereIn('status', $statuses)
+                ->orderByDesc('reviewed_at')
+                ->orderByDesc('updated_at');
+
+            if (! $viewAll) {
+                $regularizationQuery->limit(200);
+            }
+
+            $requests = $regularizationQuery->get()
+                ->when(! $viewAll, fn ($collection) => $collection->filter(fn (AttendanceRegularizationRequest $request) => $this->canViewTeamRegularization($user, $request)));
 
             foreach ($this->groupReviewedRegularizations($requests) as $group) {
                 $items->push($this->normalizeRegularizationReviewedGroup($group));
@@ -235,96 +305,56 @@ class RequestHubService
         }
 
         if ($user->canReviewEmployeeDocuments()) {
-            EmployeeDocument::query()
-                ->with(['employee', 'documentType', 'uploadedBy', 'reviewedBy'])
-                ->where('company_id', $user->company_id)
-                ->whereIn('status', $statuses)
-                ->latest('reviewed_at')
-                ->latest('updated_at')
-                ->limit(50)
-                ->get()
-                ->filter(fn (EmployeeDocument $document) => $this->canViewTeamDocument($user, $document))
-                ->each(fn (EmployeeDocument $document) => $items->push($this->normalizeDocument($document, false)));
-
-            EmployeePaymentMethod::query()
-                ->with(['employee', 'submittedBy', 'reviewedBy', 'proofs'])
-                ->where('company_id', $user->company_id)
-                ->whereIn('status', $statuses)
-                ->latest('reviewed_at')
-                ->latest('updated_at')
-                ->limit(50)
-                ->get()
-                ->filter(fn (EmployeePaymentMethod $method) => $this->canViewTeamPaymentMethod($user, $method))
-                ->each(fn (EmployeePaymentMethod $method) => $items->push($this->normalizePaymentMethod($method, false)));
-
-            EmployeeProfilePhoto::query()
-                ->with(['employee', 'submittedBy', 'reviewedBy'])
-                ->where('company_id', $user->company_id)
-                ->whereIn('status', $statuses)
-                ->latest('reviewed_at')
-                ->latest('updated_at')
-                ->limit(50)
-                ->get()
-                ->filter(fn (EmployeeProfilePhoto $photo) => $this->canViewTeamProfilePhoto($user, $photo))
-                ->each(fn (EmployeeProfilePhoto $photo) => $items->push($this->normalizeProfilePhoto($photo, false)));
-
-            EmployeeFamilyMember::query()
-                ->with(['employee', 'submittedBy', 'reviewedBy'])
-                ->where('company_id', $user->company_id)
-                ->whereIn('status', $statuses)
-                ->latest('reviewed_at')
-                ->latest('updated_at')
-                ->limit(50)
-                ->get()
-                ->filter(fn (EmployeeFamilyMember $member) => $this->canViewTeamFamilyMember($user, $member))
-                ->each(fn (EmployeeFamilyMember $member) => $items->push($this->normalizeFamilyMember($member, false)));
-
-            EmployeePersonalSection::query()
-                ->with(['employee', 'submittedBy', 'reviewedBy'])
-                ->where('company_id', $user->company_id)
-                ->whereIn('status', $statuses)
-                ->latest('reviewed_at')
-                ->latest('updated_at')
-                ->limit(50)
-                ->get()
-                ->filter(fn (EmployeePersonalSection $section) => $this->canViewTeamPersonalSection($user, $section))
-                ->each(fn (EmployeePersonalSection $section) => $items->push($this->normalizePersonalSection($section, false)));
-
-            EmployeeComplianceField::query()
-                ->with(['employee', 'submittedBy', 'reviewedBy'])
-                ->where('company_id', $user->company_id)
-                ->whereIn('status', $statuses)
-                ->latest('reviewed_at')
-                ->latest('updated_at')
-                ->limit(50)
-                ->get()
-                ->filter(fn (EmployeeComplianceField $field) => $this->canViewTeamComplianceField($user, $field))
-                ->each(fn (EmployeeComplianceField $field) => $items->push($this->normalizeComplianceField($field, false)));
+            $this->appendTeamEmployeeDocumentRequests($user, $items, $statuses, $viewAll);
         }
 
         if ($user->canApproveExpenses()) {
-            Expense::query()
+            $expenseQuery = Expense::query()
                 ->with(['employee', 'expenseType', 'reviewedBy'])
                 ->where('company_id', $user->company_id)
                 ->where('is_independent', true)
                 ->whereIn('status', $statuses)
-                ->latest('reviewed_at')
-                ->latest('updated_at')
-                ->limit(50)
-                ->get()
-                ->filter(fn (Expense $expense) => $this->canViewTeamExpense($user, $expense))
+                ->orderByDesc('reviewed_at')
+                ->orderByDesc('updated_at');
+
+            if (! $viewAll) {
+                $expenseQuery->limit(50);
+            }
+
+            $expenseQuery->get()
+                ->when(! $viewAll, fn ($collection) => $collection->filter(fn (Expense $expense) => $this->canViewTeamExpense($user, $expense)))
                 ->each(fn (Expense $expense) => $items->push($this->normalizeExpense($expense, false, $user)));
 
-            ExpenseGroup::query()
+            $groupQuery = ExpenseGroup::query()
                 ->with(['employee', 'expenses.expenseType', 'reviewedBy'])
                 ->where('company_id', $user->company_id)
                 ->whereIn('status', $statuses)
-                ->latest('reviewed_at')
-                ->latest('updated_at')
-                ->limit(50)
-                ->get()
-                ->filter(fn (ExpenseGroup $group) => $this->canViewTeamExpenseGroup($user, $group))
+                ->orderByDesc('reviewed_at')
+                ->orderByDesc('updated_at');
+
+            if (! $viewAll) {
+                $groupQuery->limit(50);
+            }
+
+            $groupQuery->get()
+                ->when(! $viewAll, fn ($collection) => $collection->filter(fn (ExpenseGroup $group) => $this->canViewTeamExpenseGroup($user, $group)))
                 ->each(fn (ExpenseGroup $group) => $items->push($this->normalizeExpenseGroup($group, false, $user)));
+        }
+
+        if ($user->canApproveRequisitions()) {
+            $requisitionQuery = JobRequisition::query()
+                ->with(['department', 'requestedBy', 'approver'])
+                ->where('company_id', $user->company_id)
+                ->whereIn('status', $statuses)
+                ->orderByDesc('updated_at');
+
+            if (! $viewAll) {
+                $requisitionQuery->limit(50);
+            }
+
+            $requisitionQuery->get()->each(function (JobRequisition $requisition) use ($user, $items) {
+                $items->push($this->normalizeJobRequisition($requisition, false, $user));
+            });
         }
 
         return $items
@@ -572,11 +602,62 @@ class RequestHubService
     {
         $request->loadMissing('employee');
 
+        if ($this->canViewAllCompanyRequests($user)) {
+            return (int) $request->company_id === (int) $user->company_id;
+        }
+
         if (! $this->canViewTeamEmployeeRequest($user, $request->employee)) {
             return false;
         }
 
         return $user->canViewLeaveRequest($request);
+    }
+
+    private function canViewAllCompanyRequests(User $user): bool
+    {
+        return $user->isCompanyAdmin() || $user->isHrManager();
+    }
+
+    /** @return array<int, array<string, mixed>> */
+    private function visibleRequestsForStats(User $user): array
+    {
+        if ($this->canReviewAny($user)) {
+            return $this->teamForUser($user, null);
+        }
+
+        return $this->mineForUser($user, null);
+    }
+
+    /** @param  array<int, array<string, mixed>>  $requests */
+    private function dedupeRequests(array $requests): array
+    {
+        $map = [];
+
+        foreach ($requests as $request) {
+            $key = $request['key'] ?? (($request['category'] ?? 'request').':'.($request['entity_id'] ?? '').':'.($request['batch_id'] ?? ''));
+
+            if (! isset($map[$key])) {
+                $map[$key] = $request;
+
+                continue;
+            }
+
+            if ($this->statsStatusBucket($request['status'] ?? '') === 'pending'
+                && $this->statsStatusBucket($map[$key]['status'] ?? '') !== 'pending') {
+                $map[$key] = $request;
+            }
+        }
+
+        return array_values($map);
+    }
+
+    private function statsStatusBucket(string $status): string
+    {
+        if (in_array($status, ['pending', 'partially_reviewed', 'draft'], true)) {
+            return 'pending';
+        }
+
+        return in_array($status, ['approved', 'rejected', 'cancelled'], true) ? $status : 'pending';
     }
 
     private function canViewTeamRegularization(User $user, AttendanceRegularizationRequest $request): bool
@@ -588,6 +669,100 @@ class RequestHubService
         }
 
         return $user->canManageRegularization();
+    }
+
+    /** @param  Collection<int, array<string, mixed>>  $items */
+    private function appendTeamEmployeeDocumentRequests(User $user, Collection $items, array $statuses, bool $viewAll): void
+    {
+        $documentQuery = EmployeeDocument::query()
+            ->with(['employee', 'documentType', 'uploadedBy', 'reviewedBy'])
+            ->where('company_id', $user->company_id)
+            ->whereIn('status', $statuses)
+            ->latest('reviewed_at')
+            ->latest('updated_at');
+
+        if (! $viewAll) {
+            $documentQuery->limit(50);
+        }
+
+        $documentQuery->get()
+            ->filter(fn (EmployeeDocument $document) => $this->canViewTeamDocument($user, $document))
+            ->each(fn (EmployeeDocument $document) => $items->push($this->normalizeDocument($document, false)));
+
+        $paymentMethodQuery = EmployeePaymentMethod::query()
+            ->with(['employee', 'submittedBy', 'reviewedBy', 'proofs'])
+            ->where('company_id', $user->company_id)
+            ->whereIn('status', $statuses)
+            ->latest('reviewed_at')
+            ->latest('updated_at');
+
+        if (! $viewAll) {
+            $paymentMethodQuery->limit(50);
+        }
+
+        $paymentMethodQuery->get()
+            ->filter(fn (EmployeePaymentMethod $method) => $this->canViewTeamPaymentMethod($user, $method))
+            ->each(fn (EmployeePaymentMethod $method) => $items->push($this->normalizePaymentMethod($method, false)));
+
+        $profilePhotoQuery = EmployeeProfilePhoto::query()
+            ->with(['employee', 'submittedBy', 'reviewedBy'])
+            ->where('company_id', $user->company_id)
+            ->whereIn('status', $statuses)
+            ->latest('reviewed_at')
+            ->latest('updated_at');
+
+        if (! $viewAll) {
+            $profilePhotoQuery->limit(50);
+        }
+
+        $profilePhotoQuery->get()
+            ->filter(fn (EmployeeProfilePhoto $photo) => $this->canViewTeamProfilePhoto($user, $photo))
+            ->each(fn (EmployeeProfilePhoto $photo) => $items->push($this->normalizeProfilePhoto($photo, false)));
+
+        $familyMemberQuery = EmployeeFamilyMember::query()
+            ->with(['employee', 'submittedBy', 'reviewedBy'])
+            ->where('company_id', $user->company_id)
+            ->whereIn('status', $statuses)
+            ->latest('reviewed_at')
+            ->latest('updated_at');
+
+        if (! $viewAll) {
+            $familyMemberQuery->limit(50);
+        }
+
+        $familyMemberQuery->get()
+            ->filter(fn (EmployeeFamilyMember $member) => $this->canViewTeamFamilyMember($user, $member))
+            ->each(fn (EmployeeFamilyMember $member) => $items->push($this->normalizeFamilyMember($member, false)));
+
+        $personalSectionQuery = EmployeePersonalSection::query()
+            ->with(['employee', 'submittedBy', 'reviewedBy'])
+            ->where('company_id', $user->company_id)
+            ->whereIn('status', $statuses)
+            ->latest('reviewed_at')
+            ->latest('updated_at');
+
+        if (! $viewAll) {
+            $personalSectionQuery->limit(50);
+        }
+
+        $personalSectionQuery->get()
+            ->filter(fn (EmployeePersonalSection $section) => $this->canViewTeamPersonalSection($user, $section))
+            ->each(fn (EmployeePersonalSection $section) => $items->push($this->normalizePersonalSection($section, false)));
+
+        $complianceFieldQuery = EmployeeComplianceField::query()
+            ->with(['employee', 'submittedBy', 'reviewedBy'])
+            ->where('company_id', $user->company_id)
+            ->whereIn('status', $statuses)
+            ->latest('reviewed_at')
+            ->latest('updated_at');
+
+        if (! $viewAll) {
+            $complianceFieldQuery->limit(50);
+        }
+
+        $complianceFieldQuery->get()
+            ->filter(fn (EmployeeComplianceField $field) => $this->canViewTeamComplianceField($user, $field))
+            ->each(fn (EmployeeComplianceField $field) => $items->push($this->normalizeComplianceField($field, false)));
     }
 
     private function canViewTeamDocument(User $user, EmployeeDocument $document): bool
@@ -1660,11 +1835,17 @@ class RequestHubService
         }
 
         if ($section->section_type === 'emergency_contact') {
-            return array_values(array_filter([
-                ['label' => 'Name', 'value' => $payload['name'] ?? null],
-                ['label' => 'Relation', 'value' => $payload['relation'] ?? null],
-                ['label' => 'Phone', 'value' => $payload['phone'] ?? null],
-            ], fn (array $field) => filled($field['value'] ?? null)));
+            $contacts = \App\Support\EmergencyContactPayload::normalize($payload)['contacts'];
+
+            return collect($contacts)->flatMap(function (array $contact, int $index) use ($contacts) {
+                $prefix = count($contacts) > 1 ? 'Contact '.($index + 1).' — ' : '';
+
+                return array_values(array_filter([
+                    ['label' => $prefix.'Name', 'value' => $contact['name'] ?? null],
+                    ['label' => $prefix.'Relation', 'value' => $contact['relation'] ?? null],
+                    ['label' => $prefix.'Phone', 'value' => implode(', ', $contact['phones'] ?? []) ?: null],
+                ], fn (array $field) => filled($field['value'] ?? null)));
+            })->values()->all();
         }
 
         return [];

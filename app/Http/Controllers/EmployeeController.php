@@ -2,6 +2,9 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\Employee;
+use Illuminate\Support\Facades\Auth;
+
 class EmployeeController extends Controller
 {
     public function index()
@@ -21,7 +24,18 @@ class EmployeeController extends Controller
 
     public function show(int $employee)
     {
-        return view('employees.show', ['employeeId' => $employee]);
+        $employeeModel = Employee::query()->findOrFail($employee);
+        $user = Auth::user();
+
+        abort_if(
+            (int) $employeeModel->company_id !== (int) $user->company_id,
+            404
+        );
+
+        return view('employees.show', [
+            'employeeId' => $employee,
+            'canInlineEditProfile' => $user->canEditEmployeeProfileWithoutApproval($employeeModel),
+        ]);
     }
 
     public function edit(int $employee)

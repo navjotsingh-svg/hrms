@@ -16,7 +16,12 @@
                 </div>
             </div>
         </div>
-        @include('partials.list-pagination-header', ['perPageId' => 'interviewsPerPage'])
+        @include('partials.list-pagination-top', [
+    'infoId' => 'interviewsPaginationInfo',
+    'listId' => 'interviewsPaginationList',
+    'perPageId' => 'interviewsPerPage',
+    'ariaLabel' => 'Interviews pagination',
+])
         <div class="table-responsive">
             <table class="companies-table table mb-0">
                 <thead>

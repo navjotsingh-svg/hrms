@@ -23,6 +23,10 @@ const typeIcon = (type) => {
         case 'profile_photo_submitted':
         case 'profile_photo_decision':
             return '📷';
+        case 'probation_completed':
+            return '✅';
+        case 'probation_ending_soon':
+            return '⏳';
         default:
             return '🔔';
     }

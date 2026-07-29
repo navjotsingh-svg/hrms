@@ -19,7 +19,12 @@
                 </div>
             </div>
         </div>
-        @include('partials.list-pagination-header', ['perPageId' => 'feedbackFormsPerPage'])
+        @include('partials.list-pagination-top', [
+    'infoId' => 'feedbackFormsPaginationInfo',
+    'listId' => 'feedbackFormsPaginationList',
+    'perPageId' => 'feedbackFormsPerPage',
+    'ariaLabel' => 'Feedback forms pagination',
+])
         <div class="table-responsive">
             <table class="companies-table table mb-0">
                 <thead>

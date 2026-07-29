@@ -14,7 +14,12 @@
                 </div>
             </div>
         </div>
-        @include('partials.list-pagination-header', ['perPageId' => 'questionBankPerPage'])
+        @include('partials.list-pagination-top', [
+    'infoId' => 'questionBankPaginationInfo',
+    'listId' => 'questionBankPaginationList',
+    'perPageId' => 'questionBankPerPage',
+    'ariaLabel' => 'Question bank pagination',
+])
         <div class="table-responsive">
             <table class="companies-table table mb-0">
                 <thead>

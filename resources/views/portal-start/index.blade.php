@@ -47,11 +47,25 @@
                 </div>
 
                 <div class="col-lg-8 mt-2 pt-4 border-top">
-                    <h2 class="h5 mb-2">Face Verification Settings</h2>
+                    <h2 class="h5 mb-2">Attendance Punch Settings</h2>
                     <p class="text-muted mb-3">
-                        Set the minimum face match percentage required when employees mark attendance.
-                        Leave blank to use the system default (<span id="attendanceFaceDefaultThreshold">80</span>%).
+                        Control whether employees must capture a photo and match their face when punching in or out.
                     </p>
+
+                    <div class="form-check mb-3">
+                        <input
+                            class="form-check-input"
+                            type="checkbox"
+                            id="attendance_require_punch_photo"
+                            name="attendance_require_punch_photo"
+                        >
+                        <label class="form-check-label" for="attendance_require_punch_photo">
+                            Require photo when punching in/out
+                        </label>
+                        <div class="form-text">
+                            When disabled, only location is required — no camera photo is captured.
+                        </div>
+                    </div>
 
                     <div class="mb-3">
                         <label for="attendance_face_match_threshold" class="form-label">Required face match (%)</label>
@@ -63,9 +77,9 @@
                             min="1"
                             max="100"
                             step="1"
-                            placeholder="e.g. 80"
+                            placeholder="e.g. 90"
                         >
-                        <div class="form-text">Target match percentage when face recognition is enabled.</div>
+                        <div class="form-text">Leave blank to use the system default (<span id="attendanceFaceDefaultThreshold">90</span>%).</div>
                     </div>
 
                     <div class="form-check mb-3">
@@ -79,13 +93,80 @@
                             Require face match to punch in/out
                         </label>
                         <div class="form-text">
-                            When enabled, employees must match their profile photo at or above the percentage above.
-                            When disabled, attendance uses a camera photo only — no face recognition runs.
+                            When enabled, the punch photo must match the employee's approved profile photo.
+                            Only applies when photo capture is required.
                         </div>
                     </div>
 
                     <div class="d-flex flex-wrap gap-2">
-                        <button type="button" class="btn btn-outline-primary" id="attendanceFaceSaveBtn">Save Face Settings</button>
+                        <button type="button" class="btn btn-outline-primary" id="attendanceFaceSaveBtn">Save Punch Settings</button>
+                    </div>
+                </div>
+
+                <div class="col-lg-8 mt-2 pt-4 border-top">
+                    <h2 class="h5 mb-2">Regularization Policy</h2>
+                    <p class="text-muted mb-3">
+                        Control how far back employees can regularize attendance, whether today can be corrected before shift completion, and monthly request limits.
+                    </p>
+
+                    <div class="form-check mb-3">
+                        <input
+                            class="form-check-input"
+                            type="checkbox"
+                            id="attendance_regularization_enabled"
+                            name="attendance_regularization_enabled"
+                            checked
+                        >
+                        <label class="form-check-label" for="attendance_regularization_enabled">
+                            Allow employees to request attendance regularization
+                        </label>
+                    </div>
+
+                    <div class="mb-3">
+                        <label for="attendance_regularization_previous_month_cutoff_day" class="form-label">Previous month cutoff day</label>
+                        <input
+                            type="number"
+                            class="form-control"
+                            id="attendance_regularization_previous_month_cutoff_day"
+                            name="attendance_regularization_previous_month_cutoff_day"
+                            min="1"
+                            max="28"
+                            step="1"
+                            placeholder="e.g. 2"
+                        >
+                        <div class="form-text">Employees can regularize the previous month only until this day of the current month (default: 2).</div>
+                    </div>
+
+                    <div class="mb-3">
+                        <label for="attendance_regularization_max_requests_per_month" class="form-label">Max regularization days per employee / month</label>
+                        <input
+                            type="number"
+                            class="form-control"
+                            id="attendance_regularization_max_requests_per_month"
+                            name="attendance_regularization_max_requests_per_month"
+                            min="1"
+                            max="100"
+                            step="1"
+                            placeholder="e.g. 5"
+                        >
+                        <div class="form-text">Leave blank to use the system default. Each day in a submission counts toward this monthly limit (pending and approved days are included).</div>
+                    </div>
+
+                    <div class="form-check mb-3">
+                        <input
+                            class="form-check-input"
+                            type="checkbox"
+                            id="attendance_regularization_block_current_day_until_complete"
+                            name="attendance_regularization_block_current_day_until_complete"
+                            checked
+                        >
+                        <label class="form-check-label" for="attendance_regularization_block_current_day_until_complete">
+                            Block today until required working hours are completed
+                        </label>
+                    </div>
+
+                    <div class="d-flex flex-wrap gap-2">
+                        <button type="button" class="btn btn-outline-primary" id="attendanceRegularizationSaveBtn">Save Regularization Policy</button>
                     </div>
                 </div>
 

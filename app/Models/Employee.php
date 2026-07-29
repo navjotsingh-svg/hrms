@@ -65,6 +65,7 @@ class Employee extends Model
         'emergency_contact_phone',
         'emergency_contact_relation',
         'emergency_contact_family_member_id',
+        'emergency_contacts',
     ];
 
     protected function casts(): array
@@ -78,6 +79,7 @@ class Employee extends Model
             'is_paid_employee' => 'boolean',
             'probation_end_date' => 'date',
             'profile_face_descriptor' => 'array',
+            'emergency_contacts' => 'array',
         ];
     }
 

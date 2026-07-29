@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api\V1;
 use App\Http\Controllers\Controller;
 use App\Http\Concerns\ApiResponse;
 use App\Models\Employee;
+use App\Models\Goal;
 use App\Models\PerformanceKpi;
 use App\Services\PerformanceKpiService;
 use Illuminate\Http\JsonResponse;
@@ -64,7 +65,11 @@ class PerformanceKpiController extends Controller
 
     public function update(Request $request, PerformanceKpi $performanceKpi): JsonResponse
     {
-        $validated = $this->validatePayload($request, false);
+        $validated = $request->user()->canManagePerformance()
+            ? $this->validatePayload($request, false)
+            : $request->validate([
+                'current_value' => ['required', 'numeric', 'min:0'],
+            ]);
 
         $kpi = $this->kpiService->update($request->user(), $performanceKpi, $validated);
 
@@ -99,6 +104,20 @@ class PerformanceKpiController extends Controller
 
     private function formatKpi(PerformanceKpi $kpi): array
     {
+        $kpi->loadMissing('linkedKeyResults.goal');
+
+        $linkedGoals = $kpi->linkedKeyResults
+            ->map(fn ($keyResult) => $keyResult->goal)
+            ->filter()
+            ->unique('id')
+            ->values()
+            ->map(fn (Goal $goal) => [
+                'id' => $goal->id,
+                'title' => $goal->title,
+                'progress' => (float) $goal->progress,
+                'level' => $goal->level,
+            ]);
+
         return [
             'id' => $kpi->id,
             'title' => $kpi->title,
@@ -111,6 +130,8 @@ class PerformanceKpiController extends Controller
             'period_end' => $kpi->period_end?->toDateString(),
             'status' => $kpi->status,
             'progress_percent' => $kpi->progressPercent(),
+            'linked_tasks_count' => $kpi->linkedKeyResults->count(),
+            'linked_goals' => $linkedGoals,
             'employee' => $this->employeeBrief($kpi->employee),
             'created_at' => $kpi->created_at?->toIso8601String(),
             'updated_at' => $kpi->updated_at?->toIso8601String(),

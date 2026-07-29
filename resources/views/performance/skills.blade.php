@@ -23,7 +23,12 @@
                         </div>
                     </div>
                 </div>
-                @include('partials.list-pagination-header', ['perPageId' => 'skillProfilesPerPage'])
+                @include('partials.list-pagination-top', [
+    'infoId' => 'skillProfilesPaginationInfo',
+    'listId' => 'skillProfilesPaginationList',
+    'perPageId' => 'skillProfilesPerPage',
+    'ariaLabel' => 'Skill profiles pagination',
+])
                 <div class="table-responsive">
                     <table class="companies-table table mb-0">
                         <thead>
@@ -62,7 +67,12 @@
                         </div>
                     </div>
                 </div>
-                @include('partials.list-pagination-header', ['perPageId' => 'competenciesPerPage'])
+                @include('partials.list-pagination-top', [
+    'infoId' => 'competenciesPaginationInfo',
+    'listId' => 'competenciesPaginationList',
+    'perPageId' => 'competenciesPerPage',
+    'ariaLabel' => 'Competencies pagination',
+])
                 <div class="table-responsive">
                     <table class="companies-table table mb-0">
                         <thead>

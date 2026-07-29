@@ -7,7 +7,7 @@ import {
     bulkReviewRequests,
     renderRequestActions,
 } from './request-review';
-import { bindPagination, bindPerPageSelect, paginateArray, readPerPage, renderListPagination } from './pagination';
+import { bindPagination, bindPerPageSelect, paginateArray, readPerPage, renderListPagination, setPaginationWrapVisible } from './pagination';
 import { renderEmployeeNameBlock } from './request-display';
 import { prependAutoDismissAlert } from './form-utils';
 
@@ -193,7 +193,7 @@ const renderPendingApprovals = (items = [], pagination = null, showSection = tru
 
     if (!items.length) {
         body.innerHTML = '<tr><td colspan="6" class="text-center text-muted py-4">Well done. No request approvals.</td></tr>';
-        paginationWrap?.classList.add('d-none');
+        setPaginationWrapVisible(paginationWrap, false);
         selectedPendingKeys.clear();
         updatePendingBulkBar();
         updatePendingSelectAll();
@@ -218,7 +218,7 @@ const renderPendingApprovals = (items = [], pagination = null, showSection = tru
     }).join('');
 
     if (activePagination && activePagination.total > 0) {
-        paginationWrap?.classList.remove('d-none');
+        setPaginationWrapVisible(paginationWrap, true);
         renderListPagination({
             infoEl: paginationInfo,
             listEl: paginationList,
@@ -228,7 +228,7 @@ const renderPendingApprovals = (items = [], pagination = null, showSection = tru
             emptyMessage: 'No pending requests',
         });
     } else {
-        paginationWrap?.classList.add('d-none');
+        setPaginationWrapVisible(paginationWrap, false);
     }
 
     updatePendingBulkBar();
@@ -255,7 +255,7 @@ const renderMyRequests = (items = [], showSection = true, page = myRequestsPage)
 
     if (!pageItems.length) {
         body.innerHTML = '<tr><td colspan="5" class="text-center text-muted py-4">No requests submitted yet.</td></tr>';
-        paginationWrap?.classList.add('d-none');
+        setPaginationWrapVisible(paginationWrap, false);
         return;
     }
 
@@ -270,7 +270,7 @@ const renderMyRequests = (items = [], showSection = true, page = myRequestsPage)
     `).join('');
 
     if (pagination.total > 0) {
-        paginationWrap?.classList.remove('d-none');
+        setPaginationWrapVisible(paginationWrap, true);
         renderListPagination({
             infoEl: paginationInfo,
             listEl: paginationList,
@@ -280,7 +280,7 @@ const renderMyRequests = (items = [], showSection = true, page = myRequestsPage)
             emptyMessage: 'No requests submitted yet.',
         });
     } else {
-        paginationWrap?.classList.add('d-none');
+        setPaginationWrapVisible(paginationWrap, false);
     }
 };
 
@@ -614,4 +614,63 @@ document.addEventListener('DOMContentLoaded', async () => {
             window.clearInterval(clockTimer);
         }
     });
+
+    const scrollToHomeSection = () => {
+        const hash = window.location.hash;
+
+        if (!hash) {
+            return;
+        }
+
+        const section = document.querySelector(hash);
+
+        if (section) {
+            section.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }
+    };
+
+    scrollToHomeSection();
+    window.addEventListener('hashchange', scrollToHomeSection);
+
+    const sectionNav = document.querySelector('.home-section-nav');
+
+    if (sectionNav) {
+        const navLinks = Array.from(sectionNav.querySelectorAll('.home-section-nav__link'));
+        const sections = navLinks
+            .map((link) => document.querySelector(link.getAttribute('href')))
+            .filter(Boolean);
+
+        const setActiveNav = (id) => {
+            navLinks.forEach((link) => {
+                link.classList.toggle('is-active', link.getAttribute('href') === `#${id}`);
+            });
+        };
+
+        if (sections.length) {
+            const observer = new IntersectionObserver((entries) => {
+                const visible = entries
+                    .filter((entry) => entry.isIntersecting)
+                    .sort((a, b) => b.intersectionRatio - a.intersectionRatio);
+
+                if (visible[0]?.target?.id) {
+                    setActiveNav(visible[0].target.id);
+                }
+            }, {
+                rootMargin: '-20% 0px -55% 0px',
+                threshold: [0.1, 0.25, 0.5],
+            });
+
+            sections.forEach((section) => observer.observe(section));
+        }
+
+        navLinks.forEach((link) => {
+            link.addEventListener('click', () => {
+                const href = link.getAttribute('href');
+
+                if (href?.startsWith('#')) {
+                    setActiveNav(href.slice(1));
+                }
+            });
+        });
+    }
 });

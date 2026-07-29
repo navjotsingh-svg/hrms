@@ -2,12 +2,15 @@
 
 namespace App\Http\Middleware;
 
+use App\Services\CompanyOrganizationService;
 use Closure;
 use Illuminate\Http\Request;
 use Symfony\Component\HttpFoundation\Response;
 
 class EnsureCompanyAdmin
 {
+    public function __construct(private CompanyOrganizationService $companyOrganizationService) {}
+
     public function handle(Request $request, Closure $next): Response
     {
         $user = $request->user();
@@ -19,6 +22,10 @@ class EnsureCompanyAdmin
 
         if ($user->company?->status === 'inactive') {
             abort(403, 'Your company account is inactive. Please contact support.');
+        }
+
+        if (! $this->companyOrganizationService->hasActiveAdministrator((int) $user->company_id)) {
+            abort(403, $this->companyOrganizationService->organizationUnavailableMessage());
         }
 
         if (! $user->hasFullAccess()) {

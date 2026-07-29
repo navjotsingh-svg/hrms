@@ -1,10 +1,28 @@
 import Human from '@vladmandic/human';
 
-const MODEL_BASE = 'https://cdn.jsdelivr.net/npm/@vladmandic/human/models';
+const MODEL_BASE = 'https://cdn.jsdelivr.net/npm/@vladmandic/human@3.3.6/models/';
+export const FACE_EMBEDDING_MODEL = 'faceres';
+export const DEFAULT_FACE_MATCH_THRESHOLD = 90;
 
-const humanConfig = {
-    backend: 'webgl',
+const MATCH_OPTIONS = {
+    order: 2,
+    multiplier: 25,
+    min: 0.2,
+    max: 0.8,
+};
+
+/** Live webcam vs approved profile photo typically scores ~0.38–0.50 raw with faceres. */
+const ATTENDANCE_MATCH_FLOOR = 0.34;
+const ATTENDANCE_MATCH_CEILING = 0.48;
+const LIVE_MATCH_FRAME_WINDOW = 8;
+
+const BACKENDS = ['webgl', 'wasm', 'cpu'];
+
+const buildHumanConfig = (backend) => ({
+    backend,
     modelBasePath: MODEL_BASE,
+    warmup: 'face',
+    cacheSensitivity: 0.01,
     filter: {
         enabled: true,
         equalization: true,
@@ -15,10 +33,14 @@ const humanConfig = {
         detector: {
             enabled: true,
             maxDetected: 1,
-            minConfidence: 0.45,
+            minConfidence: 0.4,
             rotation: true,
         },
-        description: { enabled: true },
+        description: {
+            enabled: true,
+            modelPath: 'faceres.json',
+        },
+        insightface: { enabled: false },
         mesh: { enabled: false },
         iris: { enabled: false },
         emotion: { enabled: false },
@@ -29,21 +51,55 @@ const humanConfig = {
     gesture: { enabled: false },
     object: { enabled: false },
     segmentation: { enabled: false },
-};
+});
 
 let humanInstance = null;
 let modelsPromise = null;
 let profileDescriptorCache = null;
 let profileDescriptorSource = null;
+let storedProfileDescriptor = null;
+const recentLiveRawScores = [];
+
+const resolveAssetUrl = (url) => {
+    if (!url) {
+        return url;
+    }
+
+    if (/^(?:https?:|blob:)/i.test(url)) {
+        return url;
+    }
+
+    return new URL(url.startsWith('/') ? url : `/${url}`, window.location.origin).href;
+};
+
+const createHumanWithFallback = async () => {
+    let lastError = null;
+
+    for (const backend of BACKENDS) {
+        try {
+            const instance = new Human(buildHumanConfig(backend));
+            await instance.load();
+            return instance;
+        } catch (error) {
+            lastError = error;
+        }
+    }
+
+    throw lastError || new Error('Unable to initialize face recognition models.');
+};
 
 const getHuman = async () => {
     if (!humanInstance) {
-        humanInstance = new Human(humanConfig);
-        modelsPromise = humanInstance.load().catch((error) => {
-            modelsPromise = null;
-            humanInstance = null;
-            throw error;
-        });
+        modelsPromise = createHumanWithFallback()
+            .then((instance) => {
+                humanInstance = instance;
+                return instance;
+            })
+            .catch((error) => {
+                modelsPromise = null;
+                humanInstance = null;
+                throw error;
+            });
     }
 
     await modelsPromise;
@@ -56,38 +112,158 @@ const loadImage = (url) => new Promise((resolve, reject) => {
     image.crossOrigin = 'anonymous';
     image.onload = () => resolve(image);
     image.onerror = () => reject(new Error('Unable to load profile photo for face verification.'));
-    image.src = url;
+    image.src = resolveAssetUrl(url);
 });
 
 export const ensureFaceModelsLoaded = () => getHuman();
 
+export const setStoredProfileDescriptor = (descriptor) => {
+    if (Array.isArray(descriptor) && descriptor.length >= 64) {
+        storedProfileDescriptor = descriptor.map(Number);
+        return;
+    }
+
+    storedProfileDescriptor = null;
+};
+
+export const resetLiveMatchHistory = () => {
+    recentLiveRawScores.length = 0;
+};
+
+export const rawSimilarityBetweenDescriptors = async (profileDescriptor, selfieDescriptor) => {
+    const human = await getHuman();
+    const rawSimilarity = human.match.similarity(profileDescriptor, selfieDescriptor, MATCH_OPTIONS);
+
+    if (Number.isFinite(rawSimilarity) && rawSimilarity > 0) {
+        return rawSimilarity;
+    }
+
+    return cosineSimilarityRatio(profileDescriptor, selfieDescriptor);
+};
+
+export const toAttendanceMatchPercent = (rawSimilarity) => {
+    if (!Number.isFinite(rawSimilarity) || rawSimilarity <= 0) {
+        return 0;
+    }
+
+    const scaled = (rawSimilarity - ATTENDANCE_MATCH_FLOOR)
+        / (ATTENDANCE_MATCH_CEILING - ATTENDANCE_MATCH_FLOOR);
+
+    return Math.max(0, Math.min(100, Math.round(scaled * 100)));
+};
+
+const rememberLiveRawScore = (rawSimilarity) => {
+    if (!Number.isFinite(rawSimilarity) || rawSimilarity <= 0) {
+        return rawSimilarity;
+    }
+
+    recentLiveRawScores.push(rawSimilarity);
+
+    if (recentLiveRawScores.length > LIVE_MATCH_FRAME_WINDOW) {
+        recentLiveRawScores.shift();
+    }
+
+    return Math.max(...recentLiveRawScores);
+};
+
+const captureVideoFrame = (videoElement) => {
+    const width = videoElement.videoWidth;
+    const height = videoElement.videoHeight;
+
+    if (!width || !height) {
+        return null;
+    }
+
+    const canvas = document.createElement('canvas');
+    canvas.width = width;
+    canvas.height = height;
+
+    const context = canvas.getContext('2d', { willReadFrequently: true });
+
+    if (!context) {
+        return null;
+    }
+
+    context.drawImage(videoElement, 0, 0, width, height);
+
+    return canvas;
+};
+
+const normalizeDetectInput = (input) => {
+    if (input instanceof HTMLVideoElement) {
+        return captureVideoFrame(input) || input;
+    }
+
+    return input;
+};
+
 const detectDescriptor = async (input) => {
     const human = await getHuman();
-    const result = await human.detect(input);
+    const detectInput = normalizeDetectInput(input);
+
+    if (!detectInput) {
+        return null;
+    }
+
+    const result = await human.detect(detectInput);
     const face = result.face?.[0];
 
     return face?.embedding?.length ? face.embedding : null;
 };
 
+export const cosineSimilarityRatio = (descriptorA, descriptorB) => {
+    const length = Math.min(descriptorA.length, descriptorB.length);
+
+    if (length < 64) {
+        return 0;
+    }
+
+    let sum = 0;
+
+    for (let index = 0; index < length; index += 1) {
+        const diff = descriptorA[index] - descriptorB[index];
+        sum += diff * diff;
+    }
+
+    const distance = Math.round(100 * MATCH_OPTIONS.multiplier * sum) / 100;
+
+    if (distance === 0) {
+        return 1;
+    }
+
+    const root = Math.sqrt(distance);
+    const normalized = (1 - (root / 100) - MATCH_OPTIONS.min) / (MATCH_OPTIONS.max - MATCH_OPTIONS.min);
+
+    return Math.max(0, Math.min(1, Math.round(normalized * 100) / 100));
+};
+
 export const similarityFromRatio = (similarityRatio) => Math.max(0, Math.min(100, Math.round(similarityRatio * 100)));
 
-export const compareDescriptors = (human, profileDescriptor, selfieDescriptor, threshold = 80) => {
-    const similarityRatio = human.match.similarity(profileDescriptor, selfieDescriptor);
-    const similarity = similarityFromRatio(similarityRatio);
+export const compareDescriptors = async (profileDescriptor, selfieDescriptor, threshold = DEFAULT_FACE_MATCH_THRESHOLD) => {
+    const rawSimilarity = await rawSimilarityBetweenDescriptors(profileDescriptor, selfieDescriptor);
+    const smoothedRawSimilarity = rememberLiveRawScore(rawSimilarity);
+    const similarity = toAttendanceMatchPercent(smoothedRawSimilarity);
 
     return {
-        distance: 1 - similarityRatio,
+        distance: 1 - smoothedRawSimilarity,
         similarity,
+        rawSimilarity: smoothedRawSimilarity,
         matched: similarity >= threshold,
     };
 };
 
 export const getProfileDescriptor = async (profilePhotoUrl, { forceRefresh = false } = {}) => {
+    if (storedProfileDescriptor?.length >= 64 && !forceRefresh) {
+        return storedProfileDescriptor;
+    }
+
     if (!profilePhotoUrl) {
         throw new Error('Profile photo is required for face verification.');
     }
 
-    if (!forceRefresh && profileDescriptorCache && profileDescriptorSource === profilePhotoUrl) {
+    const resolvedUrl = resolveAssetUrl(profilePhotoUrl);
+
+    if (!forceRefresh && profileDescriptorCache && profileDescriptorSource === resolvedUrl) {
         return profileDescriptorCache;
     }
 
@@ -99,7 +275,8 @@ export const getProfileDescriptor = async (profilePhotoUrl, { forceRefresh = fal
     }
 
     profileDescriptorCache = descriptor;
-    profileDescriptorSource = profilePhotoUrl;
+    profileDescriptorSource = resolvedUrl;
+    storedProfileDescriptor = Array.from(descriptor);
 
     return descriptor;
 };
@@ -107,9 +284,9 @@ export const getProfileDescriptor = async (profilePhotoUrl, { forceRefresh = fal
 export const verifySelfieAgainstProfile = async ({
     profilePhotoUrl,
     videoElement,
-    threshold = 80,
+    threshold = DEFAULT_FACE_MATCH_THRESHOLD,
 }) => {
-    const human = await getHuman();
+    await getHuman();
     const profileDescriptor = await getProfileDescriptor(profilePhotoUrl);
     const selfieDescriptor = await detectDescriptor(videoElement);
 
@@ -117,7 +294,7 @@ export const verifySelfieAgainstProfile = async ({
         throw new Error('No face detected. Center your face in the frame with good lighting.');
     }
 
-    const result = compareDescriptors(human, profileDescriptor, selfieDescriptor, threshold);
+    const result = await compareDescriptors(profileDescriptor, selfieDescriptor, threshold);
 
     return {
         ...result,
@@ -130,26 +307,30 @@ export const verifySelfieAgainstProfile = async ({
 export const previewMatchFromVideo = async ({
     profilePhotoUrl,
     videoElement,
-    threshold = 80,
+    threshold = DEFAULT_FACE_MATCH_THRESHOLD,
 }) => {
     if (!profilePhotoUrl || !videoElement?.videoWidth) {
         return { detected: false, similarity: null, matched: false };
     }
 
-    const human = await getHuman();
-    const profileDescriptor = await getProfileDescriptor(profilePhotoUrl);
-    const selfieDescriptor = await detectDescriptor(videoElement);
+    try {
+        await getHuman();
+        const profileDescriptor = await getProfileDescriptor(profilePhotoUrl);
+        const selfieDescriptor = await detectDescriptor(videoElement);
 
-    if (!selfieDescriptor) {
+        if (!selfieDescriptor) {
+            return { detected: false, similarity: null, matched: false };
+        }
+
+        const result = await compareDescriptors(profileDescriptor, selfieDescriptor, threshold);
+
+        return {
+            ...result,
+            detected: true,
+        };
+    } catch {
         return { detected: false, similarity: null, matched: false };
     }
-
-    const result = compareDescriptors(human, profileDescriptor, selfieDescriptor, threshold);
-
-    return {
-        ...result,
-        detected: true,
-    };
 };
 
 export const descriptorToArray = (descriptor) => Array.from(descriptor);
@@ -157,4 +338,32 @@ export const descriptorToArray = (descriptor) => Array.from(descriptor);
 export const resetProfileDescriptorCache = () => {
     profileDescriptorCache = null;
     profileDescriptorSource = null;
+    storedProfileDescriptor = null;
+    resetLiveMatchHistory();
+};
+
+export const detectFaceInFile = async (file) => {
+    const objectUrl = URL.createObjectURL(file);
+
+    try {
+        const image = await loadImage(objectUrl);
+        const descriptor = await detectDescriptor(image);
+
+        return Boolean(descriptor?.length);
+    } finally {
+        URL.revokeObjectURL(objectUrl);
+    }
+};
+
+export const syncFaceReferenceFromProfilePhoto = async (profilePhotoUrl) => {
+    const { default: api } = await import('./api');
+
+    await ensureFaceModelsLoaded();
+    resetProfileDescriptorCache();
+
+    const descriptor = await getProfileDescriptor(profilePhotoUrl, { forceRefresh: true });
+
+    await api.post('/attendance/face-reference', {
+        descriptor: descriptorToArray(descriptor),
+    });
 };

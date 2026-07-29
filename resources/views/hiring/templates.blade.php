@@ -2,7 +2,12 @@
 
 @section('hiring-content')
     <div class="content-card companies-list-card">
-        @include('partials.list-pagination-header', ['perPageId' => 'templatesPerPage'])
+        @include('partials.list-pagination-top', [
+    'infoId' => 'templatesPaginationInfo',
+    'listId' => 'templatesPaginationList',
+    'perPageId' => 'templatesPerPage',
+    'ariaLabel' => 'Templates pagination',
+])
         <div class="table-responsive">
             <table class="companies-table table mb-0">
                 <thead>
@@ -29,7 +34,7 @@
 
     @if ($canManage)
     <div class="modal fade" id="templateModal" tabindex="-1" aria-hidden="true">
-        <div class="modal-dialog modal-lg modal-dialog-scrollable">
+        <div class="modal-dialog modal-xl modal-dialog-scrollable">
             <div class="modal-content">
                 <div class="modal-header">
                     <h5 class="modal-title" id="templateModalLabel">Create Template</h5>
@@ -50,9 +55,25 @@
                                 <option value="other">Other</option>
                             </select>
                         </div>
+                        <div class="col-12 d-flex flex-wrap gap-2 align-items-center">
+                            <span class="small text-muted">Quick start:</span>
+                            <button type="button" class="btn btn-outline-secondary btn-sm" id="useOfferSampleBtn">Use Offer Letter Sample</button>
+                        </div>
                         <div class="col-12">
-                            <label class="form-label" for="templateBodyHtml">Body (HTML)</label>
-                            <textarea class="form-control font-monospace" id="templateBodyHtml" rows="10"></textarea>
+                            <label class="form-label mb-1">Template body</label>
+                            <div id="templateBodyEditor" class="doc-letter-editor"></div>
+                            <textarea class="d-none" id="templateBodyHtml" aria-hidden="true"></textarea>
+                        </div>
+                        <div class="col-12">
+                            <div class="hiring-template-fields-card border rounded p-3 bg-light">
+                                <div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-2">
+                                    <div>
+                                        <div class="fw-semibold small">Dynamic fields</div>
+                                        <div class="text-muted small">Click a field to insert it at the cursor in the template body.</div>
+                                    </div>
+                                </div>
+                                <div id="templatePlaceholderGroups"></div>
+                            </div>
                         </div>
                     </div>
                 </form>

@@ -14,6 +14,7 @@
         <div id="profileSubmissionPolicyAlert" class="alert alert-info profile-document-policy mb-4" role="status">
             <strong>Submission policy:</strong>
             Family details, address, and emergency contact are submitted separately for HR review.
+            Use the Add or Change actions on each section to submit updates for approval.
             Mobile number and work email can only be changed by HR or Company Admin.
             Emergency contact details are entered separately and do not need to match a family member above.
         </div>
@@ -51,8 +52,13 @@
         </div>
 
         <div class="profile-info-card mb-4">
-            <h4 class="profile-info-card-title mb-0">2. Family Details</h4>
-            <p class="text-muted small mt-2 mb-3">Each family relation is submitted and reviewed separately.</p>
+            <div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-3">
+                <h4 class="profile-info-card-title mb-0">2. Family Details</h4>
+                <button type="button" class="table-action-btn table-action-btn--edit d-none" id="profileFamilySectionEditBtn" title="Edit family details" aria-label="Edit family details">
+                    @include('partials.icons.edit')
+                </button>
+            </div>
+            <p class="text-muted small mt-0 mb-3">Each family relation is submitted and reviewed separately.</p>
 
             <div id="profileFamilyApprovalsSection" class="profile-info-card mb-4 d-none">
                 <div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-3">
@@ -81,7 +87,10 @@
             </div>
 
             <div class="profile-info-card mb-4">
-                <h5 class="profile-info-card-title">My Family Members</h5>
+                <div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-3">
+                    <h5 class="profile-info-card-title mb-0">My Family Members</h5>
+                    <button type="button" class="btn btn-sm btn-primary d-none" id="profileAddFamilyMemberBtn">+ Add Family Member</button>
+                </div>
                 <div class="table-responsive">
                     <table class="table profile-documents-table mb-0">
                         <thead>
@@ -106,7 +115,7 @@
                 </div>
             </div>
 
-            <form id="profileFamilySectionForm" class="profile-form">
+            <form id="profileFamilySectionForm" class="profile-form d-none">
                 <input type="hidden" id="profileFamilyResubmitId" value="">
                 <p class="text-muted small" id="profileFamilySectionHint">Add new family members below. Submitted relations appear in the listing above only.</p>
                 <div id="profileFamilyMembersList" class="d-flex flex-column gap-3 mb-3"></div>
@@ -122,11 +131,18 @@
         <div class="profile-info-card mb-4">
             <div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-3">
                 <h4 class="profile-info-card-title mb-0">3. Address</h4>
-                <span id="profileAddressSectionStatus"></span>
+                <div class="d-flex flex-wrap align-items-center gap-2">
+                    <span id="profileAddressSectionStatus"></span>
+                    <button type="button" class="table-action-btn table-action-btn--edit d-none" id="profileAddressEditBtn" title="Edit address" aria-label="Edit address">
+                        @include('partials.icons.edit')
+                    </button>
+                    <button type="button" class="btn btn-sm btn-outline-primary d-none" id="profileAddressAddBtn">Add Address</button>
+                    <button type="button" class="btn btn-sm btn-outline-primary d-none" id="profileAddressChangeBtn">Change</button>
+                </div>
             </div>
             <div id="profileAddressSectionNotes" class="mb-3"></div>
             <div id="profileAddressApprovedView" class="mb-3"></div>
-            <form id="profileAddressSectionForm" class="profile-form">
+            <form id="profileAddressSectionForm" class="profile-form d-none">
                 <div class="profile-form-section">
                     <h5 class="profile-form-section-title">Permanent Address</h5>
                     <div class="row g-3">
@@ -204,29 +220,21 @@
         <div class="profile-info-card mb-4">
             <div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-3">
                 <h4 class="profile-info-card-title mb-0">4. Emergency Contact</h4>
-                <span id="profileEmergencySectionStatus"></span>
+                <div class="d-flex flex-wrap align-items-center gap-2">
+                    <span id="profileEmergencySectionStatus"></span>
+                    <button type="button" class="table-action-btn table-action-btn--edit d-none" id="profileEmergencyEditBtn" title="Edit emergency contacts" aria-label="Edit emergency contacts">
+                        @include('partials.icons.edit')
+                    </button>
+                    <button type="button" class="btn btn-sm btn-outline-primary d-none" id="profileEmergencyAddBtn">Add Contact</button>
+                    <button type="button" class="btn btn-sm btn-outline-primary d-none" id="profileEmergencyChangeBtn">Change</button>
+                </div>
             </div>
             <div id="profileEmergencySectionNotes" class="mb-3"></div>
             <div id="profileEmergencyApprovedView" class="mb-3"></div>
-            <form id="profileEmergencySectionForm" class="profile-form">
-                <p class="text-muted small" id="profileEmergencySectionHint">Enter emergency contact details separately. This does not need to be a family member listed above.</p>
-                <div class="row g-3">
-                    <div class="col-md-4">
-                        <label for="profile_emergency_contact_name" class="form-label">Name <span class="text-danger">*</span></label>
-                        <input type="text" class="form-control" id="profile_emergency_contact_name" name="name" required>
-                        <div class="invalid-feedback d-block" data-error="name"></div>
-                    </div>
-                    <div class="col-md-4">
-                        <label for="profile_emergency_contact_relation" class="form-label">Relation <span class="text-danger">*</span></label>
-                        <input type="text" class="form-control" id="profile_emergency_contact_relation" name="relation" placeholder="e.g. Spouse, Parent, Friend" required>
-                        <div class="invalid-feedback d-block" data-error="relation"></div>
-                    </div>
-                    <div class="col-md-4">
-                        <label for="profile_emergency_contact_phone" class="form-label">Mobile</label>
-                        <input type="tel" class="form-control" id="profile_emergency_contact_phone" name="phone" inputmode="numeric" maxlength="10" pattern="[0-9]{10}" title="Enter a 10-digit mobile number">
-                        <div class="invalid-feedback d-block" data-error="phone"></div>
-                    </div>
-                </div>
+            <form id="profileEmergencySectionForm" class="profile-form d-none">
+                <p class="text-muted small" id="profileEmergencySectionHint">Add one or more emergency contacts. Each contact can have multiple mobile numbers.</p>
+                <div id="profileEmergencyContactsList" class="d-flex flex-column gap-3 mb-3"></div>
+                <button type="button" class="btn btn-sm btn-outline-secondary mb-3" id="profileAddEmergencyContact">+ Add Emergency Contact</button>
                 <div class="d-flex align-items-center gap-3 mt-3">
                     <button type="submit" class="btn btn-primary" id="profileEmergencySectionSubmit">Submit for Approval</button>
                     <span class="text-success small d-none" id="profileEmergencySectionStatusMsg"></span>
@@ -265,7 +273,7 @@
             </div>
             <div class="col-md-4">
                 <label class="form-label">Relation <span class="text-danger">*</span></label>
-                <input type="text" class="form-control" data-family-relation placeholder="e.g. Spouse, Parent" required>
+                @include('profile.partials.relation-select', ['dataAttribute' => 'data-family-relation'])
             </div>
             <div class="col-md-4">
                 <label class="form-label">Mobile</label>
@@ -276,5 +284,36 @@
                 <input type="date" class="form-control" data-family-dob min="1900-01-01">
             </div>
         </div>
+    </div>
+</template>
+
+<template id="profileEmergencyContactRowTemplate">
+    <div class="profile-emergency-contact-row border rounded p-3" data-emergency-contact-row>
+        <div class="d-flex justify-content-between align-items-start gap-2 mb-3">
+            <strong class="profile-emergency-contact-row-title">Emergency Contact</strong>
+            <button type="button" class="btn btn-sm btn-outline-danger" data-remove-emergency-contact>&times; Remove</button>
+        </div>
+        <div class="row g-3">
+            <div class="col-md-4">
+                <label class="form-label">Name <span class="text-danger">*</span></label>
+                <input type="text" class="form-control" data-emergency-name required>
+            </div>
+            <div class="col-md-4">
+                <label class="form-label">Relation <span class="text-danger">*</span></label>
+                @include('profile.partials.relation-select', ['dataAttribute' => 'data-emergency-relation'])
+            </div>
+        </div>
+        <div class="mt-3">
+            <label class="form-label">Mobile Numbers <span class="text-danger">*</span></label>
+            <div class="d-flex flex-column gap-2" data-emergency-phones-list></div>
+            <button type="button" class="btn btn-sm btn-outline-secondary mt-2" data-add-emergency-phone>+ Add Phone Number</button>
+        </div>
+    </div>
+</template>
+
+<template id="profileEmergencyPhoneRowTemplate">
+    <div class="input-group" data-emergency-phone-row>
+        <input type="tel" class="form-control" data-emergency-phone inputmode="numeric" maxlength="10" pattern="[0-9]{10}" title="Enter a 10-digit mobile number" required>
+        <button type="button" class="btn btn-outline-danger" data-remove-emergency-phone aria-label="Remove phone">&times;</button>
     </div>
 </template>

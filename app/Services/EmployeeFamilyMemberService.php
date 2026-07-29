@@ -95,6 +95,29 @@ class EmployeeFamilyMemberService
         return $member->fresh()->load(['employee', 'submittedBy.role', 'reviewedBy']);
     }
 
+    public function delete(User $user, EmployeeFamilyMember $member): void
+    {
+        $this->assertBelongsToCompany($user, $member);
+
+        if (! $user->canDeleteFamilyMember($member)) {
+            throw new AccessDeniedHttpException('You are not allowed to delete this family member.');
+        }
+
+        $employee = $member->employee;
+
+        if ((int) $employee->emergency_contact_family_member_id === (int) $member->id) {
+            $employee->update([
+                'emergency_contact_name' => null,
+                'emergency_contact_phone' => null,
+                'emergency_contact_relation' => null,
+                'emergency_contact_family_member_id' => null,
+                'emergency_contacts' => null,
+            ]);
+        }
+
+        $member->delete();
+    }
+
     public function assertBelongsToCompany(User $user, EmployeeFamilyMember $member): void
     {
         if ((int) $member->company_id !== (int) $user->company_id) {

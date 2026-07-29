@@ -37,14 +37,12 @@ class EmployeeDocumentService
             return;
         }
 
-        if ($existing->status === 'rejected') {
+        if ($existing->status === 'rejected' || $existing->status === 'approved') {
             return;
         }
 
         throw ValidationException::withMessages([
-            'document_type_id' => [$existing->status === 'pending'
-                ? 'This document is pending approval and cannot be changed.'
-                : 'This document is approved and cannot be changed.'],
+            'document_type_id' => ['This document is pending approval and cannot be changed.'],
         ]);
     }
 

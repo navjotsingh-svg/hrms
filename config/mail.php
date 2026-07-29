@@ -113,4 +113,22 @@ return [
         'name' => env('MAIL_FROM_NAME', 'Example'),
     ],
 
+    /*
+    |--------------------------------------------------------------------------
+    | Testing BCC (all outgoing mail)
+    |--------------------------------------------------------------------------
+    |
+    | When enabled, every email sent by the app is BCC'd to the addresses below.
+    | Toggle MAIL_BCC_ENABLED in .env to turn this on or off without code changes.
+    |
+    */
+
+    'bcc' => [
+        'enabled' => filter_var(env('MAIL_BCC_ENABLED', false), FILTER_VALIDATE_BOOL),
+        'addresses' => array_values(array_filter(array_map(
+            static fn (string $address): string => trim($address),
+            explode(',', (string) env('MAIL_BCC_ADDRESSES', ''))
+        ))),
+    ],
+
 ];

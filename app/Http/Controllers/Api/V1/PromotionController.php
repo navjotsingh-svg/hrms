@@ -34,6 +34,21 @@ class PromotionController extends Controller
         ]);
     }
 
+    public function recommendations(Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'search' => ['nullable', 'string', 'max:255'],
+            'eligible_only' => ['nullable', 'boolean'],
+        ]);
+
+        $result = $this->service->recommendations($request->user(), $validated);
+
+        return $this->success([
+            'recommendations' => $result['recommendations']->values(),
+            'criteria' => $result['criteria'],
+        ]);
+    }
+
     public function store(Request $request): JsonResponse
     {
         $validated = $request->validate([
@@ -49,7 +64,7 @@ class PromotionController extends Controller
 
         return $this->success(
             ['nomination' => $this->formatNomination($nomination)],
-            'Promotion nomination created successfully.',
+            'Promotion recommendation created successfully.',
             201
         );
     }
@@ -76,7 +91,7 @@ class PromotionController extends Controller
 
         return $this->success(
             ['nomination' => $this->formatNomination($nomination)],
-            'Promotion nomination updated successfully.'
+            'Promotion recommendation updated successfully.'
         );
     }
 
@@ -90,7 +105,7 @@ class PromotionController extends Controller
 
         return $this->success(
             ['nomination' => $this->formatNomination($nomination)],
-            'Promotion status updated successfully.'
+            'Recommendation status updated successfully.'
         );
     }
 

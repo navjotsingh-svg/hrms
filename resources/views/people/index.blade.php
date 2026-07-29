@@ -35,7 +35,12 @@
                     </div>
                 </div>
 
-        @include('partials.list-pagination-header', ['perPageId' => 'peoplePerPage'])
+        @include('partials.list-pagination-top', [
+    'infoId' => 'peoplePaginationInfo',
+    'listId' => 'peoplePaginationList',
+    'perPageId' => 'peoplePerPage',
+    'ariaLabel' => 'People pagination',
+])
         <div class="table-responsive">
                     <table class="table people-summary-table mb-0">
                         <thead>

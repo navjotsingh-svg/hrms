@@ -2,12 +2,15 @@
 
 namespace App\Http\Middleware;
 
+use App\Services\CompanyOrganizationService;
 use Closure;
 use Illuminate\Http\Request;
 use Symfony\Component\HttpFoundation\Response;
 
 class EnsureCompanyPermission
 {
+    public function __construct(private CompanyOrganizationService $companyOrganizationService) {}
+
     public function handle(Request $request, Closure $next, string $permission): Response
     {
         $user = $request->user();
@@ -19,6 +22,10 @@ class EnsureCompanyPermission
 
         if ($user->company?->status === 'inactive') {
             abort(403, 'Your company account is inactive. Please contact support.');
+        }
+
+        if (! $this->companyOrganizationService->hasActiveAdministrator((int) $user->company_id)) {
+            abort(403, $this->companyOrganizationService->organizationUnavailableMessage());
         }
 
         if (str_contains($permission, 'employees.assign_admin') && $user->canAssignCompanyAdmin()) {

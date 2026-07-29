@@ -90,7 +90,16 @@ class Goal extends Model
 
     public function recalculateProgress(): void
     {
-        $results = $this->keyResults;
+        $children = $this->children()->get();
+
+        if ($children->isNotEmpty()) {
+            $progress = round((float) $children->avg('progress'), 2);
+            $this->update(['progress' => min(100, $progress)]);
+
+            return;
+        }
+
+        $results = $this->keyResults()->with('kpi')->get();
 
         if ($results->isEmpty()) {
             $this->update(['progress' => 0]);
@@ -98,15 +107,16 @@ class Goal extends Model
             return;
         }
 
+        foreach ($results as $keyResult) {
+            $keyResult->syncFromLinkedKpi();
+        }
+
+        $results = $this->keyResults()->with('kpi')->get();
         $totalWeight = $results->sum('weight') ?: 1;
         $progress = $results->sum(function (GoalKeyResult $kr) use ($totalWeight) {
-            $pct = $kr->target_value > 0
-                ? min(100, ($kr->current_value / $kr->target_value) * 100)
-                : 0;
-
-            return $pct * ($kr->weight / $totalWeight);
+            return $kr->progressPercent() * ($kr->weight / $totalWeight);
         });
 
-        $this->update(['progress' => round($progress, 2)]);
+        $this->update(['progress' => round(min(100, $progress), 2)]);
     }
 }

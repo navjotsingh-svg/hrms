@@ -267,7 +267,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                 ? renderDateTimeStackFromLabel(punch.punched_at_label)
                 : renderDateTimeStack(punch.punched_at)),
             includeSelfie: false,
-            threshold: Number(payload.face_match_threshold) || 80,
+            threshold: Number(payload.face_match_threshold) || 90,
         })).join('') || '<div class="text-muted small">No punch records.</div>';
 
         dayModalBody.innerHTML = `

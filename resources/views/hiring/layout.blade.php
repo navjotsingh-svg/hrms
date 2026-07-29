@@ -3,7 +3,6 @@
 @php
     $titles = [
         'overview' => 'Overview',
-        'requisitions' => 'Requisitions',
         'jobs' => 'Jobs',
         'candidates' => 'Candidates',
         'interviews' => 'Interviews',
@@ -12,13 +11,12 @@
         'careers' => 'Careers Page',
     ];
     $subtitles = [
-        'overview' => 'Hiring dashboard with open jobs, requisitions, candidates, and upcoming interviews.',
-        'requisitions' => 'Create and submit job requisitions for approval.',
+        'overview' => 'Hiring dashboard with open jobs, candidates, and upcoming interviews.',
         'jobs' => 'Manage job postings, publish to careers page, and close openings.',
         'candidates' => 'Track applicants through the hiring pipeline.',
         'interviews' => 'Schedule and manage candidate interviews.',
         'offers' => 'Create and send offer letters to candidates.',
-        'templates' => 'Maintain reusable offer and communication templates.',
+        'templates' => 'Maintain reusable offer and communication templates with dynamic fields.',
         'careers' => 'Customize your public careers page and publish open roles.',
     ];
     $pageTitle = $titles[$hiringPage] ?? 'Hiring';
@@ -48,8 +46,6 @@
         window.HRMS_HIRING = {
             page: @json($hiringPage),
             canManage: @json($canManage),
-            canCreateRequisition: @json($canCreateRequisition),
-            canApproveRequisitions: @json($canApproveRequisitions),
             canInterview: @json($canInterview),
             canPublishCareers: @json($canPublishCareers),
             companySlug: @json($companySlug),

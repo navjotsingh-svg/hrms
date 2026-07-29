@@ -28,6 +28,7 @@ class ExitCase extends Model
     protected $fillable = [
         'company_id',
         'employee_id',
+        'exit_type',
         'resignation_request_id',
         'last_working_date',
         'stage',
@@ -88,5 +89,12 @@ class ExitCase extends Model
             self::STAGE_COMPLETED => 'Completed',
             default => ucfirst(str_replace('_', ' ', $this->stage)),
         };
+    }
+
+    public function exitTypeLabel(): string
+    {
+        $types = config('offboarding.exit_types', []);
+
+        return $types[$this->exit_type] ?? ucfirst(str_replace('_', ' ', (string) $this->exit_type));
     }
 }

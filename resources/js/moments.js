@@ -29,6 +29,7 @@ const TYPE_LABELS = {
     birthday: 'Birthday',
     work_anniversary: 'Work Anniversary',
     new_joinee: 'New Joiner',
+    praise: 'Praise & Recognition',
 };
 
 const TYPE_BADGE = {
@@ -36,6 +37,25 @@ const TYPE_BADGE = {
     birthday: 'text-bg-warning',
     work_anniversary: 'text-bg-success',
     new_joinee: 'text-bg-info',
+    praise: 'text-bg-warning',
+};
+
+const isPraiseMoment = (moment) => Boolean(moment?.metadata?.is_praise);
+
+const momentTypeLabel = (moment) => {
+    if (isPraiseMoment(moment)) {
+        return TYPE_LABELS.praise;
+    }
+
+    return TYPE_LABELS[moment.type] || moment.type;
+};
+
+const momentTypeBadge = (moment) => {
+    if (isPraiseMoment(moment)) {
+        return TYPE_BADGE.praise;
+    }
+
+    return TYPE_BADGE[moment.type] || 'text-bg-secondary';
 };
 
 const ALLOWED_ATTACHMENT_TYPES = new Set([
@@ -271,6 +291,25 @@ document.addEventListener('DOMContentLoaded', async () => {
     };
 
     const renderAuthor = (moment) => {
+        if (isPraiseMoment(moment)) {
+            const metadata = moment.metadata || {};
+            const praisedName = metadata.employee_name || 'Team Member';
+            const praisedCode = metadata.employee_code ? ` · ${metadata.employee_code}` : '';
+            const authorName = moment.author?.name || 'HR Team';
+
+            return `
+                <div class="moments-card-author">
+                    <span class="moments-card-avatar moments-card-avatar--praise" aria-hidden="true">🏆</span>
+                    <div>
+                        <div class="fw-semibold">Praise for ${escapeHtml(praisedName)}${praisedCode ? `<span class="text-muted fw-normal">${escapeHtml(praisedCode)}</span>` : ''}</div>
+                        <div class="small text-muted">
+                            Recognized by ${escapeHtml(authorName)} · ${formatTime(moment.published_at)}
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+
         if (moment.type !== 'post') {
             const metadata = moment.metadata || {};
             const celebratedName = metadata.employee_name || moment.author?.celebrated_name || moment.author?.name || 'Team Member';
@@ -433,13 +472,17 @@ document.addEventListener('DOMContentLoaded', async () => {
         `;
     };
 
-    const renderMoment = (moment) => `
-        <article class="content-card moments-card mb-3" data-moment-id="${moment.id}">
+    const renderMoment = (moment) => {
+        const praiseClass = isPraiseMoment(moment) ? ' moments-card--praise' : '';
+
+        return `
+        <article class="content-card moments-card mb-3${praiseClass}" data-moment-id="${moment.id}">
             <div class="content-card-body">
                 <div class="d-flex flex-wrap align-items-start justify-content-between gap-2 mb-3">
                     ${renderAuthor(moment)}
-                    <span class="badge ${TYPE_BADGE[moment.type] || 'text-bg-secondary'}">${TYPE_LABELS[moment.type] || moment.type}</span>
+                    <span class="badge ${momentTypeBadge(moment)}">${momentTypeLabel(moment)}</span>
                 </div>
+                ${isPraiseMoment(moment) ? '<div class="moments-praise-kicker small text-muted mb-2">Public recognition shared on the social wall</div>' : ''}
                 ${moment.content ? `<div class="moments-card-content">${escapeHtml(moment.content)}</div>` : ''}
                 ${renderAttachments(moment)}
                 ${moment.type === 'work_anniversary' && moment.metadata?.years ? `<div class="small text-muted mt-2">${moment.metadata.years} year(s) at the company</div>` : ''}
@@ -448,6 +491,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             </div>
         </article>
     `;
+    };
 
     const refreshMomentComments = (momentId) => {
         const card = feed.querySelector(`[data-moment-id="${momentId}"]`);

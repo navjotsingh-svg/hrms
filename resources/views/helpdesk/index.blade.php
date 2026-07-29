@@ -65,7 +65,12 @@
                 </div>
             </div>
         </div>
-        @include('partials.list-pagination-header', ['perPageId' => 'helpdeskPerPage'])
+        @include('partials.list-pagination-top', [
+    'infoId' => 'helpdeskPaginationInfo',
+    'listId' => 'helpdeskPaginationList',
+    'perPageId' => 'helpdeskPerPage',
+    'ariaLabel' => 'Helpdesk pagination',
+])
         <div class="table-responsive">
             <table class="companies-table table mb-0">
                 <thead>

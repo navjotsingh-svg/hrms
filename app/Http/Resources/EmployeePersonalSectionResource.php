@@ -3,6 +3,7 @@
 namespace App\Http\Resources;
 
 use App\Models\EmployeePersonalSection;
+use App\Support\EmergencyContactPayload;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
 
@@ -67,20 +68,6 @@ class EmployeePersonalSectionResource extends JsonResource
 
     private function formatEmergencySummary(): string
     {
-        $name = trim((string) ($this->payload['name'] ?? ''));
-        $relation = trim((string) ($this->payload['relation'] ?? ''));
-
-        if ($name !== '') {
-            return $relation !== '' ? "{$name} ({$relation})" : $name;
-        }
-
-        $member = $this->employee?->familyMembers
-            ?->firstWhere('id', $this->payload['family_member_id'] ?? null);
-
-        if ($member) {
-            return trim($member->name.' ('.$member->relation.')');
-        }
-
-        return '—';
+        return EmergencyContactPayload::summary($this->payload ?? []);
     }
 }

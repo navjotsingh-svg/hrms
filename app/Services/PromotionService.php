@@ -6,13 +6,15 @@ use App\Models\Employee;
 use App\Models\PromotionNomination;
 use App\Models\User;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
-use Illuminate\Support\Facades\DB;
 use Symfony\Component\HttpKernel\Exception\AccessDeniedHttpException;
 use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
 
 class PromotionService
 {
-    public function __construct(private EmployeeAccessService $employeeAccessService) {}
+    public function __construct(
+        private EmployeeAccessService $employeeAccessService,
+        private PromotionEligibilityService $eligibilityService,
+    ) {}
 
     public function listForUser(User $user, array $filters = []): LengthAwarePaginator
     {
@@ -59,6 +61,8 @@ class PromotionService
         $employee = Employee::query()
             ->where('company_id', $user->company_id)
             ->findOrFail($data['employee_id']);
+
+        $this->eligibilityService->assertEligible($employee);
 
         return PromotionNomination::create([
             'company_id' => $user->company_id,
@@ -110,6 +114,27 @@ class PromotionService
         return $nomination->load(['employee', 'reviewCycle']);
     }
 
+    /** @return array{recommendations: \Illuminate\Support\Collection, criteria: array<string, mixed>} */
+    public function recommendations(User $user, array $filters = []): array
+    {
+        return [
+            'recommendations' => $this->eligibilityService->recommendationsForUser($user, $filters),
+            'criteria' => [
+                'labels' => $this->eligibilityService->criteriaLabels(),
+                'thresholds' => $this->eligibilityService->thresholds(),
+            ],
+        ];
+    }
+
+    public function eligibilityForEmployee(User $user, Employee $employee): array
+    {
+        if ((int) $employee->company_id !== (int) $user->company_id) {
+            throw new NotFoundHttpException('Employee not found.');
+        }
+
+        return $this->eligibilityService->evaluate($employee);
+    }
+
     private function nominate(User $user, PromotionNomination $nomination): PromotionNomination
     {
         $this->assertCanEdit($user, $nomination);
@@ -129,28 +154,20 @@ class PromotionService
     private function approve(User $user, PromotionNomination $nomination): PromotionNomination
     {
         if (! $user->canManagePerformance()) {
-            throw new AccessDeniedHttpException('Only performance managers can approve promotions.');
+            throw new AccessDeniedHttpException('Only performance managers can endorse recommendations.');
         }
 
         if ($nomination->status !== PromotionNomination::STATUS_NOMINATED) {
-            throw new AccessDeniedHttpException('Only nominated promotions can be approved.');
+            throw new AccessDeniedHttpException('Only submitted recommendations can be endorsed.');
         }
 
-        return DB::transaction(function () use ($user, $nomination) {
-            $nomination->update([
-                'status' => PromotionNomination::STATUS_APPROVED,
-                'approved_by_user_id' => $user->id,
-                'approved_at' => now(),
-            ]);
+        $nomination->update([
+            'status' => PromotionNomination::STATUS_APPROVED,
+            'approved_by_user_id' => $user->id,
+            'approved_at' => now(),
+        ]);
 
-            if ($nomination->employee && $nomination->proposed_designation) {
-                $nomination->employee->update([
-                    'designation' => $nomination->proposed_designation,
-                ]);
-            }
-
-            return $nomination->fresh(['employee', 'reviewCycle']);
-        });
+        return $nomination->fresh(['employee', 'reviewCycle']);
     }
 
     private function reject(User $user, PromotionNomination $nomination): PromotionNomination

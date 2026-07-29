@@ -96,6 +96,7 @@ class GoalController extends Controller
             'weight' => ['nullable', 'numeric', 'min:0'],
             'status' => ['nullable', Rule::in(['not_started', 'in_progress', 'completed'])],
             'due_date' => ['nullable', 'date'],
+            'performance_kpi_id' => ['nullable', 'integer', 'exists:performance_kpis,id'],
         ]);
 
         $keyResult = $this->goalService->updateKeyResult($request->user(), $goalKeyResult, $validated);
@@ -155,6 +156,7 @@ class GoalController extends Controller
             'key_results.*.weight' => ['nullable', 'numeric', 'min:0'],
             'key_results.*.status' => ['nullable', Rule::in(['not_started', 'in_progress', 'completed'])],
             'key_results.*.due_date' => ['nullable', 'date'],
+            'key_results.*.performance_kpi_id' => ['nullable', 'integer', 'exists:performance_kpis,id'],
         ]);
     }
 
@@ -191,6 +193,8 @@ class GoalController extends Controller
 
     private function formatKeyResult(GoalKeyResult $keyResult): array
     {
+        $keyResult->loadMissing('kpi');
+
         return [
             'id' => $keyResult->id,
             'title' => $keyResult->title,
@@ -202,6 +206,17 @@ class GoalController extends Controller
             'status' => $keyResult->status,
             'due_date' => $keyResult->due_date?->toDateString(),
             'sort_order' => $keyResult->sort_order,
+            'progress_percent' => $keyResult->progressPercent(),
+            'is_kpi_linked' => (bool) $keyResult->performance_kpi_id,
+            'performance_kpi_id' => $keyResult->performance_kpi_id,
+            'linked_kpi' => $keyResult->kpi ? [
+                'id' => $keyResult->kpi->id,
+                'title' => $keyResult->kpi->title,
+                'progress_percent' => $keyResult->kpi->progressPercent(),
+                'current_value' => (float) $keyResult->kpi->current_value,
+                'target_value' => (float) $keyResult->kpi->target_value,
+                'unit' => $keyResult->kpi->unit,
+            ] : null,
         ];
     }
 

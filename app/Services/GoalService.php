@@ -6,6 +6,7 @@ use App\Models\Department;
 use App\Models\Employee;
 use App\Models\Goal;
 use App\Models\GoalKeyResult;
+use App\Models\PerformanceKpi;
 use App\Models\User;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Facades\DB;
@@ -15,12 +16,15 @@ use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
 
 class GoalService
 {
-    public function __construct(private EmployeeAccessService $employeeAccessService) {}
+    public function __construct(
+        private EmployeeAccessService $employeeAccessService,
+        private GoalProgressSyncService $goalProgressSyncService,
+    ) {}
 
     public function listForUser(User $user, array $filters = []): LengthAwarePaginator
     {
         $query = Goal::query()
-            ->with(['employee', 'department', 'parent', 'keyResults'])
+            ->with(['employee', 'department', 'parent', 'keyResults.kpi'])
             ->where('company_id', $user->company_id)
             ->orderByDesc('created_at');
 
@@ -97,7 +101,7 @@ class GoalService
 
             $this->syncKeyResults($goal, $data['key_results'] ?? []);
 
-            return $goal->fresh(['employee', 'department', 'parent', 'keyResults']);
+            return $goal->fresh(['employee', 'department', 'parent', 'keyResults.kpi']);
         });
     }
 
@@ -138,7 +142,7 @@ class GoalService
                 $this->syncKeyResults($goal, $data['key_results']);
             }
 
-            return $goal->fresh(['employee', 'department', 'parent', 'keyResults']);
+            return $goal->fresh(['employee', 'department', 'parent', 'keyResults.kpi']);
         });
     }
 
@@ -157,11 +161,23 @@ class GoalService
             'weight' => $data['weight'] ?? $keyResult->weight,
             'status' => $data['status'] ?? $keyResult->status,
             'due_date' => $data['due_date'] ?? $keyResult->due_date,
+            'performance_kpi_id' => array_key_exists('performance_kpi_id', $data)
+                ? $data['performance_kpi_id']
+                : $keyResult->performance_kpi_id,
         ]);
 
-        $goal->recalculateProgress();
+        if ($keyResult->performance_kpi_id) {
+            $kpi = PerformanceKpi::query()->find($keyResult->performance_kpi_id);
 
-        return $keyResult->fresh();
+            if ($kpi) {
+                $this->goalProgressSyncService->assertKpiLinkableToGoal($goal, $kpi);
+                $keyResult->syncFromLinkedKpi();
+            }
+        }
+
+        $this->goalProgressSyncService->recalculateGoalTree($goal);
+
+        return $keyResult->fresh(['kpi']);
     }
 
     public function deleteKeyResult(User $user, GoalKeyResult $keyResult): void
@@ -170,7 +186,7 @@ class GoalService
         $this->resolveGoal($user, $goal);
         $this->assertCanEditGoal($user, $goal);
         $keyResult->delete();
-        $goal->recalculateProgress();
+        $this->goalProgressSyncService->recalculateGoalTree($goal);
     }
 
     public function resolveGoal(User $user, Goal $goal): Goal
@@ -183,7 +199,7 @@ class GoalService
             throw new AccessDeniedHttpException('You are not allowed to view this goal.');
         }
 
-        return $goal->load(['employee', 'department', 'parent', 'keyResults']);
+        return $goal->load(['employee', 'department', 'parent', 'keyResults.kpi']);
     }
 
     public function canViewGoal(User $user, Goal $goal): bool
@@ -427,6 +443,10 @@ class GoalService
                     ->first();
 
                 if ($model) {
+                    $kpiId = array_key_exists('performance_kpi_id', $kr)
+                        ? $this->resolveKpiLink($goal, $kr['performance_kpi_id'])
+                        : $model->performance_kpi_id;
+
                     $model->update([
                         'title' => $kr['title'],
                         'description' => $kr['description'] ?? null,
@@ -436,16 +456,25 @@ class GoalService
                         'weight' => $kr['weight'] ?? 1,
                         'status' => $kr['status'] ?? GoalKeyResult::STATUS_NOT_STARTED,
                         'due_date' => $kr['due_date'] ?? null,
+                        'performance_kpi_id' => $kpiId,
                         'sort_order' => $index + 1,
                     ]);
+
+                    if ($kpiId) {
+                        $model->syncFromLinkedKpi();
+                    }
+
                     $existingIds[] = $model->id;
 
                     continue;
                 }
             }
 
+            $kpiId = $this->resolveKpiLink($goal, $kr['performance_kpi_id'] ?? null);
+
             $created = GoalKeyResult::create([
                 'goal_id' => $goal->id,
+                'performance_kpi_id' => $kpiId,
                 'title' => $kr['title'],
                 'description' => $kr['description'] ?? null,
                 'target_value' => $kr['target_value'] ?? 100,
@@ -456,6 +485,10 @@ class GoalService
                 'due_date' => $kr['due_date'] ?? null,
                 'sort_order' => $index + 1,
             ]);
+
+            if ($kpiId) {
+                $created->syncFromLinkedKpi();
+            }
             $existingIds[] = $created->id;
         }
 
@@ -464,7 +497,22 @@ class GoalService
             ->whereNotIn('id', $existingIds)
             ->delete();
 
-        $goal->recalculateProgress();
+        $this->goalProgressSyncService->recalculateGoalTree($goal);
+    }
+
+    private function resolveKpiLink(Goal $goal, mixed $kpiId): ?int
+    {
+        if ($kpiId === null || $kpiId === '' || (int) $kpiId <= 0) {
+            return null;
+        }
+
+        $kpi = PerformanceKpi::query()
+            ->where('company_id', $goal->company_id)
+            ->findOrFail((int) $kpiId);
+
+        $this->goalProgressSyncService->assertKpiLinkableToGoal($goal, $kpi);
+
+        return $kpi->id;
     }
 
     private function resolveTargetEmployee(User $user, int $employeeId): Employee

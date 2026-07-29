@@ -99,7 +99,13 @@
                     </div>
                 </div>
 
-        @include('partials.list-pagination-header', ['perPageId' => 'payrollSummaryPerPage'])
+        @include('partials.list-pagination-top', [
+    'infoId' => 'payrollSummaryPaginationInfo',
+    'listId' => 'payrollSummaryPaginationList',
+    'perPageId' => 'payrollSummaryPerPage',
+    'wrapId' => 'payrollSummaryPaginationWrap',
+    'ariaLabel' => 'Payroll summary pagination',
+])
         <div class="table-responsive">
                     <table class="table table-hover align-middle payroll-summary-table">
                         <thead id="payrollSummaryHead"></thead>

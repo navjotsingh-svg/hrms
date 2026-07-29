@@ -173,6 +173,10 @@ class AttendanceController extends Controller
             'can_view_all' => $canViewAll || $canViewCompanyTeam,
             'can_view_team' => $canViewTeam && ! $canViewCompanyTeam,
             'can_manage_attendance_masters' => $user->canManageAttendanceMasters(),
+            'can_regularize' => $user->canRegularizeAttendance()
+                && ($user->employee || $user->canManageRegularization())
+                && app(\App\Services\AttendanceRegularizationService::class)
+                    ->isEnabledForCompany((int) $user->company_id),
             'team_employees' => ($canViewTeam || $canViewCompanyTeam) ? $this->attendanceService->teamEmployeesForUser($user) : [],
             'self_employee_id' => $user->employee?->id,
             'default_view_own' => ($user->isHrManager() && ! $user->isCompanyAdmin())

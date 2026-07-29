@@ -98,7 +98,12 @@
                 <p class="small text-muted mb-0" id="reportGeneratedAt">Select a report and click Load Report.</p>
             </div>
         </div>
-        @include('partials.list-pagination-header', ['perPageId' => 'reportsPerPage'])
+        @include('partials.list-pagination-top', [
+    'infoId' => 'reportsPaginationInfo',
+    'listId' => 'reportsPaginationList',
+    'perPageId' => 'reportsPerPage',
+    'ariaLabel' => 'Reports pagination',
+])
         <div class="table-responsive">
             <table class="companies-table table mb-0">
                 <thead id="reportsTableHead">

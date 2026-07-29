@@ -7,6 +7,7 @@ use App\Http\Concerns\ApiResponse;
 use App\Http\Resources\UserResource;
 use App\Models\User;
 use App\Services\ActivityLogService;
+use App\Services\CompanyOrganizationService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
@@ -18,7 +19,10 @@ class AuthController extends Controller
 {
     use ApiResponse;
 
-    public function __construct(private ActivityLogService $activityLogService) {}
+    public function __construct(
+        private ActivityLogService $activityLogService,
+        private CompanyOrganizationService $companyOrganizationService,
+    ) {}
 
     public function login(Request $request): JsonResponse
     {
@@ -73,6 +77,22 @@ class AuthController extends Controller
 
             throw ValidationException::withMessages([
                 'email' => ['Your company account is inactive. Please contact support.'],
+            ]);
+        }
+
+        if ($user->company_id && ! $user->isSuperAdmin() && ! $this->companyOrganizationService->hasActiveAdministrator((int) $user->company_id)) {
+            $message = $this->companyOrganizationService->organizationUnavailableMessage();
+
+            $this->activityLogService->logAuthAttempt(
+                $user,
+                $request,
+                false,
+                'Organization has no active administrator.',
+                $credentials['email'],
+            );
+
+            throw ValidationException::withMessages([
+                'email' => [$message],
             ]);
         }
 

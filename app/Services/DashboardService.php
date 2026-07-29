@@ -143,7 +143,7 @@ class DashboardService
 
     private function canSeeMyRequests(User $user): bool
     {
-        if ($user->isSuperAdmin() || ! $user->company_id) {
+        if ($user->isSuperAdmin() || ! $user->company_id || $user->isCompanyAdmin()) {
             return false;
         }
 
@@ -365,10 +365,12 @@ class DashboardService
             ];
         }
 
-        if ($user->canRegularizeAttendance()) {
+        if ($user->canRegularizeAttendance()
+            && ($user->employee || $user->canManageRegularization())
+            && $this->regularizationService->isEnabledForCompany((int) $user->company_id)) {
             $actions[] = [
                 'label' => 'Regularize Attendance',
-                'url' => route('web.attendance.regularize.index'),
+                'url' => route('web.attendance.index', ['regularize' => 1]),
                 'enabled' => true,
             ];
         }

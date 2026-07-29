@@ -240,6 +240,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                 <div class="content-card-body">
                     <div class="row g-3">
                         <div class="col-md-4"><span class="text-muted">Employee</span><div class="fw-semibold">${item.employee?.full_name || '—'}</div></div>
+                        <div class="col-md-4"><span class="text-muted">Exit Type</span><div class="fw-semibold">${item.exit_type_label || '—'}</div></div>
                         <div class="col-md-4"><span class="text-muted">Last Working Date</span><div class="fw-semibold">${item.last_working_date || '—'}</div></div>
                         <div class="col-md-4"><span class="text-muted">Current Stage</span><div><span class="company-status-pill ${statusClass(item.status)}">${item.stage_label}</span></div></div>
                         <div class="col-12"><span class="text-muted">Resignation Reason</span><div>${item.resignation_request?.reason || '—'}</div></div>

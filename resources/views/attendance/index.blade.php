@@ -12,8 +12,8 @@
             @if (Auth::user()->canViewAllAttendance() || Auth::user()->canViewTeamAttendance())
                 <a href="{{ route('web.attendance.overview') }}" class="btn btn-outline-primary btn-sm">Team view</a>
             @endif
-            @if (Auth::user()->canRegularizeAttendance())
-                <a href="{{ route('web.attendance.regularize.index') }}" class="btn btn-outline-primary btn-sm">Regularize</a>
+            @if (!empty($canOpenRegularizationPanel))
+                <button type="button" class="btn btn-outline-primary btn-sm" id="openRegularizePanelBtn">Regularize</button>
             @endif
         </div>
     </div>
@@ -157,6 +157,10 @@
             </div>
         </div>
     </div>
+
+    @if (!empty($canOpenRegularizationPanel))
+        @include('attendance.partials.regularize-panel')
+    @endif
 
     @vite(['resources/js/attendance.js'])
 @endsection
