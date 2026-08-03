@@ -248,11 +248,14 @@ export function initAttendancePunch({
         requirePunchPhoto = status.require_punch_photo !== false;
         hasProfilePhoto = Boolean(status.has_profile_photo);
 
-        if (Array.isArray(status.profile_face_descriptor) && status.profile_face_descriptor.length >= 64) {
-            loadFaceVerification().then(({ setStoredProfileDescriptor }) => {
-                setStoredProfileDescriptor(status.profile_face_descriptor);
-            }).catch(() => {});
-        }
+        loadFaceVerification().then(({ bindProfileFaceContext }) => {
+            bindProfileFaceContext({
+                photoUrl: profilePhotoUrl,
+                descriptor: Array.isArray(status.profile_face_descriptor) && status.profile_face_descriptor.length >= 64
+                    ? status.profile_face_descriptor
+                    : null,
+            });
+        }).catch(() => {});
 
         if (!requirePunchPhoto || !requireFaceMatch) {
             liveMatchOverlay?.classList.add('d-none');
@@ -267,10 +270,14 @@ export function initAttendancePunch({
         }
 
         try {
-            const { ensureFaceModelsLoaded, getProfileDescriptor, descriptorToArray, setStoredProfileDescriptor } = await loadFaceVerification();
+            const { ensureFaceModelsLoaded, getProfileDescriptor, descriptorToArray, bindProfileFaceContext } = await loadFaceVerification();
             await ensureFaceModelsLoaded();
+            bindProfileFaceContext({ photoUrl: profilePhotoUrl });
             const descriptor = await getProfileDescriptor(profilePhotoUrl, { forceRefresh: true });
-            setStoredProfileDescriptor(descriptorToArray(descriptor));
+            bindProfileFaceContext({
+                photoUrl: profilePhotoUrl,
+                descriptor: descriptorToArray(descriptor),
+            });
             await api.post('/attendance/face-reference', {
                 descriptor: descriptorToArray(descriptor),
             });

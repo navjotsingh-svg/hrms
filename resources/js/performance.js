@@ -1674,7 +1674,10 @@ const initGoals = async () => {
     };
 
     if (cfg.canManage) {
-        setHeaderAction('<button type="button" class="btn btn-primary" id="openGoalModalBtn">+ Create Goal</button>');
+        setHeaderAction(`
+            <a href="/performance/kpi" class="btn btn-outline-secondary">Manage KPIs</a>
+            <button type="button" class="btn btn-primary" id="openGoalModalBtn">+ Create Goal</button>
+        `);
         document.getElementById('goalLevelFieldWrap')?.classList.remove('d-none');
     } else {
         document.getElementById('goalLevelFieldWrap')?.classList.add('d-none');
@@ -1984,7 +1987,10 @@ const initKpi = async () => {
     };
 
     if (cfg.canManage) {
-        setHeaderAction('<button type="button" class="btn btn-primary" id="openKpiModalBtn">+ Create KPI</button>');
+        setHeaderAction(`
+            <a href="/performance/goals" class="btn btn-outline-secondary">View Goals</a>
+            <button type="button" class="btn btn-primary" id="openKpiModalBtn">+ Create KPI</button>
+        `);
 
         document.getElementById('openKpiModalBtn')?.addEventListener('click', () => {
             document.getElementById('kpiEditingId').value = '';
@@ -2029,13 +2035,10 @@ const initKpi = async () => {
         const id = document.getElementById('kpiProgressEditingId').value;
 
         try {
-            await api.put(`/performance-kpis/${id}`, {
-                current_value: Number(document.getElementById('kpiProgressCurrent').value || 0),
-            });
-            progressModal?.hide();
             const response = await api.put(`/performance-kpis/${id}`, {
                 current_value: Number(document.getElementById('kpiProgressCurrent').value || 0),
             });
+            progressModal?.hide();
             const linkedCount = response.data?.data?.kpi?.linked_tasks_count || 0;
             showAlert(linkedCount
                 ? `KPI progress updated. ${linkedCount} linked goal task(s) and goal achievement % refreshed.`

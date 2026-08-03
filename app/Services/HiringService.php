@@ -473,6 +473,45 @@ class HiringService
         return $query->paginate($filters['per_page'] ?? 10);
     }
 
+    public function resolveOffer(User $user, HiringOffer $offer): HiringOffer
+    {
+        $this->assertSameCompany($user, $offer);
+        $this->assertCanManageHiring($user);
+        $offer->loadMissing(['candidate', 'job', 'template']);
+
+        return $offer;
+    }
+
+    public function formatOffer(HiringOffer $offer): array
+    {
+        $offer->loadMissing(['candidate', 'job', 'template']);
+        $hasSignedPdf = filled($offer->signed_pdf_path);
+        $hasPdf = filled($offer->pdf_path) || filled(trim((string) ($offer->letter_html ?? '')));
+
+        return [
+            'id' => $offer->id,
+            'title' => $offer->title,
+            'offered_ctc' => $offer->offered_ctc,
+            'joining_date' => $offer->joining_date?->format('Y-m-d'),
+            'letter_html' => $offer->letter_html,
+            'status' => $offer->status,
+            'sent_at' => $offer->sent_at?->toIso8601String(),
+            'responded_at' => $offer->responded_at?->toIso8601String(),
+            'signed_at' => $offer->signed_at?->toIso8601String(),
+            'signature_name' => $offer->signature_name,
+            'signature_image_url' => $offer->signature_image_path ? asset($offer->signature_image_path) : null,
+            'decline_reason' => $offer->decline_reason,
+            'has_signed_pdf' => $hasSignedPdf,
+            'can_view_pdf' => $hasSignedPdf || $hasPdf,
+            'candidate' => $offer->candidate ? [
+                'id' => $offer->candidate->id,
+                'full_name' => trim($offer->candidate->first_name.' '.$offer->candidate->last_name),
+            ] : null,
+            'job' => $offer->job ? ['id' => $offer->job->id, 'title' => $offer->job->title] : null,
+            'template' => $offer->template ? ['id' => $offer->template->id, 'name' => $offer->template->name] : null,
+        ];
+    }
+
     public function storeOffer(User $user, array $data): HiringOffer
     {
         $this->assertCanManageHiring($user);

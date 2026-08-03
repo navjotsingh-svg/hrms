@@ -114,16 +114,7 @@ class HiringCandidateController extends Controller
                 ->values()
                 ->all(),
             'offers' => $candidate->offers
-                ->map(fn ($offer) => [
-                    'id' => $offer->id,
-                    'title' => $offer->title,
-                    'offered_ctc' => $offer->offered_ctc,
-                    'joining_date' => $offer->joining_date?->format('Y-m-d'),
-                    'status' => $offer->status,
-                    'sent_at' => $offer->sent_at?->toIso8601String(),
-                    'responded_at' => $offer->responded_at?->toIso8601String(),
-                    'job' => $offer->job ? ['id' => $offer->job->id, 'title' => $offer->job->title] : null,
-                ])
+                ->map(fn ($offer) => $this->hiringService->formatOffer($offer))
                 ->values()
                 ->all(),
         ];

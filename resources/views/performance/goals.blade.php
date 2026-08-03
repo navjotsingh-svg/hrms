@@ -5,7 +5,7 @@
         <strong>Goals → Tasks → KPIs flow:</strong>
         Break each goal into <em>tasks/key results</em>. Link a task to a KPI to sync progress automatically.
         Goal achievement % is the weighted average of task progress; parent goals roll up from child goals when cascaded.
-        Update KPI current values on the KPI page — linked goal tasks and overall goal % update dynamically.
+        Create and update KPIs on the <a href="{{ route('web.performance.kpi') }}" class="alert-link">KPI page</a> — linked goal tasks and overall goal % update dynamically.
     </div>
     <div class="content-card companies-list-card">
         <div class="content-card-body companies-filter-bar border-bottom">

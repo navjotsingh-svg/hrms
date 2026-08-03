@@ -4,12 +4,14 @@ import { bindBackButton, buildCategoryReturnUrl, showAutoDismissAlert } from './
 import { renderExpenseDetailHtml, renderExpenseGroupDetailHtml } from './expense-modals';
 import {
     bindRequestReviewHandlers,
+    bindRegularizationBatchReviewHandlers,
     mountRequestShowActions,
 } from './request-review';
 import {
     renderEmployeeNameBlock,
     renderHubRequestDetailHtml,
-    renderRegularizationBatchDates,
+    hasRegularizationBatchReviewPanel,
+    renderRegularizationBatchDatesSection,
     renderRegularizationPunchFields,
 } from './request-display';
 import {
@@ -130,12 +132,18 @@ document.addEventListener('DOMContentLoaded', async () => {
             category: 'regularization',
             entity_id: group.request_ids?.[0],
             status: group.status,
-            can_review: group.can_review,
+            can_review: false,
             can_cancel: false,
             review_kind: 'regularization_batch',
             review_target: group.batch_id,
         };
-        const singleDay = (group.dates || []).length === 1 ? group.dates[0] : null;
+        const dates = group.dates || [];
+        const singleDay = dates.length === 1 ? dates[0] : null;
+        const useSelectiveReview = (group.day_count || dates.length) > 1 && hasRegularizationBatchReviewPanel(dates);
+
+        if (!useSelectiveReview) {
+            actionItem.can_review = group.can_review;
+        }
 
         renderPageHeader({
             category_label: 'Attendance Regularization',
@@ -151,10 +159,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                 </div>
                 <div class="col-md-6"><span class="text-muted">Days</span><div>${group.day_count || 0}</div></div>
                 ${singleDay ? renderRegularizationPunchFields(singleDay) : ''}
-                <div class="col-12">
-                    <span class="text-muted">Dates</span>
-                    <ul class="mb-0 ps-3">${renderRegularizationBatchDates(group.dates || [])}</ul>
-                </div>
+                ${renderRegularizationBatchDatesSection(dates)}
                 <div class="col-md-6"><span class="text-muted">Status</span><div class="fw-semibold text-capitalize">${group.status_label || group.status || '—'}</div></div>
                 <div class="col-md-6"><span class="text-muted">Submitted On</span><div>${renderDateTimeStackFromLabel(group.created_at_label)}</div></div>
                 <div class="col-12"><span class="text-muted">Reason</span><div>${group.reason || '—'}</div></div>
@@ -263,6 +268,16 @@ document.addEventListener('DOMContentLoaded', async () => {
     };
 
     bindRequestReviewHandlers(document, {
+        onSuccess: async (message) => {
+            showAlert(message);
+            await load();
+        },
+        onError: (error) => {
+            showAlert(getErrorMessage(error), 'danger');
+        },
+    });
+
+    bindRegularizationBatchReviewHandlers(detailsEl, {
         onSuccess: async (message) => {
             showAlert(message);
             await load();

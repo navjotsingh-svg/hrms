@@ -514,6 +514,8 @@ Route::prefix('v1')->name('api.')->group(function () {
                 Route::patch('attendance-regularizations/batch/{batchId}/reject', [\App\Http\Controllers\Api\V1\AttendanceRegularizationController::class, 'rejectBatch'])
                     ->name('attendance-regularizations.batch.reject')
                     ->whereUuid('batchId');
+                Route::post('attendance-regularizations/review-selected', [\App\Http\Controllers\Api\V1\AttendanceRegularizationController::class, 'reviewSelected'])
+                    ->name('attendance-regularizations.review-selected');
                 Route::patch('attendance-regularizations/{attendance_regularization}/approve', [\App\Http\Controllers\Api\V1\AttendanceRegularizationController::class, 'approve'])
                     ->name('attendance-regularizations.approve')
                     ->whereNumber('attendance_regularization');
@@ -1244,6 +1246,12 @@ Route::prefix('v1')->name('api.')->group(function () {
 
                 Route::get('hiring-offers', [\App\Http\Controllers\Api\V1\HiringOfferController::class, 'index'])
                     ->name('hiring-offers.index');
+                Route::get('hiring-offers/{hiringOffer}', [\App\Http\Controllers\Api\V1\HiringOfferController::class, 'show'])
+                    ->name('hiring-offers.show')
+                    ->whereNumber('hiringOffer');
+                Route::get('hiring-offers/{hiringOffer}/pdf', [\App\Http\Controllers\Api\V1\HiringOfferController::class, 'pdf'])
+                    ->name('hiring-offers.pdf')
+                    ->whereNumber('hiringOffer');
                 Route::post('hiring-offers', [\App\Http\Controllers\Api\V1\HiringOfferController::class, 'store'])
                     ->name('hiring-offers.store');
                 Route::patch('hiring-offers/{hiringOffer}/send', [\App\Http\Controllers\Api\V1\HiringOfferController::class, 'send'])

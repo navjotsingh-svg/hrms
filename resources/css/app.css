@@ -1221,6 +1221,22 @@ html.sidebar-collapsed .topbar-sidebar-toggle .topbar-toggle-icon {
     border-top: 1px solid #f1f5f9;
 }
 
+.regularization-batch-readonly-dates {
+    margin-top: 1rem;
+    padding-top: 1rem;
+    border-top: 1px solid #e2e8f0;
+}
+
+.regularization-batch-review-panel {
+    background: #f8fafc;
+}
+
+.regularization-batch-review-row + .regularization-batch-review-row {
+    margin-top: 1rem;
+    padding-top: 1rem;
+    border-top: 1px solid #e2e8f0;
+}
+
 .request-profile-photo-preview {
     display: inline-block;
     padding: 0;

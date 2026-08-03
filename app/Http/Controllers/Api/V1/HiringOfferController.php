@@ -6,16 +6,21 @@ use App\Http\Controllers\Controller;
 use App\Http\Concerns\ApiResponse;
 use App\Models\HiringOffer;
 use App\Models\HiringTemplate;
+use App\Services\CandidateOfferService;
 use App\Services\HiringService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
+use Symfony\Component\HttpFoundation\Response;
 
 class HiringOfferController extends Controller
 {
     use ApiResponse;
 
-    public function __construct(private HiringService $hiringService) {}
+    public function __construct(
+        private HiringService $hiringService,
+        private CandidateOfferService $candidateOfferService,
+    ) {}
 
     public function index(Request $request): JsonResponse
     {
@@ -27,8 +32,26 @@ class HiringOfferController extends Controller
         $paginator = $this->hiringService->listOffers($request->user(), $validated);
 
         return $this->success([
-            'offers' => collect($paginator->items())->map(fn (HiringOffer $o) => $this->formatOffer($o))->values(),
+            'offers' => collect($paginator->items())->map(fn (HiringOffer $o) => $this->hiringService->formatOffer($o))->values(),
             'pagination' => $this->paginationMeta($paginator),
+        ]);
+    }
+
+    public function show(Request $request, HiringOffer $hiringOffer): JsonResponse
+    {
+        $offer = $this->hiringService->resolveOffer($request->user(), $hiringOffer);
+
+        return $this->success(['offer' => $this->hiringService->formatOffer($offer)]);
+    }
+
+    public function pdf(Request $request, HiringOffer $hiringOffer): Response
+    {
+        $offer = $this->hiringService->resolveOffer($request->user(), $hiringOffer);
+        $file = $this->candidateOfferService->pdfContents($offer);
+
+        return response($file['binary'], 200, [
+            'Content-Type' => 'application/pdf',
+            'Content-Disposition' => 'inline; filename="'.$file['filename'].'"',
         ]);
     }
 
@@ -45,14 +68,14 @@ class HiringOfferController extends Controller
 
         $offer = $this->hiringService->storeOffer($request->user(), $validated);
 
-        return $this->success(['offer' => $this->formatOffer($offer)], 'Offer created.', 201);
+        return $this->success(['offer' => $this->hiringService->formatOffer($offer)], 'Offer created.', 201);
     }
 
     public function send(Request $request, HiringOffer $hiringOffer): JsonResponse
     {
         $offer = $this->hiringService->sendOffer($request->user(), $hiringOffer);
 
-        return $this->success(['offer' => $this->formatOffer($offer)], 'Offer email with PDF sent to candidate.');
+        return $this->success(['offer' => $this->hiringService->formatOffer($offer)], 'Offer email with PDF sent to candidate.');
     }
 
     public function templates(Request $request): JsonResponse
@@ -107,27 +130,6 @@ class HiringOfferController extends Controller
         $template = $this->hiringService->updateTemplate($request->user(), $hiringTemplate, $validated);
 
         return $this->success(['template' => $this->formatTemplate($template)], 'Template updated.');
-    }
-
-    private function formatOffer(HiringOffer $offer): array
-    {
-        $offer->loadMissing(['candidate', 'job', 'template']);
-
-        return [
-            'id' => $offer->id,
-            'title' => $offer->title,
-            'offered_ctc' => $offer->offered_ctc,
-            'joining_date' => $offer->joining_date?->format('Y-m-d'),
-            'letter_html' => $offer->letter_html,
-            'status' => $offer->status,
-            'sent_at' => $offer->sent_at?->toIso8601String(),
-            'candidate' => $offer->candidate ? [
-                'id' => $offer->candidate->id,
-                'full_name' => trim($offer->candidate->first_name.' '.$offer->candidate->last_name),
-            ] : null,
-            'job' => $offer->job ? ['id' => $offer->job->id, 'title' => $offer->job->title] : null,
-            'template' => $offer->template ? ['id' => $offer->template->id, 'name' => $offer->template->name] : null,
-        ];
     }
 
     private function formatTemplate(HiringTemplate $template): array

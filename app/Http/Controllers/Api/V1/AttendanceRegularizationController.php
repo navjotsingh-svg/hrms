@@ -6,6 +6,7 @@ use App\Http\Concerns\ValidatesReviewNotes;
 use App\Http\Controllers\Controller;
 use App\Http\Concerns\ApiResponse;
 use App\Http\Requests\RejectAttendanceRegularizationRequest;
+use App\Http\Requests\ReviewSelectedAttendanceRegularizationsRequest;
 use App\Http\Requests\StoreAttendanceRegularizationRequest;
 use App\Http\Resources\AttendanceRegularizationResource;
 use App\Models\AttendanceRegularizationRequest;
@@ -205,6 +206,28 @@ class AttendanceRegularizationController extends Controller
         return $this->success(
             ['regularization_requests' => AttendanceRegularizationResource::collection($requests)],
             "Attendance regularization rejected for {$count} day(s).",
+        );
+    }
+
+    public function reviewSelected(ReviewSelectedAttendanceRegularizationsRequest $request): JsonResponse
+    {
+        $requests = $this->regularizationService->reviewSelected(
+            $request->user(),
+            $request->validated()['items'],
+        );
+        $count = count($requests);
+        $approved = collect($requests)->where('status', AttendanceRegularizationRequest::STATUS_APPROVED)->count();
+        $rejected = collect($requests)->where('status', AttendanceRegularizationRequest::STATUS_REJECTED)->count();
+        $parts = collect([
+            $approved > 0 ? "{$approved} approved" : null,
+            $rejected > 0 ? "{$rejected} rejected" : null,
+        ])->filter()->implode(', ');
+
+        return $this->success(
+            ['regularization_requests' => AttendanceRegularizationResource::collection($requests)],
+            $parts !== ''
+                ? "Regularization review completed: {$parts}."
+                : "Regularization review completed for {$count} day(s).",
         );
     }
 

@@ -44,11 +44,81 @@ class AttendanceNetworkService
         }
 
         foreach ($candidates as $candidate) {
-            $ipv4 = $this->normalizeToIpv4($candidate);
+            $normalized = $this->normalizeIpAddress($candidate);
 
-            if ($ipv4 !== null) {
-                return $ipv4;
+            if ($normalized !== null) {
+                return $normalized;
             }
+        }
+
+        return null;
+    }
+
+    public function normalizeIpAddress(?string $ip): ?string
+    {
+        if (! is_string($ip)) {
+            return null;
+        }
+
+        $ip = trim($ip);
+
+        if ($ip === '') {
+            return null;
+        }
+
+        if (str_starts_with($ip, '[') && str_contains($ip, ']')) {
+            $ip = substr($ip, 1, strpos($ip, ']') - 1);
+        }
+
+        if (str_contains($ip, ':') && substr_count($ip, ':') === 1 && ! str_contains($ip, '::')) {
+            [$possibleIp] = explode(':', $ip, 2);
+            $ip = $possibleIp;
+        }
+
+        if (filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4) !== false) {
+            return $ip;
+        }
+
+        if (filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_IPV6) === false) {
+            return null;
+        }
+
+        $normalized = strtolower($ip);
+
+        if ($normalized === '::1') {
+            return '127.0.0.1';
+        }
+
+        if (str_starts_with($normalized, '::ffff:')) {
+            $mappedIpv4 = substr($ip, 7);
+
+            if (filter_var($mappedIpv4, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4) !== false) {
+                return $mappedIpv4;
+            }
+        }
+
+        $packed = @inet_pton($ip);
+
+        if ($packed === false) {
+            return $ip;
+        }
+
+        $canonical = @inet_ntop($packed);
+
+        return is_string($canonical) && $canonical !== '' ? $canonical : $ip;
+    }
+
+    /** @deprecated Use normalizeIpAddress() for storage; kept for IPv4-only allowlist checks. */
+    private function normalizeToIpv4(string $ip): ?string
+    {
+        $normalized = $this->normalizeIpAddress($ip);
+
+        if ($normalized === null) {
+            return null;
+        }
+
+        if (filter_var($normalized, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4) !== false) {
+            return $normalized;
         }
 
         return null;
@@ -128,14 +198,16 @@ class AttendanceNetworkService
             ]);
         }
 
+        $clientIp = $this->normalizeToIpv4($ipAddress) ?? $ipAddress;
+
         foreach ($allowedIps as $allowedIp) {
-            if ($this->ipMatches($ipAddress, $allowedIp)) {
+            if ($this->ipMatches($clientIp, $allowedIp)) {
                 return;
             }
         }
 
         throw ValidationException::withMessages([
-            'punch' => ["Attendance cannot be marked from this network ({$ipAddress}). Use an approved office IP address."],
+            'punch' => ["Attendance cannot be marked from this network ({$clientIp}). Use an approved office IP address."],
         ]);
     }
 
@@ -193,47 +265,5 @@ class AttendanceNetworkService
     private function isValidIp(string $ip): bool
     {
         return filter_var($ip, FILTER_VALIDATE_IP) !== false;
-    }
-
-    private function normalizeToIpv4(string $ip): ?string
-    {
-        $ip = trim($ip);
-
-        if ($ip === '') {
-            return null;
-        }
-
-        if (str_starts_with($ip, '[') && str_contains($ip, ']')) {
-            $ip = substr($ip, 1, strpos($ip, ']') - 1);
-        }
-
-        if (str_contains($ip, ':') && substr_count($ip, ':') === 1 && ! str_contains($ip, '::')) {
-            [$possibleIp] = explode(':', $ip, 2);
-            $ip = $possibleIp;
-        }
-
-        if (filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4) !== false) {
-            return $ip;
-        }
-
-        if (filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_IPV6) === false) {
-            return null;
-        }
-
-        $normalized = strtolower($ip);
-
-        if ($normalized === '::1') {
-            return '127.0.0.1';
-        }
-
-        if (str_starts_with($normalized, '::ffff:')) {
-            $mappedIpv4 = substr($ip, 7);
-
-            if (filter_var($mappedIpv4, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4) !== false) {
-                return $mappedIpv4;
-            }
-        }
-
-        return null;
     }
 }

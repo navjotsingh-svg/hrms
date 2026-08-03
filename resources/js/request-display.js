@@ -80,21 +80,136 @@ export const renderRegularizationPunchFields = (item) => `
     </div>
 `;
 
-export const renderRegularizationBatchDates = (dates = []) => {
+const renderRegularizationReadonlyDateRow = (day) => {
+    const label = day.attendance_date_label || day.attendance_date || '—';
+    const statusBadge = day.status
+        ? `<span class="badge text-bg-${day.status === 'approved' ? 'success' : day.status === 'rejected' ? 'danger' : day.status === 'pending' ? 'warning' : 'secondary'} ms-2">${day.status_label || day.status}</span>`
+        : '';
+    const reviewMeta = day.review_notes
+        ? `<div class="small text-muted mt-1"><span class="fw-semibold">Remarks:</span> ${day.review_notes}</div>`
+        : '';
+    const reviewedMeta = day.reviewed_at_label
+        ? `<div class="small text-muted mt-1">Reviewed ${day.reviewed_at_label}${day.reviewed_by_name ? ` by ${day.reviewed_by_name}` : ''}</div>`
+        : '';
+
+    return `
+        <li class="regularization-batch-date-item">
+            <div class="fw-semibold mb-2">${label}${statusBadge}</div>
+            ${renderRegularizationPunchCompare(day, { compact: true })}
+            ${reviewMeta}
+            ${reviewedMeta}
+        </li>
+    `;
+};
+
+export const renderRegularizationBatchDates = (dates = [], { showStatus = false } = {}) => {
     if (!dates.length) {
         return '<li class="text-muted">—</li>';
     }
 
-    return dates.map((day) => {
-        const label = day.attendance_date_label || day.attendance_date || '—';
+    if (!showStatus) {
+        return dates.map((day) => {
+            const label = day.attendance_date_label || day.attendance_date || '—';
 
+            return `
+                <li class="regularization-batch-date-item">
+                    <div class="fw-semibold mb-2">${label}</div>
+                    ${renderRegularizationPunchCompare(day, { compact: true })}
+                </li>
+            `;
+        }).join('');
+    }
+
+    return dates.map(renderRegularizationReadonlyDateRow).join('');
+};
+
+const renderRegularizationReviewRow = (day) => `
+    <div class="regularization-batch-review-row regularization-batch-date-item" data-request-id="${day.id}">
+        <div class="form-check mb-2">
+            <input class="form-check-input" type="checkbox" data-regularization-select checked id="reg-review-${day.id}">
+            <label class="form-check-label fw-semibold" for="reg-review-${day.id}">${day.attendance_date_label || '—'}</label>
+        </div>
+        ${renderRegularizationPunchCompare(day, { compact: true })}
+        <div class="row g-2 mt-2 align-items-start">
+            <div class="col-md-4">
+                <label class="form-label small text-muted mb-1">Action</label>
+                <select class="form-select form-select-sm" data-regularization-action>
+                    <option value="approve">Approve</option>
+                    <option value="reject">Reject</option>
+                </select>
+            </div>
+            <div class="col-md-8">
+                <label class="form-label small text-muted mb-1">Remarks</label>
+                <textarea class="form-control form-control-sm" rows="2" placeholder="Required when rejecting" data-regularization-notes></textarea>
+            </div>
+        </div>
+    </div>
+`;
+
+export const hasRegularizationBatchReviewPanel = (dates = []) => (
+    dates.some((day) => day.status === 'pending' && day.can_review)
+);
+
+export const renderRegularizationBatchReviewPanel = (dates = [], { embedded = false } = {}) => {
+    const pendingReviewable = dates.filter((day) => day.status === 'pending' && day.can_review);
+    const readonlyDates = dates.filter((day) => !(day.status === 'pending' && day.can_review));
+
+    if (!pendingReviewable.length) {
+        return '';
+    }
+
+    const readonlyBlock = readonlyDates.length
+        ? `<ul class="mb-0 ps-3 regularization-batch-readonly-dates">${readonlyDates.map(renderRegularizationReadonlyDateRow).join('')}</ul>`
+        : '';
+
+    return `
+        <div class="${embedded ? '' : 'col-12 '}regularization-batch-review-panel border rounded p-3">
+            <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
+                <div>
+                    <div class="fw-semibold">Review selected days</div>
+                    <div class="small text-muted">Select days, choose approve or reject, and add remarks for each request.</div>
+                </div>
+                <div class="btn-group btn-group-sm">
+                    <button type="button" class="btn btn-outline-secondary" data-regularization-select-all>Select all</button>
+                    <button type="button" class="btn btn-outline-secondary" data-regularization-select-none>Clear all</button>
+                </div>
+            </div>
+            <div class="regularization-batch-review-rows">
+                ${pendingReviewable.map(renderRegularizationReviewRow).join('')}
+            </div>
+            ${readonlyBlock}
+            <div class="d-flex justify-content-end mt-3">
+                <button type="button" class="btn btn-primary btn-sm" data-regularization-submit-review>Submit review</button>
+            </div>
+        </div>
+    `;
+};
+
+export const renderRegularizationBatchDatesSection = (dates = []) => {
+    if (!dates.length) {
         return `
-            <li class="regularization-batch-date-item">
-                <div class="fw-semibold mb-2">${label}</div>
-                ${renderRegularizationPunchCompare(day, { compact: true })}
-            </li>
+            <div class="col-12">
+                <span class="text-muted">Dates</span>
+                <ul class="mb-0 ps-3"><li class="text-muted">—</li></ul>
+            </div>
         `;
-    }).join('');
+    }
+
+    if (hasRegularizationBatchReviewPanel(dates)) {
+        return `
+            <div class="col-12">
+                <span class="text-muted d-block mb-2">Dates</span>
+                ${renderRegularizationBatchReviewPanel(dates, { embedded: true })}
+            </div>
+        `;
+    }
+
+    return `
+        <div class="col-12">
+            <span class="text-muted">Dates</span>
+            <ul class="mb-0 ps-3">${renderRegularizationBatchDates(dates, { showStatus: true })}</ul>
+        </div>
+    `;
 };
 
 const escapeAttr = (value = '') => String(value)

@@ -1079,7 +1079,9 @@ class RequestHubService
             'status_label' => 'Pending',
             'submitted_at_label' => $group['created_at_label'] ?? null,
             'sort_at' => $group['sort_at'] ?? 0,
-            'can_review' => (bool) ($group['can_review'] ?? false),
+            'can_review' => ($dayCount > 1 && ! empty($group['batch_id']))
+                ? false
+                : (bool) ($group['can_review'] ?? false),
             'can_cancel' => false,
             'view_url' => $this->requestShowUrl(
                 ($dayCount > 1 && ! empty($group['batch_id'])) ? 'regularization-batch' : 'regularization',

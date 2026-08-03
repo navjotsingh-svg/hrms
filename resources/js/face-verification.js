@@ -58,6 +58,7 @@ let modelsPromise = null;
 let profileDescriptorCache = null;
 let profileDescriptorSource = null;
 let storedProfileDescriptor = null;
+let storedProfilePhotoUrl = null;
 const recentLiveRawScores = [];
 
 const resolveAssetUrl = (url) => {
@@ -117,13 +118,34 @@ const loadImage = (url) => new Promise((resolve, reject) => {
 
 export const ensureFaceModelsLoaded = () => getHuman();
 
-export const setStoredProfileDescriptor = (descriptor) => {
+export const setStoredProfileDescriptor = (descriptor, photoUrl = null) => {
+    if (photoUrl) {
+        storedProfilePhotoUrl = resolveAssetUrl(photoUrl);
+        profileDescriptorSource = storedProfilePhotoUrl;
+    }
+
     if (Array.isArray(descriptor) && descriptor.length >= 64) {
         storedProfileDescriptor = descriptor.map(Number);
         return;
     }
 
     storedProfileDescriptor = null;
+};
+
+export const bindProfileFaceContext = ({ photoUrl, descriptor = null } = {}) => {
+    const resolvedUrl = photoUrl ? resolveAssetUrl(photoUrl) : null;
+
+    if (resolvedUrl !== storedProfilePhotoUrl) {
+        profileDescriptorCache = null;
+        profileDescriptorSource = resolvedUrl;
+        storedProfileDescriptor = null;
+        storedProfilePhotoUrl = resolvedUrl;
+        resetLiveMatchHistory();
+    }
+
+    if (Array.isArray(descriptor) && descriptor.length >= 64) {
+        storedProfileDescriptor = descriptor.map(Number);
+    }
 };
 
 export const resetLiveMatchHistory = () => {
@@ -253,15 +275,23 @@ export const compareDescriptors = async (profileDescriptor, selfieDescriptor, th
 };
 
 export const getProfileDescriptor = async (profilePhotoUrl, { forceRefresh = false } = {}) => {
-    if (storedProfileDescriptor?.length >= 64 && !forceRefresh) {
-        return storedProfileDescriptor;
-    }
-
     if (!profilePhotoUrl) {
         throw new Error('Profile photo is required for face verification.');
     }
 
     const resolvedUrl = resolveAssetUrl(profilePhotoUrl);
+
+    if (storedProfilePhotoUrl && storedProfilePhotoUrl !== resolvedUrl) {
+        profileDescriptorCache = null;
+        storedProfileDescriptor = null;
+        resetLiveMatchHistory();
+    }
+
+    storedProfilePhotoUrl = resolvedUrl;
+
+    if (!forceRefresh && storedProfileDescriptor?.length >= 64 && profileDescriptorSource === resolvedUrl) {
+        return storedProfileDescriptor;
+    }
 
     if (!forceRefresh && profileDescriptorCache && profileDescriptorSource === resolvedUrl) {
         return profileDescriptorCache;
@@ -339,6 +369,7 @@ export const resetProfileDescriptorCache = () => {
     profileDescriptorCache = null;
     profileDescriptorSource = null;
     storedProfileDescriptor = null;
+    storedProfilePhotoUrl = null;
     resetLiveMatchHistory();
 };
 
@@ -359,7 +390,7 @@ export const syncFaceReferenceFromProfilePhoto = async (profilePhotoUrl) => {
     const { default: api } = await import('./api');
 
     await ensureFaceModelsLoaded();
-    resetProfileDescriptorCache();
+    bindProfileFaceContext({ photoUrl: profilePhotoUrl });
 
     const descriptor = await getProfileDescriptor(profilePhotoUrl, { forceRefresh: true });
 

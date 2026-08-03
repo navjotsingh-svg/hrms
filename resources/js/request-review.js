@@ -275,6 +275,81 @@ export const cancelRequest = async (token) => {
         : 'Request has been cancelled.');
 };
 
+export const reviewSelectedRegularizations = async (items) => {
+    const { data } = await api.post('/attendance-regularizations/review-selected', { items });
+
+    return data.message || 'Regularization review submitted.';
+};
+
+export const bindRegularizationBatchReviewHandlers = (root, {
+    onSuccess,
+    onError,
+} = {}) => {
+    root?.addEventListener('click', async (event) => {
+        const selectAll = event.target.closest('[data-regularization-select-all]');
+        const selectNone = event.target.closest('[data-regularization-select-none]');
+        const submit = event.target.closest('[data-regularization-submit-review]');
+
+        if (selectAll) {
+            root.querySelectorAll('[data-regularization-select]').forEach((checkbox) => {
+                checkbox.checked = true;
+            });
+
+            return;
+        }
+
+        if (selectNone) {
+            root.querySelectorAll('[data-regularization-select]').forEach((checkbox) => {
+                checkbox.checked = false;
+            });
+
+            return;
+        }
+
+        if (!submit) {
+            return;
+        }
+
+        try {
+            const rows = root.querySelectorAll('.regularization-batch-review-row');
+            const items = [];
+
+            rows.forEach((row) => {
+                const checkbox = row.querySelector('[data-regularization-select]');
+
+                if (!checkbox?.checked) {
+                    return;
+                }
+
+                const requestId = Number(row.dataset.requestId);
+                const action = row.querySelector('[data-regularization-action]')?.value || 'approve';
+                const notes = row.querySelector('[data-regularization-notes]')?.value?.trim() || '';
+                const dateLabel = row.querySelector('label')?.textContent?.trim() || 'a selected date';
+
+                if (action === 'reject' && notes.length < 3) {
+                    throw new Error(`Rejection remarks are required for ${dateLabel} (minimum 3 characters).`);
+                }
+
+                items.push({
+                    request_id: requestId,
+                    action,
+                    notes: notes || null,
+                });
+            });
+
+            if (!items.length) {
+                throw new Error('Select at least one request to review.');
+            }
+
+            const message = await reviewSelectedRegularizations(items);
+
+            onSuccess?.(message);
+        } catch (error) {
+            onError?.(error);
+        }
+    });
+};
+
 export const bindRequestReviewHandlers = (root, {
     onSuccess,
     onError,

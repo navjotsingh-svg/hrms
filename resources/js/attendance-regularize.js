@@ -611,15 +611,11 @@ const formatEligiblePunchMeta = (item) => {
                 ? `/requests/regularization-batch/${group.batch_id}`
                 : (group.request_ids?.[0] ? `/requests/regularization/${group.request_ids[0]}` : '');
             const viewLink = viewHref ? renderViewLink(viewHref, 'View request') : '';
-            const approveAction = group.can_review
-                ? (isBatch && group.batch_id
-                    ? renderApproveIconButton('data-approve-regularize-batch', group.batch_id, `Approve ${dayCount} day(s)`)
-                    : renderApproveIconButton('data-approve-regularize', group.request_ids?.[0], 'Approve regularization'))
+            const approveAction = group.can_review && !isBatch
+                ? renderApproveIconButton('data-approve-regularize', group.request_ids?.[0], 'Approve regularization')
                 : '';
-            const rejectAction = group.can_review
-                ? (isBatch && group.batch_id
-                    ? renderRejectIconButton('data-reject-regularize-batch', group.batch_id, `Reject ${dayCount} day(s)`)
-                    : renderRejectIconButton('data-reject-regularize', group.request_ids?.[0], 'Reject regularization'))
+            const rejectAction = group.can_review && !isBatch
+                ? renderRejectIconButton('data-reject-regularize', group.request_ids?.[0], 'Reject regularization')
                 : '';
 
             return `
@@ -883,20 +879,6 @@ const formatEligiblePunchMeta = (item) => {
         }
     };
 
-    const handleBatchReview = async (batchId, action) => {
-        try {
-            const message = await reviewSingleRequest(`regularization_batch:${batchId}`, action);
-            if (!message) {
-                return;
-            }
-
-            showAlert(message);
-            await reloadDashboard(currentPage);
-        } catch (error) {
-            showAlert(getErrorMessage(error), 'danger');
-        }
-    };
-
     const handleCancel = async (id) => {
         if (!window.confirm('Cancel this regularization request?')) return;
         try {
@@ -1046,13 +1028,9 @@ const formatEligiblePunchMeta = (item) => {
     });
 
     pendingContainer?.addEventListener('click', (event) => {
-        const approveBatch = event.target.closest('[data-approve-regularize-batch]');
-        const rejectBatch = event.target.closest('[data-reject-regularize-batch]');
         const approve = event.target.closest('[data-approve-regularize]');
         const reject = event.target.closest('[data-reject-regularize]');
 
-        if (approveBatch) handleBatchReview(approveBatch.dataset.approveRegularizeBatch, 'approve');
-        if (rejectBatch) handleBatchReview(rejectBatch.dataset.rejectRegularizeBatch, 'reject');
         if (approve) handleReview(approve.dataset.approveRegularize, 'approve');
         if (reject) handleReview(reject.dataset.rejectRegularize, 'reject');
     });

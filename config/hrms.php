@@ -100,12 +100,12 @@ return [
     | Employee Experience — KPI menu
     |--------------------------------------------------------------------------
     |
-    | Set HRMS_PERFORMANCE_KPI_MENU_ENABLED=true in .env when ready to show KPI.
-    | Goals with key results cover most use cases until KPI is linked or needed.
+    | Set HRMS_PERFORMANCE_KPI_MENU_ENABLED=false in .env to hide the KPI menu.
+    | KPIs link to individual goal tasks; updating KPI progress syncs goal achievement %.
     |
     */
 
-    'performance_kpi_menu_enabled' => env('HRMS_PERFORMANCE_KPI_MENU_ENABLED', false),
+    'performance_kpi_menu_enabled' => filter_var(env('HRMS_PERFORMANCE_KPI_MENU_ENABLED', true), FILTER_VALIDATE_BOOL),
 
     /*
     |--------------------------------------------------------------------------

@@ -56,6 +56,23 @@ const statusPill = (status) => {
     return `<span class="badge bg-${map[status] || 'secondary'}">${escapeHtml(String(status || '').replace(/_/g, ' '))}</span>`;
 };
 
+const openOfferPdf = async (offerId, filename = 'offer-letter.pdf') => {
+    const response = await api.get(`/hiring-offers/${offerId}/pdf`, { responseType: 'blob' });
+    const url = URL.createObjectURL(new Blob([response.data], { type: 'application/pdf' }));
+    const popup = window.open(url, '_blank');
+
+    if (!popup) {
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = filename;
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+    }
+
+    setTimeout(() => URL.revokeObjectURL(url), 60_000);
+};
+
 const showAlert = (message, type = 'success') => {
     const alertBox = document.getElementById('hiringAlert');
     if (!alertBox) return;
@@ -227,20 +244,36 @@ const renderCandidateDetail = (candidate) => {
                         <th>CTC</th>
                         <th>Joining</th>
                         <th>Status</th>
+                        ${cfg.canManage ? '<th class="text-end">Letter</th>' : ''}
                     </tr>
                 </thead>
                 <tbody>
-                    ${candidate.offers.map((offer) => `
+                    ${candidate.offers.map((offer) => {
+                        const signedMeta = offer.status === 'accepted' && offer.signed_at
+                            ? `<div class="small text-muted">Signed ${formatDateTime(offer.signed_at)}${offer.signature_name ? ` by ${escapeHtml(offer.signature_name)}` : ''}</div>`
+                            : '';
+                        const declineMeta = offer.status === 'declined' && offer.decline_reason
+                            ? `<div class="small text-muted">${escapeHtml(offer.decline_reason)}</div>`
+                            : '';
+                        const viewAction = cfg.canManage && offer.can_view_pdf
+                            ? renderViewIconButton('data-view-offer-pdf', offer.id, offer.has_signed_pdf ? 'View signed offer letter' : 'View offer letter')
+                            : '';
+
+                        return `
                         <tr>
                             <td>
                                 <div>${escapeHtml(offer.title)}</div>
                                 <div class="small text-muted">${escapeHtml(offer.job?.title || '—')}</div>
+                                ${signedMeta}
+                                ${declineMeta}
                             </td>
                             <td>${offer.offered_ctc ?? '—'}</td>
                             <td>${escapeHtml(offer.joining_date || '—')}</td>
                             <td>${statusPill(offer.status)}</td>
+                            ${cfg.canManage ? `<td class="text-end">${renderActionGroup([viewAction])}</td>` : ''}
                         </tr>
-                    `).join('')}
+                    `;
+                    }).join('')}
                 </tbody>
             </table>
         </div>`
@@ -599,6 +632,17 @@ const initCandidates = async () => {
         await openCandidateDetail(viewBtn.dataset.viewCandidate);
     });
 
+    detailBody?.addEventListener('click', async (e) => {
+        const viewPdfBtn = e.target.closest('[data-view-offer-pdf]');
+        if (!viewPdfBtn) return;
+
+        try {
+            await openOfferPdf(viewPdfBtn.dataset.viewOfferPdf);
+        } catch (error) {
+            showAlert(getErrorMessage(error), 'danger');
+        }
+    });
+
     ['candidateStageFilter', 'candidateSearchFilter'].forEach((id) => {
         document.getElementById(id)?.addEventListener('change', () => load(1).catch((err) => showAlert(getErrorMessage(err), 'danger')));
         document.getElementById(id)?.addEventListener('input', () => load(1).catch((err) => showAlert(getErrorMessage(err), 'danger')));
@@ -744,9 +788,23 @@ const initOffers = async () => {
                 if (cfg.canManage && offer.status === 'draft') {
                     actions.push(`<button type="button" class="table-action-btn table-action-btn--approve" title="Send" data-send-offer="${offer.id}">&#9993;</button>`);
                 }
+                if (cfg.canManage && offer.can_view_pdf) {
+                    actions.push(renderViewIconButton(
+                        'data-view-offer-pdf',
+                        offer.id,
+                        offer.has_signed_pdf ? 'View signed offer letter' : 'View offer letter',
+                    ));
+                }
+                const signedMeta = offer.status === 'accepted' && offer.signed_at
+                    ? `<div class="small text-muted">Signed ${formatDateTime(offer.signed_at)}${offer.signature_name ? ` · ${escapeHtml(offer.signature_name)}` : ''}</div>`
+                    : '';
+
                 return `
                     <tr>
-                        <td>${escapeHtml(offer.title)}</td>
+                        <td>
+                            <div>${escapeHtml(offer.title)}</div>
+                            ${signedMeta}
+                        </td>
                         <td>${escapeHtml(offer.candidate?.full_name || '—')}</td>
                         <td>${escapeHtml(offer.job?.title || '—')}</td>
                         <td>${offer.offered_ctc ?? '—'}</td>
@@ -799,6 +857,17 @@ const initOffers = async () => {
 
     body.addEventListener('click', async (e) => {
         const sendBtn = e.target.closest('[data-send-offer]');
+        const viewPdfBtn = e.target.closest('[data-view-offer-pdf]');
+
+        if (viewPdfBtn) {
+            try {
+                await openOfferPdf(viewPdfBtn.dataset.viewOfferPdf);
+            } catch (error) {
+                showAlert(getErrorMessage(error), 'danger');
+            }
+            return;
+        }
+
         if (!sendBtn) return;
 
         try {

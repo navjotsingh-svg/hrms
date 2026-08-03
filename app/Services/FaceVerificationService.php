@@ -84,37 +84,32 @@ class FaceVerificationService
         }
 
         $threshold = $this->thresholdPercent($companyId);
-
-        if ($clientMatchScore === null) {
-            throw ValidationException::withMessages([
-                'face_match_score' => ['Face verification is required to mark attendance.'],
-            ]);
-        }
-
-        $verifiedScore = round($clientMatchScore, 2);
-
-        if ($clientMatchScore < $threshold) {
-            throw ValidationException::withMessages([
-                'selfie' => ["Face did not match your profile photo ({$clientMatchScore}% match). At least {$threshold}% is required."],
-            ]);
-        }
-
         $storedDescriptor = $employee->profile_face_descriptor;
 
-        if (
-            is_array($storedDescriptor)
-            && $storedDescriptor !== []
-            && is_array($selfieDescriptor)
-            && $selfieDescriptor !== []
-            && count($storedDescriptor) === count($selfieDescriptor)
-        ) {
-            $verifiedScore = $this->similarityPercent($storedDescriptor, $selfieDescriptor);
+        if (! is_array($storedDescriptor) || count($storedDescriptor) < 64) {
+            throw ValidationException::withMessages([
+                'selfie' => ['Your face reference is not synced yet. Open attendance once while online, then try again.'],
+            ]);
+        }
 
-            if ($verifiedScore < $threshold) {
-                throw ValidationException::withMessages([
-                    'selfie' => ["Face verification failed ({$verifiedScore}% match). Please align your face clearly and try again."],
-                ]);
-            }
+        if (! is_array($selfieDescriptor) || count($selfieDescriptor) < 64) {
+            throw ValidationException::withMessages([
+                'selfie' => ['Face verification is required to mark attendance.'],
+            ]);
+        }
+
+        if (count($storedDescriptor) !== count($selfieDescriptor)) {
+            throw ValidationException::withMessages([
+                'selfie' => ['Face verification data is invalid. Please retry with your camera.'],
+            ]);
+        }
+
+        $verifiedScore = $this->similarityPercent($storedDescriptor, $selfieDescriptor);
+
+        if ($verifiedScore < $threshold) {
+            throw ValidationException::withMessages([
+                'selfie' => ["Face verification failed ({$verifiedScore}% match). The photo must match your approved profile photo."],
+            ]);
         }
 
         return $verifiedScore;

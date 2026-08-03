@@ -169,15 +169,7 @@ class AttendanceRegularizationService
                 ];
             }
 
-            $groups[$groupKey]['dates'][] = [
-                'id' => $request->id,
-                'attendance_date' => $request->attendance_date?->toDateString(),
-                'attendance_date_label' => $request->attendance_date?->format('D, d M Y'),
-                'attendance_date_short_label' => $request->attendance_date?->format('D, d M'),
-                ...$this->formatOriginalPunchFields($request),
-                'requested_punch_in_label' => $request->requested_punch_in?->format('h:i A'),
-                'requested_punch_out_label' => $request->requested_punch_out?->format('h:i A'),
-            ];
+            $groups[$groupKey]['dates'][] = $this->formatDateEntry($request, $user);
             $groups[$groupKey]['request_ids'][] = $request->id;
         }
 
@@ -511,6 +503,63 @@ class AttendanceRegularizationService
             return $requests
                 ->map(fn (AttendanceRegularizationRequest $request) => $this->reject($user, $request, $notes))
                 ->all();
+        });
+    }
+
+    /**
+     * @param  array<int, array{request_id: int, action: string, notes?: ?string}>  $items
+     * @return array<int, AttendanceRegularizationRequest>
+     */
+    public function reviewSelected(User $user, array $items): array
+    {
+        if ($items === []) {
+            throw ValidationException::withMessages([
+                'items' => 'Select at least one request to review.',
+            ]);
+        }
+
+        return DB::transaction(function () use ($user, $items) {
+            $results = [];
+
+            foreach ($items as $index => $item) {
+                $request = AttendanceRegularizationRequest::query()
+                    ->with(['employee.user', 'appliedBy'])
+                    ->where('company_id', $user->company_id)
+                    ->find($item['request_id'] ?? null);
+
+                if (! $request) {
+                    throw ValidationException::withMessages([
+                        "items.{$index}.request_id" => 'One or more regularization requests could not be found.',
+                    ]);
+                }
+
+                $action = $item['action'] ?? '';
+                $notes = isset($item['notes']) ? trim((string) $item['notes']) : null;
+
+                if ($action === 'reject') {
+                    if (! $notes || strlen($notes) < 3) {
+                        throw ValidationException::withMessages([
+                            "items.{$index}.notes" => 'Rejection remarks are required (minimum 3 characters).',
+                        ]);
+                    }
+
+                    $results[] = $this->reject($user, $request, $notes);
+
+                    continue;
+                }
+
+                if ($action === 'approve') {
+                    $results[] = $this->approve($user, $request, $notes ?: null);
+
+                    continue;
+                }
+
+                throw ValidationException::withMessages([
+                    "items.{$index}.action" => 'Each item must specify approve or reject.',
+                ]);
+            }
+
+            return $results;
         });
     }
 
@@ -1148,9 +1197,7 @@ class AttendanceRegularizationService
             }
         }
 
-        return $this->buildGroupFromRequests($requests, $requests->contains(
-            fn (AttendanceRegularizationRequest $request) => $user->canReviewRegularizationRequest($request),
-        ));
+        return $this->buildGroupFromRequests($requests, $user);
     }
 
     public function formatOriginalPunchFields(AttendanceRegularizationRequest $request): array
@@ -1198,10 +1245,36 @@ class AttendanceRegularizationService
         return false;
     }
 
+    private function formatDateEntry(AttendanceRegularizationRequest $request, User $user): array
+    {
+        return [
+            'id' => $request->id,
+            'attendance_date' => $request->attendance_date?->toDateString(),
+            'attendance_date_label' => $request->attendance_date?->format('D, d M Y'),
+            'attendance_date_short_label' => $request->attendance_date?->format('D, d M'),
+            ...$this->formatOriginalPunchFields($request),
+            'requested_punch_in_label' => $request->requested_punch_in?->format('h:i A'),
+            'requested_punch_out_label' => $request->requested_punch_out?->format('h:i A'),
+            'status' => $request->status,
+            'status_label' => ucfirst($request->status),
+            'review_notes' => $request->review_notes,
+            'reviewed_at_label' => $request->reviewed_at?->labelStack(),
+            'reviewed_by_name' => $request->reviewedBy?->name,
+            'can_review' => $request->status === AttendanceRegularizationRequest::STATUS_PENDING
+                && $user->canReviewRegularizationRequest($request),
+        ];
+    }
+
     /** @param  Collection<int, AttendanceRegularizationRequest>  $requests */
-    private function buildGroupFromRequests(Collection $requests, bool $canReview): array
+    private function buildGroupFromRequests(Collection $requests, User $user): array
     {
         $first = $requests->first();
+        $hasPending = $requests->contains(
+            fn (AttendanceRegularizationRequest $request) => $request->status === AttendanceRegularizationRequest::STATUS_PENDING,
+        );
+        $groupStatus = $hasPending
+            ? AttendanceRegularizationRequest::STATUS_PENDING
+            : $first->status;
         $group = [
             'batch_id' => $first->batch_id,
             'employee' => $first->employee ? [
@@ -1214,26 +1287,21 @@ class AttendanceRegularizationService
                 'name' => $first->appliedBy->name,
             ] : null,
             'reason' => $first->reason,
-            'status' => $first->status,
-            'status_label' => ucfirst($first->status),
+            'status' => $groupStatus,
+            'status_label' => ucfirst($groupStatus),
             'reviewed_at_label' => $first->reviewed_at?->labelStack(),
             'reviewed_by_name' => $first->reviewedBy?->name,
             'created_at_label' => $first->created_at?->labelStack(),
             'dates' => [],
             'request_ids' => [],
-            'can_review' => $canReview,
+            'can_review' => $requests->contains(
+                fn (AttendanceRegularizationRequest $request) => $request->status === AttendanceRegularizationRequest::STATUS_PENDING
+                    && $user->canReviewRegularizationRequest($request),
+            ),
         ];
 
         foreach ($requests as $request) {
-            $group['dates'][] = [
-                'id' => $request->id,
-                'attendance_date' => $request->attendance_date?->toDateString(),
-                'attendance_date_label' => $request->attendance_date?->format('D, d M Y'),
-                'attendance_date_short_label' => $request->attendance_date?->format('D, d M'),
-                ...$this->formatOriginalPunchFields($request),
-                'requested_punch_in_label' => $request->requested_punch_in?->format('h:i A'),
-                'requested_punch_out_label' => $request->requested_punch_out?->format('h:i A'),
-            ];
+            $group['dates'][] = $this->formatDateEntry($request, $user);
             $group['request_ids'][] = $request->id;
         }
 
