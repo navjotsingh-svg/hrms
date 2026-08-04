@@ -23,6 +23,7 @@ class PayrollService
         private PortalStartService $portalStartService,
         private EmployeeService $employeeService,
         private WorkflowNotificationService $workflowNotificationService,
+        private IncomeTaxService $incomeTaxService,
     ) {}
 
     public function listPeriods(int $companyId): Collection
@@ -458,7 +459,7 @@ class PayrollService
         $factor = $monthDays > 0 ? $paidDays / $monthDays : 0;
 
         $earnings = $this->buildEarnings($salary, $factor);
-        $deductions = $this->buildDeductions($salary, $earnings);
+        $deductions = $this->buildDeductions($employee, $salary, $earnings, $factor);
         $totalEarnings = round(array_sum(array_column($earnings, 'amount')), 2);
         $totalDeductions = round(array_sum(array_column($deductions, 'amount')), 2);
 
@@ -555,7 +556,7 @@ class PayrollService
         ];
     }
 
-    private function buildDeductions($salary, array $earnings): array
+    private function buildDeductions(Employee $employee, $salary, array $earnings, float $attendanceFactor = 1.0): array
     {
         $deductions = [];
         $basic = collect($earnings)->firstWhere('label', 'Basic')['amount'] ?? 0;
@@ -572,6 +573,31 @@ class PayrollService
                 'label' => 'Professional Tax',
                 'amount' => 200,
             ];
+        }
+
+        $company = $employee->relationLoaded('company')
+            ? $employee->company
+            : $employee->load('company')->company;
+
+        if ($company?->income_tax_applicable) {
+            $monthlyGross = round(array_sum(array_column($earnings, 'amount')), 2);
+            $monthlyPf = collect($deductions)->firstWhere('label', 'Provident Fund')['amount'] ?? 0.0;
+            $regime = $employee->tax_regime ?? Employee::TAX_REGIME_NEW;
+            $tds = $this->incomeTaxService->monthlyTds(
+                $monthlyGross,
+                (float) $salary->annual_ctc,
+                (float) $monthlyPf,
+                $regime,
+                $attendanceFactor,
+            );
+
+            if ($tds > 0) {
+                $regimeLabel = $this->incomeTaxService->regimeLabel($regime);
+                $deductions[] = [
+                    'label' => "Income Tax (TDS - {$regimeLabel} Regime)",
+                    'amount' => $tds,
+                ];
+            }
         }
 
         return $deductions;

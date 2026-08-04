@@ -92,6 +92,7 @@ class EmployeeService
         $leaveTypeIds = $this->extractLeaveTypeIds($data);
         $this->normalizeProbationData($data);
         $this->normalizePaidEmployeeData($data);
+        $this->normalizeTaxRegimeData($data);
         $plainPassword = null;
         $reusedPortalUser = false;
         $employeeCode = $data['employee_code'];
@@ -230,6 +231,7 @@ class EmployeeService
         $leaveTypeIds = $this->extractLeaveTypeIds($data);
         $this->normalizeProbationData($data);
         $this->normalizePaidEmployeeData($data);
+        $this->normalizeTaxRegimeData($data);
         $plainPassword = null;
         $isFirstPortalIssue = false;
         $hadPortalAccess = (bool) $employee->user_id;
@@ -1129,6 +1131,17 @@ class EmployeeService
         }
 
         $data['is_paid_employee'] = filter_var($data['is_paid_employee'], FILTER_VALIDATE_BOOLEAN);
+    }
+
+    private function normalizeTaxRegimeData(array &$data): void
+    {
+        if (! array_key_exists('tax_regime', $data)) {
+            return;
+        }
+
+        $data['tax_regime'] = ($data['tax_regime'] ?? Employee::TAX_REGIME_NEW) === Employee::TAX_REGIME_OLD
+            ? Employee::TAX_REGIME_OLD
+            : Employee::TAX_REGIME_NEW;
     }
 
     private function normalizeProbationData(array &$data): void

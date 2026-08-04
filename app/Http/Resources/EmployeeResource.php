@@ -2,6 +2,7 @@
 
 namespace App\Http\Resources;
 
+use App\Models\Employee;
 use App\Models\Role;
 use App\Models\WeeklyOffDay;
 use Illuminate\Http\Request;
@@ -43,6 +44,8 @@ class EmployeeResource extends JsonResource
             'postal_code' => $this->postal_code,
             'full_address' => $this->full_address,
             'pan_number' => $this->pan_number,
+            'tax_regime' => $this->tax_regime ?? Employee::TAX_REGIME_NEW,
+            'tax_regime_label' => $this->taxRegimeLabel(),
             'aadhaar_number' => $this->aadhaar_number,
             'uan' => $this->uan,
             'pf_number' => $this->pf_number,

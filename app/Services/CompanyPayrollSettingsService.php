@@ -118,6 +118,8 @@ class CompanyPayrollSettingsService
 
             'professional_tax_applicable' => (bool) $company->professional_tax_applicable,
 
+            'income_tax_applicable' => (bool) $company->income_tax_applicable,
+
             'basic_salary_percent' => (float) ($company->basic_salary_percent ?? 50),
 
             'hra_percent' => (float) ($company->hra_percent ?? 40),
@@ -153,6 +155,8 @@ class CompanyPayrollSettingsService
             'esi_applicable' => (bool) ($settings['esi_applicable'] ?? false),
 
             'professional_tax_applicable' => (bool) ($settings['professional_tax_applicable'] ?? true),
+
+            'income_tax_applicable' => (bool) ($settings['income_tax_applicable'] ?? false),
 
             'basic_salary_percent' => round((float) ($settings['basic_salary_percent'] ?? 50), 2),
 

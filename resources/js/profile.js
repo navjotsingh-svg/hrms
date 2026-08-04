@@ -86,6 +86,7 @@ let companyPayrollSettings = {
     pf_applicable: true,
     esi_applicable: false,
     professional_tax_applicable: true,
+    income_tax_applicable: false,
     basic_salary_percent: 50,
     hra_percent: 40,
     special_allowance_percent: 0,
@@ -146,6 +147,44 @@ const PROBATION_STATUS_LABELS = {
     confirmed: 'Completed',
     extended: 'Extended',
     not_applicable: 'Not Applicable',
+};
+
+const TAX_REGIME_LABELS = {
+    old: 'Old Regime',
+    new: 'New Regime',
+};
+
+const renderTaxRegimeSection = (employee) => {
+    const section = document.getElementById('profileTaxRegimeSection');
+    const form = document.getElementById('profileTaxRegimeForm');
+    const readOnly = document.getElementById('profileTaxRegimeReadOnly');
+    const display = document.getElementById('profileTaxRegimeDisplay');
+    const select = document.getElementById('profile_tax_regime');
+    const applicable = Boolean(companyPayrollSettings.income_tax_applicable);
+
+    section?.classList.toggle('d-none', !applicable);
+
+    if (!applicable) {
+        return;
+    }
+
+    const regime = employee?.tax_regime || 'new';
+    const label = employee?.tax_regime_label || TAX_REGIME_LABELS[regime] || TAX_REGIME_LABELS.new;
+
+    if (profileCanManageSalary) {
+        form?.classList.add('d-none');
+        readOnly?.classList.remove('d-none');
+        if (display) {
+            display.textContent = label;
+        }
+        return;
+    }
+
+    form?.classList.remove('d-none');
+    readOnly?.classList.add('d-none');
+    if (select) {
+        select.value = regime;
+    }
 };
 
 const GENDER_LABELS = {
@@ -779,6 +818,8 @@ const renderSalaryRevisionsTable = (revisions = [], currentSalary = {}) => {
 };
 
 const renderSalaryTab = (employee) => {
+    renderTaxRegimeSection(employee);
+
     const salary = employee.salary || {};
     const hasSalary = Boolean(salary.annual_ctc);
     const desc = document.getElementById('profileSalaryTabDesc');
@@ -3191,6 +3232,42 @@ document.addEventListener('DOMContentLoaded', async () => {
     });
 
     document.getElementById('profileSalaryFormCancel')?.addEventListener('click', closeProfileSalaryForm);
+
+    document.getElementById('profileTaxRegimeForm')?.addEventListener('submit', async (event) => {
+        event.preventDefault();
+
+        if (profileCanManageSalary) {
+            return;
+        }
+
+        const statusEl = document.getElementById('profileTaxRegimeStatus');
+        const submitBtn = document.getElementById('profileTaxRegimeSave');
+        const regime = document.getElementById('profile_tax_regime')?.value || 'new';
+
+        try {
+            setSubmitLoading(submitBtn, true, { submittingText: 'Saving...' });
+            const { data } = await api.put('/profile/tax-regime', { tax_regime: regime });
+
+            if (data.data?.employee) {
+                renderTaxRegimeSection(data.data.employee);
+            }
+
+            if (statusEl) {
+                statusEl.textContent = data.message || 'Tax regime updated successfully.';
+                statusEl.classList.remove('d-none');
+            }
+        } catch (error) {
+            if (statusEl) {
+                statusEl.textContent = getErrorMessage(error);
+                statusEl.classList.remove('d-none');
+                statusEl.classList.remove('text-success');
+                statusEl.classList.add('text-danger');
+            }
+        } finally {
+            setSubmitLoading(submitBtn, false);
+            submitBtn.textContent = 'Save Regime';
+        }
+    });
 
     document.getElementById('profile_salary_effective_from')?.addEventListener('change', (event) => {
         const payoutInput = document.getElementById('profile_salary_payout_from');

@@ -14,6 +14,10 @@ class Employee extends Model
 
     public const WEEKLY_OFF_MODE_CUSTOM = 'custom';
 
+    public const TAX_REGIME_OLD = 'old';
+
+    public const TAX_REGIME_NEW = 'new';
+
     protected $fillable = [
         'company_id',
         'user_id',
@@ -57,6 +61,7 @@ class Employee extends Model
         'temp_country',
         'temp_postal_code',
         'pan_number',
+        'tax_regime',
         'aadhaar_number',
         'uan',
         'pf_number',
@@ -212,6 +217,13 @@ class Employee extends Model
     public function isPaidEmployee(): bool
     {
         return (bool) ($this->is_paid_employee ?? true);
+    }
+
+    public function taxRegimeLabel(): string
+    {
+        return ($this->tax_regime ?? self::TAX_REGIME_NEW) === self::TAX_REGIME_OLD
+            ? 'Old Regime'
+            : 'New Regime';
     }
 
     public function paidLeaveRestrictionLabel(): ?string

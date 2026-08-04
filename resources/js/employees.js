@@ -110,6 +110,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         pf_applicable: true,
         esi_applicable: false,
         professional_tax_applicable: true,
+        income_tax_applicable: false,
         basic_salary_percent: 50,
         hra_percent: 40,
         special_allowance_percent: 0,
@@ -385,6 +386,14 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     const isPaidEmployee = () => form.querySelector('#is_paid_employee')?.checked ?? true;
 
+    const isIncomeTaxApplicable = () => Boolean(companyPayrollSettings.income_tax_applicable);
+
+    const toggleIncomeTaxRegimeUi = () => {
+        const section = document.getElementById('employeeTaxRegimeSection');
+        const show = isPaidEmployee() && isIncomeTaxApplicable();
+        section?.classList.toggle('d-none', !show);
+    };
+
     const togglePaidEmployeeUi = () => {
         const paid = isPaidEmployee();
         document.getElementById('nonPaidEmployeeSalaryNotice')?.classList.toggle('d-none', paid);
@@ -402,6 +411,8 @@ document.addEventListener('DOMContentLoaded', async () => {
             setFieldError(form, 'annual_ctc', '');
             setFieldError(form, 'salary_effective_from', '');
         }
+
+        toggleIncomeTaxRegimeUi();
     };
 
     const toggleProbationFields = () => {
@@ -826,6 +837,9 @@ document.addEventListener('DOMContentLoaded', async () => {
                         ['PF', companyPayrollSettings.pf_applicable ? 'Yes' : 'No'],
                         ['ESI', companyPayrollSettings.esi_applicable ? 'Yes' : 'No'],
                         ['Prof. Tax', companyPayrollSettings.professional_tax_applicable ? 'Yes' : 'No'],
+                        ...(isIncomeTaxApplicable()
+                            ? [['Tax Regime', getSelectText('tax_regime')]]
+                            : []),
                     ]
                     : [
                         ['Compensation', 'Non-paid employee — salary not applicable'],
@@ -1106,6 +1120,10 @@ document.addEventListener('DOMContentLoaded', async () => {
             salary_revision_notes: nullable(getValue('salary_revision_notes')),
         };
 
+        if (isIncomeTaxApplicable()) {
+            payload.tax_regime = getValue('tax_regime') || 'new';
+        }
+
         if (!employeeId) {
             payload.give_portal_access = form.querySelector('#give_portal_access')?.checked ?? false;
         } else if (!hasPortalAccess && form.querySelector('#grant_portal_access')?.checked) {
@@ -1239,6 +1257,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         setDateInput('probation_end_date', employee.probation_end_date);
         setSelectValue('probation_status', employee.probation_status || 'on_probation');
         syncProbationStatusFromEndDate();
+        setSelectValue('tax_regime', employee.tax_regime || 'new');
 
         if (employee.salary) {
             const salary = employee.salary;
@@ -1461,6 +1480,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             const { data } = await api.get('/payroll-settings');
             companyPayrollSettings = data.data || companyPayrollSettings;
             updateSalarySummary();
+            toggleIncomeTaxRegimeUi();
         } catch {
             // Keep defaults when payroll settings are unavailable.
         }

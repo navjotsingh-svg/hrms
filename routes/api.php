@@ -45,6 +45,7 @@ Route::prefix('v1')->name('api.')->group(function () {
             ->name('profile.documents.download')
             ->whereNumber('employeeDocument');
         Route::put('profile', [ProfileController::class, 'update'])->name('profile.update');
+        Route::put('profile/tax-regime', [ProfileController::class, 'updateTaxRegime'])->name('profile.tax-regime.update');
         Route::put('profile/password', [ProfileController::class, 'updatePassword'])->name('profile.password');
 
         Route::middleware('super_admin')->group(function () {
@@ -1300,6 +1301,9 @@ Route::prefix('v1')->name('api.')->group(function () {
 
                 Route::put('employees/{employee}/profile/salary', [\App\Http\Controllers\Api\V1\EmployeeProfileController::class, 'updateSalary'])
                     ->name('employees.profile.salary.update')
+                    ->whereNumber('employee');
+                Route::put('employees/{employee}/profile/tax-regime', [\App\Http\Controllers\Api\V1\EmployeeProfileController::class, 'updateTaxRegime'])
+                    ->name('employees.profile.tax-regime.update')
                     ->whereNumber('employee');
                 Route::put('employees/{employee}/profile/assets', [\App\Http\Controllers\Api\V1\EmployeeProfileController::class, 'updateAssets'])
                     ->name('employees.profile.assets.update')

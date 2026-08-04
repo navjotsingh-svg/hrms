@@ -52,6 +52,32 @@ const DOCUMENT_STATUS_LABELS = {
     rejected: 'Rejected',
 };
 
+let companyPayrollSettings = {
+    income_tax_applicable: false,
+};
+
+const renderEmployeeTaxRegimeSection = (employee) => {
+    const section = document.getElementById('profileTaxRegimeSection');
+    const form = document.getElementById('profileTaxRegimeForm');
+    const readOnly = document.getElementById('profileTaxRegimeReadOnly');
+    const display = document.getElementById('profileTaxRegimeDisplay');
+    const applicable = Boolean(companyPayrollSettings.income_tax_applicable);
+
+    section?.classList.toggle('d-none', !applicable);
+
+    if (!applicable) {
+        return;
+    }
+
+    form?.classList.add('d-none');
+    readOnly?.classList.remove('d-none');
+
+    if (display) {
+        display.textContent = employee?.tax_regime_label
+            || (employee?.tax_regime === 'old' ? 'Old Regime' : 'New Regime');
+    }
+};
+
 const formatCurrency = (value) => new Intl.NumberFormat('en-IN', {
     style: 'currency',
     currency: 'INR',
@@ -482,6 +508,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     ];
 
     const renderSalaryTab = (employee) => {
+        renderEmployeeTaxRegimeSection(employee);
+
         const salary = employee.salary || {};
         const hasSalary = Boolean(salary.annual_ctc);
         const revisions = employee.salary_revisions || [];
@@ -826,6 +854,13 @@ document.addEventListener('DOMContentLoaded', async () => {
     };
 
     const loadProfile = async () => {
+        try {
+            const { data: settingsResponse } = await api.get('/payroll-settings');
+            companyPayrollSettings = settingsResponse.data || companyPayrollSettings;
+        } catch {
+            // Keep defaults when payroll settings are unavailable.
+        }
+
         const { data } = await api.get(`/employees/${employeeId}/profile`);
         canReviewProfile = Boolean(data.data.capabilities?.can_review_profile);
         renderProfile(

@@ -140,6 +140,8 @@ document.addEventListener('DOMContentLoaded', async () => {
 
         form.querySelector('#company_professional_tax_applicable').checked = settings.professional_tax_applicable !== false;
 
+        form.querySelector('#company_income_tax_applicable').checked = Boolean(settings.income_tax_applicable);
+
         form.querySelector('#company_basic_salary_percent').value = settings.basic_salary_percent ?? 50;
 
         form.querySelector('#company_hra_percent').value = settings.hra_percent ?? 40;
@@ -209,6 +211,8 @@ document.addEventListener('DOMContentLoaded', async () => {
                 esi_applicable: form.querySelector('#company_esi_applicable')?.checked ?? false,
 
                 professional_tax_applicable: form.querySelector('#company_professional_tax_applicable')?.checked ?? true,
+
+                income_tax_applicable: form.querySelector('#company_income_tax_applicable')?.checked ?? false,
 
                 basic_salary_percent: num('company_basic_salary_percent'),
 

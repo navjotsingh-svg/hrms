@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api\V1;
 use App\Http\Controllers\Controller;
 use App\Http\Concerns\ApiResponse;
 use App\Http\Controllers\Concerns\StreamsInlineFiles;
+use App\Http\Requests\UpdateEmployeeTaxRegimeRequest;
 use App\Http\Requests\ProfileUpdateRequest;
 use App\Http\Requests\StoreEmployeeDocumentRequest;
 use App\Http\Requests\StoreEmployeeComplianceFieldRequest;
@@ -350,5 +351,20 @@ class ProfileController extends Controller
         ]);
 
         return $this->success(null, 'Password updated successfully.');
+    }
+
+    public function updateTaxRegime(UpdateEmployeeTaxRegimeRequest $request): JsonResponse
+    {
+        $employee = $this->employeeProfileService->resolveEmployee($request->user());
+        $employee = $this->employeeProfileService->updateTaxRegime(
+            $request->user(),
+            $employee,
+            $request->validated()['tax_regime'],
+        );
+
+        return $this->success(
+            ['employee' => new EmployeeProfileResource($employee)],
+            'Tax regime updated successfully.'
+        );
     }
 }

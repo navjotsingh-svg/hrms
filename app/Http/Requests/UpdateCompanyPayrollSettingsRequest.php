@@ -36,6 +36,8 @@ class UpdateCompanyPayrollSettingsRequest extends FormRequest
 
             'professional_tax_applicable' => ['required', 'boolean'],
 
+            'income_tax_applicable' => ['required', 'boolean'],
+
             'basic_salary_percent' => ['required', 'numeric', 'min:1', 'max:100'],
 
             'hra_percent' => ['required', 'numeric', 'min:0', 'max:100'],

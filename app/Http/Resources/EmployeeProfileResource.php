@@ -2,6 +2,7 @@
 
 namespace App\Http\Resources;
 
+use App\Models\Employee;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
 
@@ -47,6 +48,8 @@ class EmployeeProfileResource extends JsonResource
             'temp_postal_code' => $this->temp_postal_code,
             'temp_full_address' => $this->temp_full_address,
             'pan_number' => $this->pan_number,
+            'tax_regime' => $this->tax_regime ?? Employee::TAX_REGIME_NEW,
+            'tax_regime_label' => $this->taxRegimeLabel(),
             'aadhaar_number' => $this->aadhaar_number,
             'uan' => $this->uan,
             'pf_number' => $this->pf_number,

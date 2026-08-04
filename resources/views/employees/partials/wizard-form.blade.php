@@ -403,6 +403,25 @@
             </div>
         </div>
 
+        <div class="wizard-form-section d-none" id="employeeTaxRegimeSection">
+            <div class="wizard-form-section-head">
+                <span class="wizard-form-section-icon" aria-hidden="true">🧾</span>
+                <div>
+                    <h6 class="wizard-form-section-title">Income Tax Regime</h6>
+                    <p class="wizard-form-section-desc">Choose old or new tax regime for TDS on this employee&apos;s salary. Defaults to new regime.</p>
+                </div>
+            </div>
+            <div class="wizard-form-section-body row g-3">
+                <div class="col-md-6">
+                    <label for="tax_regime" class="form-label">Tax Regime</label>
+                    <select class="form-select" id="tax_regime" name="tax_regime">
+                        <option value="new" selected>New Regime (default)</option>
+                        <option value="old">Old Regime</option>
+                    </select>
+                </div>
+            </div>
+        </div>
+
         <div class="wizard-info-banner mb-4">
             <span class="wizard-info-banner-icon" aria-hidden="true">⚙️</span>
             <div>

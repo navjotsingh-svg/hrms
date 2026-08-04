@@ -2,6 +2,7 @@
 
 namespace App\Http\Requests\Concerns;
 
+use App\Models\Employee;
 use App\Models\Role;
 use Illuminate\Validation\Rule;
 
@@ -123,6 +124,7 @@ trait ValidatesEmployeeFields
             'state' => ['nullable', 'string', 'max:100'],
             'country' => ['nullable', 'string', 'max:100'],
             'postal_code' => ['nullable', 'string', 'max:20'],
+            'tax_regime' => ['nullable', Rule::in([Employee::TAX_REGIME_OLD, Employee::TAX_REGIME_NEW])],
             'give_portal_access' => ['sometimes', 'boolean'],
         ];
     }

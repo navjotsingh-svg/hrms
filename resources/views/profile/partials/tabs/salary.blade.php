@@ -17,6 +17,29 @@
         <p class="profile-tab-placeholder-text">Salary information will appear here once HR configures your compensation.</p>
     </div>
 
+    <div id="profileTaxRegimeSection" class="profile-info-card mb-4 d-none">
+        <h4 class="profile-info-card-title">Income Tax Regime</h4>
+        <p class="text-muted small mb-3" id="profileTaxRegimeDesc">Choose old or new tax regime for monthly TDS deduction on your salary.</p>
+        <form id="profileTaxRegimeForm" class="profile-form d-none">
+            <div class="row g-3 align-items-end">
+                <div class="col-md-6">
+                    <label for="profile_tax_regime" class="form-label">Tax Regime</label>
+                    <select class="form-select" id="profile_tax_regime" name="tax_regime">
+                        <option value="new">New Regime (default)</option>
+                        <option value="old">Old Regime</option>
+                    </select>
+                </div>
+                <div class="col-md-6">
+                    <button type="submit" class="btn btn-primary btn-sm" id="profileTaxRegimeSave">Save Regime</button>
+                    <span class="text-success small d-none ms-2" id="profileTaxRegimeStatus"></span>
+                </div>
+            </div>
+        </form>
+        <dl class="profile-dl profile-dl-compact mb-0 d-none" id="profileTaxRegimeReadOnly">
+            <div class="profile-dl-row"><dt>Tax Regime</dt><dd id="profileTaxRegimeDisplay">—</dd></div>
+        </dl>
+    </div>
+
     <div id="profileSalaryContent" class="d-none">
         <ul class="nav nav-pills salary-inner-tabs mb-4" id="profileSalaryInnerTabs" role="tablist">
             <li class="nav-item" role="presentation">

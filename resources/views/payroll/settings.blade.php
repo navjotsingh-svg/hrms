@@ -234,6 +234,20 @@
 
                             </label>
 
+                            <label class="wizard-toggle-card" for="company_income_tax_applicable">
+
+                                <input class="form-check-input" type="checkbox" id="company_income_tax_applicable" name="income_tax_applicable" value="1">
+
+                                <span class="wizard-toggle-card-body">
+
+                                    <strong>Apply Income Tax (TDS)</strong>
+
+                                    <small>Deduct monthly TDS using each employee&apos;s chosen tax regime</small>
+
+                                </span>
+
+                            </label>
+
                         </div>
 
                     </div>

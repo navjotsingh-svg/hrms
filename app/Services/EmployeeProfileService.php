@@ -10,6 +10,7 @@ use App\Models\EmployeeDocument;
 use App\Models\EmployeePaymentMethodProof;
 use App\Models\User;
 use Illuminate\Support\Collection;
+use Illuminate\Validation\ValidationException;
 use Symfony\Component\HttpKernel\Exception\AccessDeniedHttpException;
 use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
 
@@ -287,5 +288,45 @@ class EmployeeProfileService
             ->sortByDesc('submitted_at')
             ->values()
             ->all();
+    }
+
+    public function updateTaxRegime(User $user, Employee $employee, string $taxRegime): Employee
+    {
+        $this->assertCanUpdateTaxRegime($user, $employee);
+
+        $company = $employee->relationLoaded('company')
+            ? $employee->company
+            : $employee->load('company')->company;
+
+        if (! $company?->income_tax_applicable) {
+            throw ValidationException::withMessages([
+                'tax_regime' => ['Income tax is not enabled for your company.'],
+            ]);
+        }
+
+        $normalizedRegime = $taxRegime === Employee::TAX_REGIME_OLD
+            ? Employee::TAX_REGIME_OLD
+            : Employee::TAX_REGIME_NEW;
+
+        $employee->update(['tax_regime' => $normalizedRegime]);
+
+        return $this->loadProfile($employee->fresh());
+    }
+
+    private function assertCanUpdateTaxRegime(User $user, Employee $employee): void
+    {
+        if ((int) $employee->company_id !== (int) $user->company_id) {
+            throw new NotFoundHttpException('Employee not found.');
+        }
+
+        if ((int) $user->employee?->id === (int) $employee->id) {
+            return;
+        }
+
+        if ($user->canEditEmployeeProfileWithoutApproval($employee)) {
+            return;
+        }
+
+        throw new AccessDeniedHttpException('You are not allowed to update this employee tax regime.');
     }
 }
