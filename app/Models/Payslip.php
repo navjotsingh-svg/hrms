@@ -30,6 +30,8 @@ class Payslip extends Model
         'pan_number',
         'uan',
         'pf_number',
+        'income_tax_applicable',
+        'tax_regime',
     ];
 
     protected function casts(): array
@@ -44,7 +46,54 @@ class Payslip extends Model
             'total_deductions' => 'decimal:2',
             'net_pay' => 'decimal:2',
             'expense_reimbursements' => 'decimal:2',
+            'income_tax_applicable' => 'boolean',
         ];
+    }
+
+    public function taxRegimeLabel(): ?string
+    {
+        if ($this->tax_regime === 'old') {
+            return 'Old Regime';
+        }
+
+        if ($this->tax_regime === 'new') {
+            return 'New Regime';
+        }
+
+        $tds = $this->incomeTaxDeduction();
+        if (! $tds) {
+            return null;
+        }
+
+        $label = (string) ($tds['label'] ?? '');
+
+        if (str_contains($label, 'Old Regime')) {
+            return 'Old Regime';
+        }
+
+        if (str_contains($label, 'New Regime')) {
+            return 'New Regime';
+        }
+
+        return 'New Regime';
+    }
+
+    public function hasIncomeTax(): bool
+    {
+        return (bool) $this->income_tax_applicable || $this->incomeTaxDeduction() !== null;
+    }
+
+    public function incomeTaxDeduction(): ?array
+    {
+        $match = collect($this->deductions ?? [])
+            ->first(fn (array $row) => str_starts_with((string) ($row['label'] ?? ''), 'Income Tax (TDS'));
+
+        return $match ?: null;
+    }
+
+    public function incomeTaxAmount(): float
+    {
+        return (float) ($this->incomeTaxDeduction()['amount'] ?? 0);
     }
 
     public function payrollPeriod(): BelongsTo

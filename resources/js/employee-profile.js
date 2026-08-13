@@ -61,7 +61,8 @@ const renderEmployeeTaxRegimeSection = (employee) => {
     const form = document.getElementById('profileTaxRegimeForm');
     const readOnly = document.getElementById('profileTaxRegimeReadOnly');
     const display = document.getElementById('profileTaxRegimeDisplay');
-    const applicable = Boolean(companyPayrollSettings.income_tax_applicable);
+    const applicable = Boolean(companyPayrollSettings.income_tax_applicable)
+        || Boolean(employee?.company?.income_tax_applicable);
 
     section?.classList.toggle('d-none', !applicable);
 

@@ -24,6 +24,42 @@ class UpdateCompanyPayrollSettingsRequest extends FormRequest
 
 
 
+    protected function prepareForValidation(): void
+
+    {
+
+        $booleanFields = [
+
+            'pf_applicable',
+
+            'esi_applicable',
+
+            'professional_tax_applicable',
+
+            'income_tax_applicable',
+
+        ];
+
+
+
+        foreach ($booleanFields as $field) {
+
+            if ($this->exists($field)) {
+
+                $this->merge([
+
+                    $field => filter_var($this->input($field), FILTER_VALIDATE_BOOLEAN),
+
+                ]);
+
+            }
+
+        }
+
+    }
+
+
+
     public function rules(): array
 
     {

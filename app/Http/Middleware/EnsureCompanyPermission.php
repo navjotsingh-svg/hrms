@@ -28,6 +28,10 @@ class EnsureCompanyPermission
             abort(403, $this->companyOrganizationService->organizationUnavailableMessage());
         }
 
+        if ($user->isCompanyAdmin()) {
+            return $next($request);
+        }
+
         if (str_contains($permission, 'employees.assign_admin') && $user->canAssignCompanyAdmin()) {
             return $next($request);
         }

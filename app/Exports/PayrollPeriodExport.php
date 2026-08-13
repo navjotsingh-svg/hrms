@@ -37,7 +37,7 @@ class PayrollPeriodExport implements FromArray, ShouldAutoSize, WithHeadings, Wi
     public function headings(): array
     {
         return array_merge(
-            ['Employee Code', 'Full Name', 'Designation', 'Department', 'Joining Date', 'Payable Days', 'LOP Days', 'Paid Days'],
+            ['Employee Code', 'Full Name', 'Designation', 'Department', 'Joining Date', 'Payable Days', 'LOP Days', 'Paid Days', 'Tax Regime'],
             $this->earningLabels,
             ['Gross Salary'],
             $this->deductionLabels,
@@ -60,6 +60,7 @@ class PayrollPeriodExport implements FromArray, ShouldAutoSize, WithHeadings, Wi
                 (float) $payslip->payable_days,
                 (float) $payslip->lop_days,
                 round(max((float) $payslip->payable_days - (float) $payslip->lop_days, 0), 1),
+                $payslip->hasIncomeTax() ? ($payslip->taxRegimeLabel() ?? 'New Regime') : '—',
             ];
 
             foreach ($this->earningLabels as $label) {

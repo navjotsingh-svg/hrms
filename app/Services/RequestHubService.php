@@ -1755,6 +1755,10 @@ class RequestHubService
             throw new NotFoundHttpException('Request not found.');
         }
 
+        if ($this->canViewAllCompanyRequests($user)) {
+            return;
+        }
+
         $isOwner = $user->employee && (int) $user->employee->id === (int) $entity->employee_id;
 
         if ($isOwner || $canReview($user, $entity)) {

@@ -523,7 +523,7 @@ class User extends Authenticatable
 
     public function canManageRegularization(): bool
     {
-        return $this->isHrManager();
+        return $this->canApproveRegularization();
     }
 
     public function canReviewRegularizationRequest(AttendanceRegularizationRequest $request): bool
@@ -544,7 +544,7 @@ class User extends Authenticatable
             return $this->isCompanyAdmin();
         }
 
-        return $this->isHrManager();
+        return $this->canReviewAnyCompanyEmployeeRequest();
     }
 
     public function canCancelRegularizationRequest(AttendanceRegularizationRequest $request): bool
@@ -652,7 +652,8 @@ class User extends Authenticatable
     public function canApproveLeave(): bool
     {
         return $this->hasPermission('leave.approve')
-            || $this->hasPermission('leave.manage');
+            || $this->hasPermission('leave.manage')
+            || $this->isHrManager();
     }
 
     public function canReviewLeaveRequest(LeaveRequest $request): bool
@@ -673,6 +674,10 @@ class User extends Authenticatable
 
         if ($request->employee?->user?->isHrManager() || $request->appliedBy?->isHrManager()) {
             return $this->isCompanyAdmin();
+        }
+
+        if ($this->canReviewAnyCompanyEmployeeRequest()) {
+            return true;
         }
 
         if (! $this->hasPermission('leave.approve')) {
@@ -786,7 +791,8 @@ class User extends Authenticatable
 
     public function canApproveWfh(): bool
     {
-        return $this->hasPermission('wfh.approve');
+        return $this->hasPermission('wfh.approve')
+            || $this->isHrManager();
     }
 
     public function canViewAllWfhRequests(): bool
@@ -814,6 +820,10 @@ class User extends Authenticatable
 
         if ($request->employee?->user?->isHrManager() || $request->appliedBy?->isHrManager()) {
             return $this->isCompanyAdmin();
+        }
+
+        if ($this->canReviewAnyCompanyEmployeeRequest()) {
+            return true;
         }
 
         if (! $this->hasPermission('wfh.approve')) {
@@ -980,7 +990,8 @@ class User extends Authenticatable
 
     public function canApproveAssets(): bool
     {
-        return $this->hasPermission('assets.approve');
+        return $this->hasPermission('assets.approve')
+            || $this->isHrManager();
     }
 
     public function canViewAllAssetRequests(): bool
@@ -1015,6 +1026,10 @@ class User extends Authenticatable
 
         if ($request->employee?->user?->isHrManager() || $request->appliedBy?->isHrManager()) {
             return $this->isCompanyAdmin();
+        }
+
+        if ($this->canReviewAnyCompanyEmployeeRequest()) {
+            return true;
         }
 
         if (! $this->hasPermission('assets.approve')) {
@@ -1142,6 +1157,10 @@ class User extends Authenticatable
 
         if ($request->employee?->user?->isHrManager() || $request->appliedBy?->isHrManager()) {
             return $this->isCompanyAdmin();
+        }
+
+        if ($this->canReviewAnyCompanyEmployeeRequest()) {
+            return true;
         }
 
         if (! $this->hasPermission('offboarding.approve')) {
@@ -1545,6 +1564,10 @@ class User extends Authenticatable
             return true;
         }
 
+        if ($this->isCompanyAdmin()) {
+            return true;
+        }
+
         if ($slug === 'attendance.regularize') {
             if ($this->isCompanyAdmin() || $this->isHrManager() || $this->hasAssignedPermission('attendance.manage')) {
                 return true;
@@ -1615,5 +1638,10 @@ class User extends Authenticatable
             && ! $this->isCompanyAdmin()
             && $this->employee
             && (int) $this->employee->id === $employeeId;
+    }
+
+    private function canReviewAnyCompanyEmployeeRequest(): bool
+    {
+        return $this->hasFullAccess() || $this->isHrManager();
     }
 }

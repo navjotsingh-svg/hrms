@@ -15,6 +15,10 @@ const paidDaysForPayslip = (payslip) => Math.max(
 );
 
 document.addEventListener('DOMContentLoaded', async () => {
+    if (document.getElementById('payrollSettingsForm') && !document.getElementById('payrollPeriodSelect')) {
+        return;
+    }
+
     const mode = window.PAYROLL_MODE || 'employee';
     const isManageMode = mode === 'manage';
 
@@ -288,6 +292,23 @@ document.addEventListener('DOMContentLoaded', async () => {
             </tr>
         `).join('') || '<tr><td colspan="2" class="text-muted">No deductions</td></tr>';
 
+        const taxRegimeBlock = payslip.income_tax_applicable
+            ? `
+                <div class="payroll-detail-tax-regime mb-4">
+                    <div class="d-flex flex-wrap align-items-center justify-content-between gap-2">
+                        <div>
+                            <span class="text-muted small d-block">Income Tax Regime</span>
+                            <strong>${escapeHtml(payslip.tax_regime_label || (payslip.tax_regime === 'old' ? 'Old Regime' : 'New Regime'))}</strong>
+                        </div>
+                        <div class="text-end">
+                            <span class="text-muted small d-block">TDS This Month</span>
+                            <strong>${formatAmount(payslip.income_tax_amount || 0)}</strong>
+                        </div>
+                    </div>
+                </div>
+            `
+            : '';
+
         bodyEl.innerHTML = `
             <div class="payroll-detail-metrics row g-3 mb-4">
                 <div class="col-4">
@@ -309,6 +330,8 @@ document.addEventListener('DOMContentLoaded', async () => {
                     </div>
                 </div>
             </div>
+
+            ${taxRegimeBlock}
 
             <h6 class="mb-2">Earnings</h6>
             <div class="table-responsive mb-4">

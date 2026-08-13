@@ -25,6 +25,7 @@ const PROFILE_TAB_HASHES = {
 
 let profileCanEditWithoutApproval = false;
 let profileCanManageSalary = false;
+let profileIncomeTaxApplicable = false;
 let profileCanManageAssets = false;
 const profileFormEditor = {
     family: false,
@@ -160,7 +161,9 @@ const renderTaxRegimeSection = (employee) => {
     const readOnly = document.getElementById('profileTaxRegimeReadOnly');
     const display = document.getElementById('profileTaxRegimeDisplay');
     const select = document.getElementById('profile_tax_regime');
-    const applicable = Boolean(companyPayrollSettings.income_tax_applicable);
+    const applicable = profileIncomeTaxApplicable
+        || Boolean(companyPayrollSettings.income_tax_applicable)
+        || Boolean(employee?.company?.income_tax_applicable);
 
     section?.classList.toggle('d-none', !applicable);
 
@@ -2780,6 +2783,10 @@ document.addEventListener('DOMContentLoaded', async () => {
             ?? payload.capabilities?.can_edit_profile_without_approval,
         );
         profileCanManageSalary = Boolean(payload.capabilities?.can_manage_salary);
+        profileIncomeTaxApplicable = Boolean(
+            payload.capabilities?.income_tax_applicable
+            ?? payload.employee?.company?.income_tax_applicable,
+        );
         profileCanManageAssets = Boolean(payload.capabilities?.can_manage_assets);
         canReviewDocuments = Boolean(payload.capabilities?.can_review_documents ?? payload.capabilities?.can_review_profile);
         profileCanDeleteDocuments = canReviewDocuments;

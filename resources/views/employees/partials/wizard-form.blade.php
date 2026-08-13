@@ -419,6 +419,11 @@
                         <option value="old">Old Regime</option>
                     </select>
                 </div>
+                <div class="col-12">
+                    <p class="text-muted small mb-0 d-none" id="employeeTaxRegimeHint">
+                        TDS will apply on payslips only after you enable <strong>Apply Income Tax (TDS)</strong> under Payroll → Payroll Settings.
+                    </p>
+                </div>
             </div>
         </div>
 

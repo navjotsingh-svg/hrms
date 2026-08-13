@@ -179,6 +179,8 @@
                         <select class="form-select form-select-sm" id="requestsTypeFilter">
                             <option value="">All types</option>
                             <option value="leave">Leave</option>
+                            <option value="wfh">Work from home</option>
+                            <option value="asset">Asset</option>
                             <option value="regularization">Regularization</option>
                             <option value="document">Document</option>
                             <option value="payment_method">Bank details</option>

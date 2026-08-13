@@ -77,7 +77,7 @@ class EmployeeController extends Controller
     {
         $this->ensureAccessibleEmployee($request, $employee);
 
-        $employee->load(['department', 'departments', 'role', 'manager', 'shift', 'company', 'salary', 'weeklyOffDays', 'leaveTypes']);
+        $employee->load(['department', 'departments', 'role', 'manager', 'shift', 'salary', 'weeklyOffDays', 'leaveTypes']);
 
         return $this->success([
             'employee' => new EmployeeResource($employee),
@@ -109,6 +109,7 @@ class EmployeeController extends Controller
                 'can_manage_salary' => $user->canEditEmployeeProfileWithoutApproval($employee),
                 'can_manage_assets' => $user->canEditEmployeeProfileWithoutApproval($employee),
                 'can_assign_admin' => $user->canAssignCompanyAdmin(),
+                'income_tax_applicable' => (bool) $employee->company?->income_tax_applicable,
             ],
             'pending_reviews' => $this->employeeProfileService->pendingReviewsForEmployee($user, $employee),
         ]);

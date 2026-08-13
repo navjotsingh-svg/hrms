@@ -144,6 +144,9 @@
                 <div><span class="info-row-label">PAN:</span> <span class="info-row-value">{{ $payslip->pan_number ?: 'None' }}</span></div>
                 <div><span class="info-row-label">UAN:</span> <span class="info-row-value">{{ $payslip->uan ?: 'None' }}</span></div>
                 <div><span class="info-row-label">PF Number:</span> <span class="info-row-value">{{ $payslip->pf_number ?: 'None' }}</span></div>
+                @if ($payslip->hasIncomeTax())
+                    <div><span class="info-row-label">Tax Regime:</span> <span class="info-row-value">{{ $payslip->taxRegimeLabel() }}</span></div>
+                @endif
             </td>
         </tr>
     </table>
@@ -202,3 +205,11 @@
     </div>
 </body>
 </html>
+
+
+
+
+
+
+
+

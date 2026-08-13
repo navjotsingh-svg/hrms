@@ -465,6 +465,14 @@ class PayrollService
 
         $bank = $this->resolveBankDetails($employee);
 
+        $company = $employee->relationLoaded('company')
+            ? $employee->company
+            : $employee->load('company')->company;
+        $incomeTaxApplicable = (bool) $company?->income_tax_applicable;
+        $taxRegime = $incomeTaxApplicable
+            ? ($employee->tax_regime ?? Employee::TAX_REGIME_NEW)
+            : null;
+
         $departmentName = $employee->departments->pluck('name')->filter()->implode(', ');
         if ($departmentName === '') {
             $departmentName = $employee->department?->name;
@@ -492,6 +500,8 @@ class PayrollService
             'pan_number' => $employee->pan_number,
             'uan' => $employee->uan,
             'pf_number' => $employee->pf_number,
+            'income_tax_applicable' => $incomeTaxApplicable,
+            'tax_regime' => $taxRegime,
         ];
     }
 

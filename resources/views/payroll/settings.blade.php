@@ -28,6 +28,10 @@
 
 @section('content')
 
+    @php
+        $payrollSettings = $settings ?? [];
+    @endphp
+
     <div id="payrollSettingsAlert" class="alert alert-success alert-dismissible fade show d-none" role="alert"></div>
 
 
@@ -78,7 +82,7 @@
 
                             <div class="input-group">
 
-                                <input type="number" class="form-control payroll-settings-input" id="company_basic_salary_percent" name="basic_salary_percent" min="1" max="100" step="0.01" value="50" required>
+                                <input type="number" class="form-control payroll-settings-input" id="company_basic_salary_percent" name="basic_salary_percent" min="1" max="100" step="0.01" value="{{ $payrollSettings['basic_salary_percent'] ?? 50 }}" required>
 
                                 <span class="input-group-text">%</span>
 
@@ -94,7 +98,7 @@
 
                             <div class="input-group">
 
-                                <input type="number" class="form-control payroll-settings-input" id="company_hra_percent" name="hra_percent" min="0" max="100" step="0.01" value="40" required>
+                                <input type="number" class="form-control payroll-settings-input" id="company_hra_percent" name="hra_percent" min="0" max="100" step="0.01" value="{{ $payrollSettings['hra_percent'] ?? 40 }}" required>
 
                                 <span class="input-group-text">%</span>
 
@@ -110,7 +114,7 @@
 
                             <div class="input-group">
 
-                                <input type="number" class="form-control payroll-settings-input" id="company_special_allowance_percent" name="special_allowance_percent" min="0" max="100" step="0.01" value="0" required>
+                                <input type="number" class="form-control payroll-settings-input" id="company_special_allowance_percent" name="special_allowance_percent" min="0" max="100" step="0.01" value="{{ $payrollSettings['special_allowance_percent'] ?? 0 }}" required>
 
                                 <span class="input-group-text">%</span>
 
@@ -124,7 +128,7 @@
 
                             <label for="company_conveyance_allowance" class="form-label">Conveyance (₹)</label>
 
-                            <input type="number" class="form-control payroll-settings-input" id="company_conveyance_allowance" name="conveyance_allowance" min="0" step="0.01" value="0">
+                            <input type="number" class="form-control payroll-settings-input" id="company_conveyance_allowance" name="conveyance_allowance" min="0" step="0.01" value="{{ $payrollSettings['conveyance_allowance'] ?? 0 }}">
 
                         </div>
 
@@ -132,7 +136,7 @@
 
                             <label for="company_medical_allowance" class="form-label">Medical (₹)</label>
 
-                            <input type="number" class="form-control payroll-settings-input" id="company_medical_allowance" name="medical_allowance" min="0" step="0.01" value="0">
+                            <input type="number" class="form-control payroll-settings-input" id="company_medical_allowance" name="medical_allowance" min="0" step="0.01" value="{{ $payrollSettings['medical_allowance'] ?? 0 }}">
 
                         </div>
 
@@ -140,7 +144,7 @@
 
                             <label for="company_other_allowance" class="form-label">Other Allowance (₹)</label>
 
-                            <input type="number" class="form-control payroll-settings-input" id="company_other_allowance" name="other_allowance" min="0" step="0.01" value="0">
+                            <input type="number" class="form-control payroll-settings-input" id="company_other_allowance" name="other_allowance" min="0" step="0.01" value="{{ $payrollSettings['other_allowance'] ?? 0 }}">
 
                         </div>
 
@@ -194,7 +198,7 @@
 
                             <label class="wizard-toggle-card" for="company_pf_applicable">
 
-                                <input class="form-check-input" type="checkbox" id="company_pf_applicable" name="pf_applicable" value="1" checked>
+                                <input class="form-check-input" type="checkbox" id="company_pf_applicable" name="pf_applicable" value="1" @checked($payrollSettings['pf_applicable'] ?? true)>
 
                                 <span class="wizard-toggle-card-body">
 
@@ -208,7 +212,7 @@
 
                             <label class="wizard-toggle-card" for="company_esi_applicable">
 
-                                <input class="form-check-input" type="checkbox" id="company_esi_applicable" name="esi_applicable" value="1">
+                                <input class="form-check-input" type="checkbox" id="company_esi_applicable" name="esi_applicable" value="1" @checked($payrollSettings['esi_applicable'] ?? false)>
 
                                 <span class="wizard-toggle-card-body">
 
@@ -222,7 +226,7 @@
 
                             <label class="wizard-toggle-card" for="company_professional_tax_applicable">
 
-                                <input class="form-check-input" type="checkbox" id="company_professional_tax_applicable" name="professional_tax_applicable" value="1" checked>
+                                <input class="form-check-input" type="checkbox" id="company_professional_tax_applicable" name="professional_tax_applicable" value="1" @checked($payrollSettings['professional_tax_applicable'] ?? true)>
 
                                 <span class="wizard-toggle-card-body">
 
@@ -236,7 +240,7 @@
 
                             <label class="wizard-toggle-card" for="company_income_tax_applicable">
 
-                                <input class="form-check-input" type="checkbox" id="company_income_tax_applicable" name="income_tax_applicable" value="1">
+                                <input class="form-check-input" type="checkbox" id="company_income_tax_applicable" name="income_tax_applicable" value="1" @checked($payrollSettings['income_tax_applicable'] ?? false)>
 
                                 <span class="wizard-toggle-card-body">
 

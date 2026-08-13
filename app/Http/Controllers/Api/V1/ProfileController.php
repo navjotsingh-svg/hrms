@@ -26,6 +26,7 @@ use App\Models\Employee;
 use App\Models\EmployeeFamilyMember;
 use App\Services\EmployeeFamilyMemberService;
 use App\Services\EmployeeJourneyService;
+use App\Services\EmployeeProfileService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
@@ -70,6 +71,7 @@ class ProfileController extends Controller
                 'can_edit_without_approval' => $request->user()->canEditEmployeeProfileWithoutApproval($employee),
                 'can_manage_salary' => $request->user()->canEditEmployeeProfileWithoutApproval($employee),
                 'can_manage_assets' => $request->user()->canEditEmployeeProfileWithoutApproval($employee),
+                'income_tax_applicable' => (bool) $employee->company?->income_tax_applicable,
             ],
         ]);
     }

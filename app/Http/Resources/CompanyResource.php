@@ -35,6 +35,7 @@ class CompanyResource extends JsonResource
             'country' => $this->country,
             'postal_code' => $this->postal_code,
             'timezone' => $this->timezone,
+            'income_tax_applicable' => (bool) $this->income_tax_applicable,
             'status' => $this->status,
             'description' => $this->description,
             'full_address' => $this->full_address,

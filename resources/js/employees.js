@@ -390,8 +390,11 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     const toggleIncomeTaxRegimeUi = () => {
         const section = document.getElementById('employeeTaxRegimeSection');
-        const show = isPaidEmployee() && isIncomeTaxApplicable();
+        const hint = document.getElementById('employeeTaxRegimeHint');
+        const show = isPaidEmployee();
+
         section?.classList.toggle('d-none', !show);
+        hint?.classList.toggle('d-none', !show || isIncomeTaxApplicable());
     };
 
     const togglePaidEmployeeUi = () => {
@@ -837,7 +840,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                         ['PF', companyPayrollSettings.pf_applicable ? 'Yes' : 'No'],
                         ['ESI', companyPayrollSettings.esi_applicable ? 'Yes' : 'No'],
                         ['Prof. Tax', companyPayrollSettings.professional_tax_applicable ? 'Yes' : 'No'],
-                        ...(isIncomeTaxApplicable()
+                        ...(isPaidEmployee()
                             ? [['Tax Regime', getSelectText('tax_regime')]]
                             : []),
                     ]
@@ -1120,7 +1123,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             salary_revision_notes: nullable(getValue('salary_revision_notes')),
         };
 
-        if (isIncomeTaxApplicable()) {
+        if (isPaidEmployee()) {
             payload.tax_regime = getValue('tax_regime') || 'new';
         }
 
@@ -1211,6 +1214,10 @@ document.addEventListener('DOMContentLoaded', async () => {
     };
 
     const populateForm = async (employee) => {
+        if (!employee?.id) {
+            throw new Error('Employee details could not be loaded.');
+        }
+
         setInputValue('first_name', employee.first_name);
         setInputValue('last_name', employee.last_name);
         setInputValue('email', employee.email);
@@ -1253,11 +1260,13 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (probationCheckbox) {
             probationCheckbox.checked = employee.probation_applicable ?? true;
         }
-        setInputValue('probation_period_months', employee.probation_period_months || 3);
+        setSelectValue('probation_period_months', employee.probation_period_months || 3);
         setDateInput('probation_end_date', employee.probation_end_date);
         setSelectValue('probation_status', employee.probation_status || 'on_probation');
         syncProbationStatusFromEndDate();
-        setSelectValue('tax_regime', employee.tax_regime || 'new');
+        if (form.querySelector('#tax_regime')) {
+            setSelectValue('tax_regime', employee.tax_regime || 'new');
+        }
 
         if (employee.salary) {
             const salary = employee.salary;
@@ -1475,20 +1484,38 @@ document.addEventListener('DOMContentLoaded', async () => {
     try {
         setupDateConstraints();
         initManagerSearch();
-        await Promise.all([loadRoles(), loadShifts(), loadCompanyWeeklyOff(), loadLeaveTypes()]);
-        try {
-            const { data } = await api.get('/payroll-settings');
-            companyPayrollSettings = data.data || companyPayrollSettings;
-            updateSalarySummary();
-            toggleIncomeTaxRegimeUi();
-        } catch {
-            // Keep defaults when payroll settings are unavailable.
-        }
+
         if (employeeId) {
             await loadManagers(employeeId);
+
             const { data } = await api.get(`/employees/${employeeId}`);
-            await populateForm(data.data.employee);
+            const employee = data?.data?.employee;
+
+            if (!employee?.id) {
+                throw new Error('Employee details could not be loaded.');
+            }
+
+            await Promise.all([loadRoles(), loadShifts(employee.shift_id || null), loadCompanyWeeklyOff(), loadLeaveTypes()]);
+            try {
+                const { data: settingsResponse } = await api.get('/payroll-settings');
+                companyPayrollSettings = settingsResponse.data || companyPayrollSettings;
+            } catch {
+                // Keep defaults when payroll settings are unavailable.
+            }
+
+            await populateForm(employee);
+            toggleIncomeTaxRegimeUi();
         } else {
+            await Promise.all([loadRoles(), loadShifts(), loadCompanyWeeklyOff(), loadLeaveTypes()]);
+            try {
+                const { data } = await api.get('/payroll-settings');
+                companyPayrollSettings = data.data || companyPayrollSettings;
+                updateSalarySummary();
+                toggleIncomeTaxRegimeUi();
+            } catch {
+                // Keep defaults when payroll settings are unavailable.
+            }
+
             await loadDepartments();
             await loadManagers();
             form.querySelector('#joining_date').value = maxJoiningDate;
