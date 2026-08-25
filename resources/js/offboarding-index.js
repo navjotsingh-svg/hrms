@@ -1,4 +1,5 @@
 import api, { getErrorMessage } from './api';
+import { Modal } from 'bootstrap';
 import { composeActionGroup, renderEditIconButton, renderViewLink } from './action-icons';
 import { bindEmployeeSearchSelect } from './employee-autocomplete';
 import { bindPagination, bindPerPageSelect, getSerialNumber, readPerPage, renderListPagination } from './pagination';
@@ -320,8 +321,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     };
 
     if (canManage) {
-        startOffboardingModal = window.bootstrap?.Modal.getOrCreateInstance(document.getElementById('startOffboardingModal'));
-        surveyModal = window.bootstrap?.Modal.getOrCreateInstance(document.getElementById('exitSurveyQuestionModal'));
+        startOffboardingModal = Modal.getOrCreateInstance(document.getElementById('startOffboardingModal'));
+        surveyModal = Modal.getOrCreateInstance(document.getElementById('exitSurveyQuestionModal'));
 
         document.getElementById('startOffboardingBtn')?.addEventListener('click', openStartOffboardingModal);
 

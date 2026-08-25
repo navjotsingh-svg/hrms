@@ -53,6 +53,7 @@ class EmployeeController extends Controller
                 'can_view_profile' => $user->canViewEmployeeProfile(),
                 'can_review_profile' => $user->canViewEmployeeProfile(),
                 'can_assign_admin' => $user->canAssignCompanyAdmin(),
+                'can_manage_offboarding' => $user->canManageOffboarding(),
             ],
         ]);
     }

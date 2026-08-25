@@ -1,4 +1,5 @@
 import api, { getErrorMessage } from './api';
+import { Modal } from 'bootstrap';
 import { consumePageFlashMessage } from './form-utils';
 import { bindEmployeeSearchSelect } from './employee-autocomplete';
 import { bindPagination, bindPerPageSelect, getSerialNumber, readPerPage, renderListPagination } from './pagination';
@@ -68,8 +69,16 @@ document.addEventListener('DOMContentLoaded', async () => {
     let canManage = false;
     let canViewProfile = false;
     let canAssignAdmin = false;
+    let canManageOffboarding = false;
     let employeeSearch = null;
     let selectedEmployee = null;
+    let offboardEmployeeSearch = null;
+    let offboardModal = null;
+    let offboardingUiReady = false;
+
+    const pageRoot = document.getElementById('employeesListContainer');
+    const serverCanManageOffboarding = pageRoot?.dataset.canManageOffboarding === '1';
+    canManageOffboarding = serverCanManageOffboarding;
 
     if (!tableBody || !cardGrid) {
         return;
@@ -153,8 +162,18 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     const REMOVE_ADMIN_ICON = '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 1.5 2 4v4.5c0 3.1 2.5 5.5 6 6.5 3.5-1 6-3.4 6-6.5V4L8 1.5Z"/><path d="m4.5 5.5 7 7M11.5 5.5l-7 7" stroke="currentColor" stroke-width="1.5"/></svg>';
 
+    const OFFBOARD_ICON = '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16" aria-hidden="true"><path fill-rule="evenodd" d="M6 12.5a.5.5 0 0 0 .5.5h8a.5.5 0 0 0 .5-.5v-9a.5.5 0 0 0-.5-.5h-8a.5.5 0 0 0-.5.5v2a.5.5 0 0 1-1 0v-2A1.5 1.5 0 0 1 6.5 2h8A1.5 1.5 0 0 1 16 3.5v9a1.5 1.5 0 0 1-1.5 1.5h-8A1.5 1.5 0 0 1 5 12.5v-2a.5.5 0 0 1 1 0z"/><path fill-rule="evenodd" d="M.146 8.354a.5.5 0 0 1 0-.708l3-3a.5.5 0 1 1 .708.708L1.707 7.5H10.5a.5.5 0 0 1 0 1H1.707l2.147 2.146a.5.5 0 0 1-.708.708z"/></svg>';
+
+    const canOffboardEmployee = (employee) => {
+        if (!canManageOffboarding || employee.status !== 'active') {
+            return false;
+        }
+
+        return !(Boolean(employee.is_company_admin) && !canAssignAdmin);
+    };
+
     const renderActionButtons = (employee) => {
-        if (!canManage && !canViewProfile && !canAssignAdmin) {
+        if (!canManage && !canViewProfile && !canAssignAdmin && !canManageOffboarding) {
             return '';
         }
 
@@ -191,6 +210,11 @@ document.addEventListener('DOMContentLoaded', async () => {
                     <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16"><path d="M12.146.146a.5.5 0 0 1 .708 0l3 3a.5.5 0 0 1 0 .708l-10 10a.5.5 0 0 1-.168.11l-5 2a.5.5 0 0 1-.65-.65l2-5a.5.5 0 0 1 .11-.168zM11.207 2.5 13.5 4.793 14.793 3.5 12.5 1.207zm1.586 3L10.5 3.207 4 9.707V10h.5a.5.5 0 0 1 .5.5v.5h.5a.5.5 0 0 1 .5.5v.5h.293zm-9.761 5.175-.106.106-1.528 3.821 3.821-1.528.106-.106A.5.5 0 0 1 5 12.5V12h-.5a.5.5 0 0 1-.5-.5V11h-.5a.5.5 0 0 1-.468-.325"/></svg>
                 </a>
                 ` : ''}
+                ${canOffboardEmployee(employee) ? `
+                <button type="button" class="table-action-btn table-action-btn--view" title="Start Offboarding" aria-label="Start offboarding for ${escapeHtml(employee.full_name)}" data-offboard-employee="${employee.id}" data-employee-name="${escapeHtml(employee.full_name)}" data-employee-code="${escapeHtml(employee.employee_code || '')}">
+                    ${OFFBOARD_ICON}
+                </button>
+                ` : ''}
             </div>
         `;
     };
@@ -205,7 +229,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         return `<td class="companies-td-actions">${buttons}</td>`;
     };
 
-    const columnCount = () => (canManage || canViewProfile || canAssignAdmin ? 7 : 6);
+    const columnCount = () => (canManage || canViewProfile || canAssignAdmin || canManageOffboarding ? 7 : 6);
 
     const nonPaidBadge = (employee) => (
         employee.is_paid_employee === false
@@ -323,7 +347,103 @@ document.addEventListener('DOMContentLoaded', async () => {
         canManage = Boolean(capabilities.can_manage);
         canViewProfile = Boolean(capabilities.can_view_profile);
         canAssignAdmin = Boolean(capabilities.can_assign_admin);
-        actionsHeader?.classList.toggle('d-none', !canManage && !canViewProfile && !canAssignAdmin);
+        canManageOffboarding = serverCanManageOffboarding || Boolean(capabilities.can_manage_offboarding);
+        actionsHeader?.classList.toggle('d-none', !canManage && !canViewProfile && !canAssignAdmin && !canManageOffboarding);
+
+        if (canManageOffboarding) {
+            ensureOffboardingUi();
+        }
+    };
+
+    const ensureOffboardingUi = () => {
+        const modalEl = document.getElementById('employeesStartOffboardingModal');
+
+        if (!modalEl || offboardingUiReady) {
+            return;
+        }
+
+        offboardModal = Modal.getOrCreateInstance(modalEl);
+        offboardEmployeeSearch = bindEmployeeSearchSelect({
+            inputId: 'employeesOffboardEmployeeSearch',
+            hiddenId: 'employeesOffboardEmployeeId',
+        });
+
+        document.getElementById('employeesStartOffboardingBtn')?.addEventListener('click', () => openOffboardModal());
+
+        document.getElementById('employeesStartOffboardingForm')?.addEventListener('submit', handleOffboardSubmit);
+
+        offboardingUiReady = true;
+    };
+
+    const openOffboardModal = (employee = null) => {
+        ensureOffboardingUi();
+
+        document.getElementById('employeesStartOffboardingForm')?.reset();
+        offboardEmployeeSearch?.clearSelection();
+
+        if (employee?.id) {
+            offboardEmployeeSearch?.setSelection({
+                id: employee.id,
+                label: employee.full_name,
+                full_name: employee.full_name,
+                employee_code: employee.employee_code,
+            });
+        }
+
+        const exitTypeSelect = document.getElementById('employeesOffboardExitType');
+        if (exitTypeSelect && !exitTypeSelect.value) {
+            exitTypeSelect.value = 'termination';
+        }
+
+        offboardModal?.show();
+    };
+
+    const handleOffboardSubmit = async (event) => {
+        event.preventDefault();
+
+        const employeeId = offboardEmployeeSearch?.getSelectedId();
+        const lastWorkingDate = document.getElementById('employeesOffboardLastWorkingDate')?.value;
+        const exitType = document.getElementById('employeesOffboardExitType')?.value;
+        const notes = document.getElementById('employeesOffboardNotes')?.value?.trim() || undefined;
+
+        if (!employeeId) {
+            showAlert('Please select an employee.', 'danger');
+            return;
+        }
+
+        if (!lastWorkingDate || !exitType) {
+            showAlert('Last working date and exit type are required.', 'danger');
+            return;
+        }
+
+        const submitBtn = event.target.querySelector('button[type="submit"]');
+        submitBtn?.setAttribute('disabled', 'disabled');
+
+        try {
+            const { data } = await api.post('/exit-cases', {
+                employee_id: employeeId,
+                last_working_date: lastWorkingDate,
+                exit_type: exitType,
+                notes,
+            });
+
+            offboardModal?.hide();
+            showAlert(data.message || 'Offboarding started successfully.');
+
+            const exitCaseId = data.data?.exit_case?.id;
+            const showUrl = routes().offboardingShow || '/offboarding/cases';
+
+            if (exitCaseId) {
+                window.location.href = `${showUrl}/${exitCaseId}`;
+                return;
+            }
+
+            await loadEmployees(currentPage);
+        } catch (error) {
+            showAlert(getErrorMessage(error), 'danger');
+        } finally {
+            submitBtn?.removeAttribute('disabled');
+        }
     };
 
     const loadDepartments = async () => {
@@ -625,7 +745,23 @@ document.addEventListener('DOMContentLoaded', async () => {
 
             return;
         }
+
+        const offboardButton = event.target.closest('[data-offboard-employee]');
+
+        if (offboardButton && canManageOffboarding) {
+            openOffboardModal({
+                id: Number(offboardButton.dataset.offboardEmployee),
+                full_name: offboardButton.dataset.employeeName,
+                employee_code: offboardButton.dataset.employeeCode,
+            });
+
+            return;
+        }
     });
+
+    if (serverCanManageOffboarding) {
+        ensureOffboardingUi();
+    }
 
     const flash = consumePageFlashMessage();
 

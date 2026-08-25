@@ -64,18 +64,12 @@ class CompanyOrganizationService
     /** @return array<int, string> */
     public function protectedOffboardingRoleSlugs(): array
     {
-        return [
-            Role::SLUG_COMPANY_ADMIN,
-            Role::SLUG_DEPARTMENT_HEAD,
-            Role::SLUG_TEAM_LEAD,
-        ];
+        return [Role::SLUG_COMPANY_ADMIN];
     }
 
     public function employeeIsProtectedFromHrOffboarding(Employee $employee): bool
     {
-        $employee->loadMissing('role');
-
-        return in_array($employee->role?->slug, $this->protectedOffboardingRoleSlugs(), true);
+        return $this->employeeIsCompanyAdministrator($employee);
     }
 
     public function assertActorMayOffboardEmployee(User $actor, Employee $employee): void
@@ -85,11 +79,5 @@ class CompanyOrganizationService
         }
 
         $this->assertActorMayManageAdministratorAccess($actor, $employee);
-
-        if ($this->employeeIsProtectedFromHrOffboarding($employee)) {
-            throw new AccessDeniedHttpException(
-                'HR cannot offboard company administrators, department heads, or team leads. Contact a company administrator.',
-            );
-        }
     }
 }

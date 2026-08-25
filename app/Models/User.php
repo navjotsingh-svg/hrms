@@ -85,7 +85,13 @@ class User extends Authenticatable
 
     public function isHrManager(): bool
     {
-        return $this->hasRole(Role::SLUG_HR_MANAGER);
+        if ($this->hasRole(Role::SLUG_HR_MANAGER)) {
+            return true;
+        }
+
+        $this->loadMissing('employee.role');
+
+        return $this->employee?->role?->slug === Role::SLUG_HR_MANAGER;
     }
 
     public function canViewEmployees(): bool
@@ -1118,7 +1124,20 @@ class User extends Authenticatable
 
     public function canManageOffboarding(): bool
     {
-        return $this->hasPermission('offboarding.manage') || $this->isHrManager() || $this->hasFullAccess();
+        if ($this->hasFullAccess() || $this->isHrManager()) {
+            return true;
+        }
+
+        if ($this->hasPermission('offboarding.manage')) {
+            return true;
+        }
+
+        return $this->hasPermission('employees.manage')
+            && (
+                $this->hasPermission('offboarding.approve')
+                || $this->hasPermission('clearance.review')
+                || $this->hasPermission('offboarding.fnf.manage')
+            );
     }
 
     public function canReviewClearance(): bool

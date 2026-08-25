@@ -8,14 +8,19 @@
             <h1 class="page-title mb-1">Employees</h1>
             <p class="page-subtitle mb-0">{{ Auth::user()->canManageEmployees() ? 'Manage your company workforce.' : 'View employees in your reporting hierarchy.' }}</p>
         </div>
-        @if (Auth::user()->canManageEmployees())
         <div class="d-flex flex-wrap gap-2">
-            <a href="{{ route('web.employees.bulk-import') }}" class="btn btn-outline-primary">Bulk Import</a>
-            <a href="{{ route('web.employees.create') }}" class="btn btn-primary" id="addEmployeeBtn">
-                + Add Employee
-            </a>
+            @if (Auth::user()->canManageOffboarding() || Auth::user()->canManageEmployees())
+            @if (Auth::user()->canManageOffboarding())
+                <button type="button" class="btn btn-outline-primary" id="employeesStartOffboardingBtn">Start Offboarding</button>
+            @endif
+            @if (Auth::user()->canManageEmployees())
+                <a href="{{ route('web.employees.bulk-import') }}" class="btn btn-outline-primary">Bulk Import</a>
+                <a href="{{ route('web.employees.create') }}" class="btn btn-primary" id="addEmployeeBtn">
+                    + Add Employee
+                </a>
+            @endif
+            @endif
         </div>
-        @endif
     </div>
 @endsection
 
@@ -73,7 +78,7 @@
     'ariaLabel' => 'Employees pagination',
 ])
 
-        <div id="employeesListContainer">
+        <div id="employeesListContainer" data-can-manage-offboarding="{{ Auth::user()->canManageOffboarding() ? '1' : '0' }}">
             <div id="employeesTableView" class="employees-table-view">
                 <div class="table-responsive">
                     <table class="companies-table table mb-0">
@@ -113,6 +118,55 @@
             'infoText' => 'Loading pagination...',
         ])
     </div>
+
+    @if (Auth::user()->canManageOffboarding())
+        <div class="modal fade" id="employeesStartOffboardingModal" tabindex="-1" aria-hidden="true">
+            <div class="modal-dialog">
+                <div class="modal-content">
+                    <form id="employeesStartOffboardingForm">
+                        <div class="modal-header">
+                            <h5 class="modal-title">Start Offboarding</h5>
+                            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                        </div>
+                        <div class="modal-body">
+                            <p class="text-muted small">Initiate offboarding for termination, retirement, or other exits without waiting for a resignation request.</p>
+                            <div class="row g-3">
+                                <div class="col-12">
+                                    @include('partials.employee-search-select', [
+                                        'inputId' => 'employeesOffboardEmployeeSearch',
+                                        'hiddenId' => 'employeesOffboardEmployeeId',
+                                        'label' => 'Employee *',
+                                        'placeholder' => 'Search active employee…',
+                                        'required' => true,
+                                    ])
+                                </div>
+                                <div class="col-md-6">
+                                    <label for="employeesOffboardExitType" class="form-label">Exit Type *</label>
+                                    <select class="form-select" id="employeesOffboardExitType" required>
+                                        @foreach (config('offboarding.exit_types', []) as $value => $label)
+                                            <option value="{{ $value }}" @selected($value === 'termination')>{{ $label }}</option>
+                                        @endforeach
+                                    </select>
+                                </div>
+                                <div class="col-md-6">
+                                    <label for="employeesOffboardLastWorkingDate" class="form-label">Last Working Date *</label>
+                                    <input type="date" class="form-control" id="employeesOffboardLastWorkingDate" required>
+                                </div>
+                                <div class="col-12">
+                                    <label for="employeesOffboardNotes" class="form-label">Notes</label>
+                                    <textarea class="form-control" id="employeesOffboardNotes" rows="2" maxlength="2000" placeholder="Optional internal notes"></textarea>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="modal-footer">
+                            <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+                            <button type="submit" class="btn btn-primary">Start Offboarding</button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+    @endif
 @endsection
 
 @push('scripts')
