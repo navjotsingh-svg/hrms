@@ -12,9 +12,7 @@ Route::prefix('v1')->name('api.')->group(function () {
     Route::middleware(['auth:sanctum', 'portal.access', 'log.activity'])->group(function () {
         Route::get('auth/me', [AuthController::class, 'me'])->name('auth.me');
         Route::post('auth/logout', [AuthController::class, 'logout'])->name('auth.logout');
-
         Route::get('dashboard', [DashboardController::class, 'index'])->name('dashboard');
-
         Route::get('activity-logs', [\App\Http\Controllers\Api\V1\ActivityLogController::class, 'index'])
             ->name('activity-logs.index');
         Route::get('activity-logs/dates', [\App\Http\Controllers\Api\V1\ActivityLogController::class, 'dates'])
