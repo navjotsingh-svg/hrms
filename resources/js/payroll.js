@@ -55,7 +55,6 @@ document.addEventListener('DOMContentLoaded', async () => {
     const offboardEmployeeSelect = document.getElementById('payrollOffboardEmployee');
     const offboardGenerateBtn = document.getElementById('payrollOffboardGenerateBtn');
     const offboardRefreshBtn = document.getElementById('payrollOffboardRefreshBtn');
-<<<<<<< HEAD
     const offboardHint = document.getElementById('payrollOffboardHint');
 
     const setOffboardHint = (text) => {
@@ -63,8 +62,6 @@ document.addEventListener('DOMContentLoaded', async () => {
             offboardHint.textContent = text;
         }
     };
-=======
->>>>>>> 7c33f59688f786601028b5d68f2b07f2351bf8b9
 
     const inrFormatter = new Intl.NumberFormat('en-IN', {
         style: 'currency',
@@ -518,11 +515,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
             return `
                 <option value="${period.id}">
-<<<<<<< HEAD
                     ${escapeHtml(period.label)}${period.employee?.employee_code && (period.is_offboard || period.type === 'offboard') ? ` (${escapeHtml(period.employee.employee_code)})` : ''} (${escapeHtml(period.type_label || (period.type === 'regular' ? 'Regular' : period.type))})${statusSuffix}
-=======
-                    ${period.label} (${period.type_label || (period.type === 'regular' ? 'Regular' : period.type)})${statusSuffix}
->>>>>>> 7c33f59688f786601028b5d68f2b07f2351bf8b9
                 </option>
             `;
         }).join('');
@@ -574,22 +567,15 @@ document.addEventListener('DOMContentLoaded', async () => {
 
         offboardEmployeeSelect.innerHTML = '<option value="">Loading eligible employees...</option>';
         offboardGenerateBtn && (offboardGenerateBtn.disabled = true);
-<<<<<<< HEAD
         setOffboardHint('Loading employees with an exit case who still need an offboard payslip...');
-=======
->>>>>>> 7c33f59688f786601028b5d68f2b07f2351bf8b9
 
         try {
             const { data } = await api.get('/payroll-periods/offboard/eligible');
             const employees = data.data.employees || [];
 
             if (!employees.length) {
-<<<<<<< HEAD
                 offboardEmployeeSelect.innerHTML = '<option value="">No pending offboard payroll</option>';
                 setOffboardHint('No pending leavers. If payroll was already generated, select the Offboard period below to view or export the payslip.');
-=======
-                offboardEmployeeSelect.innerHTML = '<option value="">No offboard employees pending final payroll</option>';
->>>>>>> 7c33f59688f786601028b5d68f2b07f2351bf8b9
                 return;
             }
 
@@ -602,15 +588,10 @@ document.addEventListener('DOMContentLoaded', async () => {
                 `),
             ].join('');
             offboardGenerateBtn && (offboardGenerateBtn.disabled = false);
-<<<<<<< HEAD
             setOffboardHint('Employees with salary and a last working date appear here until their offboard payslip exists.');
         } catch (error) {
             offboardEmployeeSelect.innerHTML = '<option value="">Unable to load offboard employees</option>';
             setOffboardHint('Could not load offboarded employees. Refresh the list or check that the employee has an exit case and salary.');
-=======
-        } catch (error) {
-            offboardEmployeeSelect.innerHTML = '<option value="">Unable to load offboard employees</option>';
->>>>>>> 7c33f59688f786601028b5d68f2b07f2351bf8b9
             showAlert(getErrorMessage(error), 'danger');
         }
     };
