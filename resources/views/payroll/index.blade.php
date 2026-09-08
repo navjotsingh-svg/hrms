@@ -17,7 +17,11 @@
     <div class="content-card mb-4">
         <div class="content-card-body">
             <h2 class="h6 mb-3">Generate Payroll</h2>
+<<<<<<< HEAD
             <p class="small text-muted mb-3">Payroll includes everyone who worked in the selected month, including people who were later offboarded. New joiners appear only from their joining month. People leaving in that month are paid under offboard payroll instead. If a period was generated with the wrong people, use Regenerate Payroll.</p>
+=======
+            <p class="small text-muted mb-3">Payroll is calculated from employee salary components and attendance for the selected month. Employees leaving in that month are excluded and paid separately under offboard payroll.</p>
+>>>>>>> 7c33f59688f786601028b5d68f2b07f2351bf8b9
             <form id="payrollGenerateForm" class="row g-3 align-items-end">
                 <div class="col-md-3">
                     <label for="payrollYear" class="form-label">Year</label>
@@ -38,14 +42,21 @@
     <div class="content-card mb-4">
         <div class="content-card-body">
             <h2 class="h6 mb-3">Pay Offboard Employee</h2>
+<<<<<<< HEAD
             <p class="small text-muted mb-3">Generate the final payslip for the exit month only. Earlier months stay on the regular period — select that month below to view the slip. After offboard payroll is generated, choose the <strong>Offboard</strong> period to view, download, or export the final slip.</p>
+=======
+            <p class="small text-muted mb-3">Generate final payroll for employees who exited during offboarding. Once paid, they will not appear here again. Employee records and history are retained; portal login is disabled after payment.</p>
+>>>>>>> 7c33f59688f786601028b5d68f2b07f2351bf8b9
             <form id="payrollOffboardForm" class="row g-3 align-items-end">
                 <div class="col-md-6">
                     <label for="payrollOffboardEmployee" class="form-label">Offboarded employee</label>
                     <select class="form-select" id="payrollOffboardEmployee" required>
                         <option value="">Loading eligible employees...</option>
                     </select>
+<<<<<<< HEAD
                     <div id="payrollOffboardHint" class="form-text">Employees with salary and a last working date appear here until their offboard payslip exists.</div>
+=======
+>>>>>>> 7c33f59688f786601028b5d68f2b07f2351bf8b9
                 </div>
                 <div class="col-md-6 d-flex flex-wrap gap-2">
                     <button type="submit" class="btn btn-primary" id="payrollOffboardGenerateBtn">Generate Offboard Payroll</button>

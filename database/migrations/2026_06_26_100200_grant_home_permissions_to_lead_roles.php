@@ -4,7 +4,10 @@ use App\Models\Permission;
 use App\Models\Role;
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Support\Facades\DB;
+<<<<<<< HEAD
 use Illuminate\Support\Facades\Schema;
+=======
+>>>>>>> 7c33f59688f786601028b5d68f2b07f2351bf8b9
 
 return new class extends Migration
 {
@@ -40,10 +43,13 @@ return new class extends Migration
 
             $role->permissions()->syncWithoutDetaching($permissionIds->values());
 
+<<<<<<< HEAD
             if (! Schema::hasTable('company_role_permissions')) {
                 continue;
             }
 
+=======
+>>>>>>> 7c33f59688f786601028b5d68f2b07f2351bf8b9
             $overridePairs = DB::table('company_role_permissions')
                 ->where('role_id', $role->id)
                 ->select('company_id')

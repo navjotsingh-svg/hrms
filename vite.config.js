@@ -6,11 +6,17 @@ export default defineConfig({
         laravel({
             input: [
                 'resources/css/app.css',
+<<<<<<< HEAD
                 'resources/css/careers-public.css',
                 'resources/js/app.js',
                 'resources/js/auth.js',
                 'resources/js/dashboard.js',
                 'resources/js/home-dashboard.js',
+=======
+                'resources/js/app.js',
+                'resources/js/auth.js',
+                'resources/js/dashboard.js',
+>>>>>>> 7c33f59688f786601028b5d68f2b07f2351bf8b9
                 'resources/js/companies.js',
                 'resources/js/companies-index.js',
                 'resources/js/company-show.js',
@@ -22,9 +28,12 @@ export default defineConfig({
                 'resources/js/documents.js',
                 'resources/js/assets-index.js',
                 'resources/js/assets.js',
+<<<<<<< HEAD
                 'resources/js/assets-apply.js',
                 'resources/js/assets-requests-index.js',
                 'resources/js/assets-request-show.js',
+=======
+>>>>>>> 7c33f59688f786601028b5d68f2b07f2351bf8b9
                 'resources/js/shifts-index.js',
                 'resources/js/shifts.js',
                 'resources/js/roles-index.js',
@@ -33,12 +42,18 @@ export default defineConfig({
                 'resources/js/employees-index.js',
                 'resources/js/employee-profile.js',
                 'resources/js/employees.js',
+<<<<<<< HEAD
                 'resources/js/employee-bulk-import.js',
                 'resources/js/employee-assistant.js',
                 'resources/js/attendance.js',
                 'resources/js/attendance-today.js',
                 'resources/js/attendance-punch.js',
                 'resources/js/attendance-overview.js',
+=======
+                'resources/js/attendance.js',
+                'resources/js/attendance-today.js',
+                'resources/js/attendance-punch.js',
+>>>>>>> 7c33f59688f786601028b5d68f2b07f2351bf8b9
                 'resources/js/attendance-regularize.js',
                 'resources/js/holidays-index.js',
                 'resources/js/holidays.js',
@@ -51,6 +66,7 @@ export default defineConfig({
                 'resources/js/leaves-show.js',
                 'resources/js/leaves-balances.js',
                 'resources/js/leaves-manage-balances.js',
+<<<<<<< HEAD
                 'resources/js/leave-balances-analytics.js',
                 'resources/js/analytics-report.js',
                 'resources/js/payroll.js',
@@ -80,6 +96,9 @@ export default defineConfig({
                 'resources/js/offboarding-index.js',
                 'resources/js/offboarding-apply.js',
                 'resources/js/offboarding-show.js',
+=======
+                'resources/js/payroll.js',
+>>>>>>> 7c33f59688f786601028b5d68f2b07f2351bf8b9
             ],
             refresh: true,
         }),

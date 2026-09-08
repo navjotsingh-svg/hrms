@@ -83,7 +83,10 @@ return new class extends Migration
                 $table->foreignId('approver_user_id')->nullable()->constrained('users')->nullOnDelete();
                 $table->timestamp('approved_at')->nullable();
                 $table->text('rejection_reason')->nullable();
+<<<<<<< HEAD
                 $table->text('approval_notes')->nullable();
+=======
+>>>>>>> 7c33f59688f786601028b5d68f2b07f2351bf8b9
                 $table->foreignId('job_id')->nullable()->constrained('job_postings')->nullOnDelete();
                 $table->timestamps();
                 $table->index(['company_id', 'status']);

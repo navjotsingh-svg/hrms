@@ -10,9 +10,13 @@ use App\Models\PayrollPeriod;
 use App\Models\Payslip;
 use App\Models\User;
 use Illuminate\Database\Eloquent\Collection;
+<<<<<<< HEAD
 use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection as SupportCollection;
+=======
+use Illuminate\Support\Carbon;
+>>>>>>> 7c33f59688f786601028b5d68f2b07f2351bf8b9
 use Illuminate\Support\Facades\DB;
 use Symfony\Component\HttpKernel\Exception\AccessDeniedHttpException;
 use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
@@ -40,8 +44,13 @@ class PayrollService
             ->get();
     }
 
+<<<<<<< HEAD
     /** @return SupportCollection<int, array<string, mixed>> */
     public function listEligibleOffboardEmployees(int $companyId): SupportCollection
+=======
+    /** @return Collection<int, array<string, mixed>> */
+    public function listEligibleOffboardEmployees(int $companyId): Collection
+>>>>>>> 7c33f59688f786601028b5d68f2b07f2351bf8b9
     {
         $blockedExitCaseIds = PayrollPeriod::query()
             ->where('company_id', $companyId)
@@ -49,6 +58,7 @@ class PayrollService
             ->whereNotNull('exit_case_id')
             ->pluck('exit_case_id');
 
+<<<<<<< HEAD
         $blockedEmployeeIds = PayrollPeriod::query()
             ->where('company_id', $companyId)
             ->where('type', PayrollPeriod::TYPE_OFFBOARD)
@@ -140,6 +150,38 @@ class PayrollService
         ];
     }
 
+=======
+        return ExitCase::query()
+            ->with(['employee', 'fullAndFinalSettlement'])
+            ->where('company_id', $companyId)
+            ->whereIn('status', [ExitCase::STATUS_IN_PROGRESS, ExitCase::STATUS_COMPLETED])
+            ->whereNotNull('last_working_date')
+            ->whereNotIn('id', $blockedExitCaseIds)
+            ->whereHas('employee', function ($query) {
+                $query->where('is_paid_employee', true)->whereHas('salary');
+            })
+            ->where(function ($query) {
+                $query->whereDoesntHave('fullAndFinalSettlement')
+                    ->orWhereHas('fullAndFinalSettlement', fn ($settlement) => $settlement->where('status', '!=', FullAndFinalSettlement::STATUS_PAID));
+            })
+            ->orderByDesc('last_working_date')
+            ->get()
+            ->map(fn (ExitCase $exitCase) => [
+                'exit_case_id' => $exitCase->id,
+                'employee_id' => $exitCase->employee_id,
+                'employee_name' => $exitCase->employee?->full_name,
+                'employee_code' => $exitCase->employee?->employee_code,
+                'last_working_date' => $exitCase->last_working_date?->toDateString(),
+                'last_working_date_label' => $exitCase->last_working_date?->format('d M Y'),
+                'fnf_status' => $exitCase->fullAndFinalSettlement?->status,
+                'net_payable' => $exitCase->fullAndFinalSettlement
+                    ? (float) $exitCase->fullAndFinalSettlement->net_payable
+                    : null,
+            ])
+            ->values();
+    }
+
+>>>>>>> 7c33f59688f786601028b5d68f2b07f2351bf8b9
     public function generateOffboard(int $companyId, int $employeeId, User $user): PayrollPeriod
     {
         $employee = Employee::query()
@@ -156,11 +198,19 @@ class PayrollService
             throw new UnprocessableEntityHttpException('This employee does not have salary details configured for payroll.');
         }
 
+<<<<<<< HEAD
+=======
+        if (! $employee->last_working_date) {
+            throw new UnprocessableEntityHttpException('This employee does not have a last working date from offboarding.');
+        }
+
+>>>>>>> 7c33f59688f786601028b5d68f2b07f2351bf8b9
         $exitCase = ExitCase::query()
             ->with('fullAndFinalSettlement')
             ->where('company_id', $companyId)
             ->where('employee_id', $employeeId)
             ->whereIn('status', [ExitCase::STATUS_IN_PROGRESS, ExitCase::STATUS_COMPLETED])
+<<<<<<< HEAD
             ->latest('id')
             ->first();
 
@@ -170,10 +220,23 @@ class PayrollService
 
         if (! $lastWorkingDate) {
             throw new UnprocessableEntityHttpException('This employee does not have a last working date from offboarding.');
+=======
+            ->whereNotNull('last_working_date')
+            ->latest('id')
+            ->first();
+
+        if (! $exitCase) {
+            throw new UnprocessableEntityHttpException('No active offboarding record found for this employee.');
+        }
+
+        if ($exitCase->fullAndFinalSettlement?->status === FullAndFinalSettlement::STATUS_PAID) {
+            throw new UnprocessableEntityHttpException('Final settlement for this employee has already been marked as paid.');
+>>>>>>> 7c33f59688f786601028b5d68f2b07f2351bf8b9
         }
 
         $existing = PayrollPeriod::query()
             ->where('company_id', $companyId)
+<<<<<<< HEAD
             ->where('type', PayrollPeriod::TYPE_OFFBOARD)
             ->where(function ($query) use ($exitCase, $employeeId) {
                 $query->where('employee_id', $employeeId);
@@ -193,11 +256,23 @@ class PayrollService
             $employee->save();
         }
 
+=======
+            ->where('exit_case_id', $exitCase->id)
+            ->where('type', PayrollPeriod::TYPE_OFFBOARD)
+            ->first();
+
+        if ($existing) {
+            throw new UnprocessableEntityHttpException('Offboard payroll has already been generated for this employee.');
+        }
+
+        $lastWorkingDate = Carbon::parse($employee->last_working_date);
+>>>>>>> 7c33f59688f786601028b5d68f2b07f2351bf8b9
         $year = (int) $lastWorkingDate->year;
         $month = (int) $lastWorkingDate->month;
 
         $this->assertPeriodWithinPortalStart($companyId, $year, $month);
 
+<<<<<<< HEAD
         try {
             return DB::transaction(function () use ($companyId, $year, $month, $user, $employee, $exitCase) {
                 $period = PayrollPeriod::create([
@@ -235,6 +310,36 @@ class PayrollService
                 $exception
             );
         }
+=======
+        return DB::transaction(function () use ($companyId, $year, $month, $user, $employee, $exitCase) {
+            $period = PayrollPeriod::create([
+                'company_id' => $companyId,
+                'year' => $year,
+                'month' => $month,
+                'type' => PayrollPeriod::TYPE_OFFBOARD,
+                'employee_id' => $employee->id,
+                'exit_case_id' => $exitCase->id,
+                'status' => PayrollPeriod::STATUS_PROCESSED,
+                'processed_by_user_id' => $user->id,
+                'processed_at' => now(),
+            ]);
+
+            $payload = $this->buildOffboardPayslipPayload($employee, $exitCase, $year, $month);
+
+            Payslip::create([
+                'payroll_period_id' => $period->id,
+                ...$payload,
+            ]);
+
+            if ($exitCase->fullAndFinalSettlement) {
+                $exitCase->fullAndFinalSettlement->update([
+                    'payroll_period_id' => $period->id,
+                ]);
+            }
+
+            return $period->load(['processedBy', 'employee'])->loadCount('payslips');
+        });
+>>>>>>> 7c33f59688f786601028b5d68f2b07f2351bf8b9
     }
 
     public function listPayslipsForPeriod(PayrollPeriod $period, ?int $employeeId = null): Collection
@@ -311,10 +416,28 @@ class PayrollService
     {
         $this->assertPeriodWithinPortalStart($companyId, $year, $month);
 
+<<<<<<< HEAD
         $employees = $this->employeesEligibleForRegularPayroll($companyId, $year, $month);
 
         if ($employees->isEmpty()) {
             throw new UnprocessableEntityHttpException('No paid employees were employed during this month.');
+=======
+        $employees = Employee::query()
+            ->where('company_id', $companyId)
+            ->where('status', 'active')
+            ->where('is_paid_employee', true)
+            ->whereHas('salary')
+            ->where(function ($query) use ($year, $month) {
+                $query->whereNull('last_working_date')
+                    ->orWhereRaw('NOT (YEAR(last_working_date) = ? AND MONTH(last_working_date) = ?)', [$year, $month]);
+            })
+            ->with(['salary', 'department', 'departments', 'company'])
+            ->orderedByName()
+            ->get();
+
+        if ($employees->isEmpty()) {
+            throw new UnprocessableEntityHttpException('No active employees with salary details found.');
+>>>>>>> 7c33f59688f786601028b5d68f2b07f2351bf8b9
         }
 
         return DB::transaction(function () use ($companyId, $year, $month, $user, $employees) {
@@ -342,6 +465,7 @@ class PayrollService
     }
 
     /**
+<<<<<<< HEAD
      * Regular payroll includes anyone who actually worked that month:
      * still-active staff, later offboarded staff, and excludes people
      * who had not joined yet or whose last working date is that month.
@@ -409,6 +533,8 @@ class PayrollService
     }
 
     /**
+=======
+>>>>>>> 7c33f59688f786601028b5d68f2b07f2351bf8b9
      * Months that ended before the attendance portal started have no
      * attendance data, so payroll would silently pay full salaries.
      */
