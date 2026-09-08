@@ -1,0 +1,4242 @@
+import { Modal, Tab } from 'bootstrap';
+import api, { getErrorMessage } from './api';
+import { applyBackendErrors, bindUploadProgress, setFieldError, setSubmitLoading } from './form-utils';
+import { renderDateTimeStack } from './datetime-utils';
+import { initRichTextEditor } from './rich-text-editor';
+import { renderReviewIconActionGroup, renderViewDocumentIconButton, renderDeleteDocumentIconButton, renderReviewIconActions } from './review-actions';
+import { renderDeleteButton, renderEditIconButton } from './action-icons';
+import { patchProfileReviewAction } from './request-review';
+import { hasSalaryRevisionTimeline, renderSalaryRevisionTimeline } from './salary-timeline';
+import { computeIncrementEffectiveDate, todayDateInput } from './salary-dates';
+import { initEmployeeJourneyTab } from './employee-journey';
+import { compressImageFiles } from './image-compress';
+import { cropProfilePhotoFile, initProfilePhotoCrop } from './profile-photo-crop';
+import { showErrorAlert, showInfoAlert, showProfilePhotoPendingNotice } from './swal-utils';
+
+const PROFILE_TAB_HASHES = {
+    work: 'profile-work-tab',
+    personal: 'profile-personal-tab',
+    salary: 'profile-salary-tab',
+    bank: 'profile-bank-tab',
+    compliances: 'profile-compliances-tab',
+    documents: 'profile-documents-tab',
+    other: 'profile-other-tab',
+};
+
+let profileCanEditWithoutApproval = false;
+let profileCanManageSalary = false;
+let profileIncomeTaxApplicable = false;
+let profileCanManageAssets = false;
+const profileFormEditor = {
+    family: false,
+    address: false,
+    emergency: false,
+    bank: false,
+    compliance: false,
+    document: false,
+};
+const assetDescriptionEditors = new Map();
+
+const isSelfServiceProfile = () => !profileCanEditWithoutApproval;
+
+const toggleHrSectionEditButton = (buttonId, show) => {
+    const button = document.getElementById(buttonId);
+
+    if (button) {
+        button.classList.toggle('d-none', !show || !profileCanEditWithoutApproval);
+    }
+};
+
+const syncHrSectionEditors = () => {
+    if (!profileCanEditWithoutApproval) {
+        return;
+    }
+
+    toggleHrSectionEditButton('profileFamilySectionEditBtn', !profileFormEditor.family);
+    toggleHrSectionEditButton('profileAddressEditBtn', !profileFormEditor.address);
+    toggleHrSectionEditButton('profileEmergencyEditBtn', !profileFormEditor.emergency);
+    toggleHrSectionEditButton('profileBankEditBtn', !profileFormEditor.bank);
+    toggleHrSectionEditButton('profileComplianceEditBtn', !profileFormEditor.compliance);
+    toggleHrSectionEditButton('profileDocumentEditBtn', !profileFormEditor.document);
+};
+
+const openProfileFormEditor = (key) => {
+    profileFormEditor[key] = true;
+    syncHrSectionEditors();
+};
+
+const closeProfileFormEditor = (key) => {
+    profileFormEditor[key] = false;
+    syncHrSectionEditors();
+};
+
+const resetProfileFormEditors = () => {
+    Object.keys(profileFormEditor).forEach((key) => {
+        profileFormEditor[key] = false;
+    });
+    syncHrSectionEditors();
+};
+
+const escapeHtml = (value) => String(value ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+let profileCanDeleteDocuments = false;
+let companyPayrollSettings = {
+    pf_applicable: true,
+    esi_applicable: false,
+    professional_tax_applicable: true,
+    income_tax_applicable: false,
+    basic_salary_percent: 50,
+    hra_percent: 40,
+    special_allowance_percent: 0,
+    conveyance_allowance: 0,
+    medical_allowance: 0,
+    other_allowance: 0,
+};
+
+const renderCompanyStatutoryLabels = (settings = companyPayrollSettings) => {
+    const yesNo = (value) => (value ? 'Yes' : 'No');
+    const pfLabel = document.getElementById('profileSalaryPfLabel');
+    const esiLabel = document.getElementById('profileSalaryEsiLabel');
+    const ptLabel = document.getElementById('profileSalaryPtLabel');
+    const summary = document.getElementById('profileSalaryStatutorySummary');
+
+    if (pfLabel) pfLabel.textContent = yesNo(settings.pf_applicable);
+    if (esiLabel) esiLabel.textContent = yesNo(settings.esi_applicable);
+    if (ptLabel) ptLabel.textContent = yesNo(settings.professional_tax_applicable);
+    summary?.classList.remove('d-none');
+};
+
+const usesSectionPayload = (section) => section && (profileCanEditWithoutApproval || section.can_resubmit);
+
+const canSubmitProfileSection = (section) => profileCanEditWithoutApproval || !section || section.can_resubmit;
+
+const profileSubmitLabel = (section, labels = {}) => {
+    const {
+        save = 'Save',
+        initial = 'Submit for Approval',
+        change = 'Submit Changes for Approval',
+        resubmit = 'Re-submit for Approval',
+    } = labels;
+
+    if (profileCanEditWithoutApproval) {
+        return save;
+    }
+
+    if (section?.status === 'approved' && section.can_resubmit) {
+        return change;
+    }
+
+    if (section?.status === 'rejected') {
+        return resubmit;
+    }
+
+    return initial;
+};
+
+const EMPLOYMENT_LABELS = {
+    full_time: 'Full Time',
+    part_time: 'Part Time',
+    contract: 'Contract',
+    intern: 'Intern',
+};
+
+const PROBATION_STATUS_LABELS = {
+    on_probation: 'On Probation',
+    confirmed: 'Completed',
+    extended: 'Extended',
+    not_applicable: 'Not Applicable',
+};
+
+const TAX_REGIME_LABELS = {
+    old: 'Old Regime',
+    new: 'New Regime',
+};
+
+const renderTaxRegimeSection = (employee) => {
+    const section = document.getElementById('profileTaxRegimeSection');
+    const form = document.getElementById('profileTaxRegimeForm');
+    const readOnly = document.getElementById('profileTaxRegimeReadOnly');
+    const display = document.getElementById('profileTaxRegimeDisplay');
+    const select = document.getElementById('profile_tax_regime');
+    const applicable = profileIncomeTaxApplicable
+        || Boolean(companyPayrollSettings.income_tax_applicable)
+        || Boolean(employee?.company?.income_tax_applicable);
+
+    section?.classList.toggle('d-none', !applicable);
+
+    if (!applicable) {
+        return;
+    }
+
+    const regime = employee?.tax_regime || 'new';
+    const label = employee?.tax_regime_label || TAX_REGIME_LABELS[regime] || TAX_REGIME_LABELS.new;
+
+    if (profileCanManageSalary) {
+        form?.classList.add('d-none');
+        readOnly?.classList.remove('d-none');
+        if (display) {
+            display.textContent = label;
+        }
+        return;
+    }
+
+    form?.classList.remove('d-none');
+    readOnly?.classList.add('d-none');
+    if (select) {
+        select.value = regime;
+    }
+};
+
+const GENDER_LABELS = {
+    male: 'Male',
+    female: 'Female',
+    other: 'Other',
+};
+
+const PAYMENT_MODE_LABELS = {
+    bank_transfer: 'Bank Transfer',
+    cash: 'Cash',
+    cheque: 'Cheque',
+};
+
+const DOCUMENT_STATUS_LABELS = {
+    pending: 'Pending Review',
+    approved: 'Approved',
+    rejected: 'Rejected',
+};
+
+const formatCurrency = (value) => new Intl.NumberFormat('en-IN', {
+    style: 'currency',
+    currency: 'INR',
+    maximumFractionDigits: 0,
+}).format(Number(value) || 0);
+
+const formatDate = (value) => {
+    if (!value) {
+        return '—';
+    }
+
+    return new Date(`${value}T00:00:00`).toLocaleDateString('en-IN', {
+        day: '2-digit',
+        month: 'short',
+        year: 'numeric',
+    });
+};
+
+const formatDateTime = (value) => renderDateTimeStack(value);
+
+const formatReviewCell = (item) => {
+    if (item.status === 'pending' || !item.reviewed_by?.name) {
+        return '<span class="text-muted">—</span>';
+    }
+
+    const actionLabel = item.status === 'approved' ? 'Approved by' : 'Rejected by';
+
+    return `
+        <div>
+            <span class="small text-muted">${actionLabel}</span>
+            <div>${item.reviewed_by.name}</div>
+            <div class="small text-muted">${formatDateTime(item.reviewed_at)}</div>
+        </div>
+    `;
+};
+
+const todayDateInputValue = () => {
+    const today = new Date();
+    const year = today.getFullYear();
+    const month = String(today.getMonth() + 1).padStart(2, '0');
+    const day = String(today.getDate()).padStart(2, '0');
+
+    return `${year}-${month}-${day}`;
+};
+
+const FAMILY_DOB_MIN = '1900-01-01';
+
+const applyFamilyDobConstraints = (input) => {
+    if (!input) {
+        return;
+    }
+
+    input.min = FAMILY_DOB_MIN;
+    input.max = todayDateInputValue();
+
+    if (input.value && (input.value > input.max || input.value < input.min)) {
+        input.value = '';
+    }
+};
+
+const isFutureDateInput = (value) => Boolean(value && value > todayDateInputValue());
+
+const isValidTenDigitPhone = (value) => !value || /^\d{10}$/.test(value);
+
+const isValidFamilyDob = (value) => {
+    if (!value) {
+        return true;
+    }
+
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+        return false;
+    }
+
+    return value >= FAMILY_DOB_MIN && value <= todayDateInputValue();
+};
+
+const normalizePhoneInput = (input) => {
+    if (!input) {
+        return;
+    }
+
+    input.value = input.value.replace(/\D/g, '').slice(0, 10);
+};
+
+const getInitials = (name = '') => {
+    const parts = String(name).trim().split(/\s+/).filter(Boolean);
+
+    if (parts.length === 0) {
+        return '?';
+    }
+
+    if (parts.length === 1) {
+        return parts[0].slice(0, 2).toUpperCase();
+    }
+
+    return `${parts[0][0]}${parts[parts.length - 1][0]}`.toUpperCase();
+};
+
+const renderDl = (container, rows) => {
+    if (!container) {
+        return;
+    }
+
+    container.innerHTML = rows.map(([label, value]) => `
+        <div class="profile-dl-row">
+            <dt>${label}</dt>
+            <dd>${value ?? '—'}</dd>
+        </div>
+    `).join('');
+};
+
+const statusBadge = (status, type = 'status') => {
+    const label = type === 'document'
+        ? (DOCUMENT_STATUS_LABELS[status] || status)
+        : (status === 'active' ? 'Active' : 'Inactive');
+    const className = type === 'document'
+        ? `profile-status-badge profile-status-badge--${status}`
+        : `profile-status-badge profile-status-badge--${status === 'active' ? 'active' : 'inactive'}`;
+
+    return `<span class="${className}">${label}</span>`;
+};
+
+const yesNo = (value) => (value ? 'Yes' : 'No');
+
+const setVisible = (showEl, hideEl, visible) => {
+    showEl?.classList.toggle('d-none', !visible);
+    hideEl?.classList.toggle('d-none', visible);
+};
+
+const activateProfileTabFromHash = () => {
+    const hash = window.location.hash.replace('#', '').toLowerCase();
+    const tabId = PROFILE_TAB_HASHES[hash];
+
+    if (!tabId) {
+        return;
+    }
+
+    const tabTrigger = document.getElementById(tabId);
+
+    if (tabTrigger) {
+        Tab.getOrCreateInstance(tabTrigger).show();
+    }
+};
+
+const renderProfilePhoto = (employee) => {
+    const photoEl = document.getElementById('profilePhotoImage');
+    const initialsEl = document.getElementById('profileAvatarInitials');
+    const statusEl = document.getElementById('profilePhotoStatus');
+    const uploadBtn = document.getElementById('profilePhotoUploadBtn');
+    const submission = employee?.profile_photo_submission;
+    const photoUrl = employee?.profile_photo_url;
+    const name = employee?.full_name || 'Employee';
+
+    if (initialsEl) {
+        initialsEl.textContent = getInitials(name);
+    }
+
+    if (photoUrl && photoEl) {
+        photoEl.src = photoUrl;
+        photoEl.classList.remove('d-none');
+        initialsEl?.classList.add('d-none');
+    } else if (photoEl) {
+        photoEl.removeAttribute('src');
+        photoEl.classList.add('d-none');
+        initialsEl?.classList.remove('d-none');
+    }
+
+    if (uploadBtn) {
+        uploadBtn.disabled = submission?.status === 'pending' && !profileCanEditWithoutApproval;
+    }
+
+    if (!statusEl) {
+        return;
+    }
+
+    if (submission?.status === 'pending') {
+        statusEl.className = 'profile-photo-status profile-photo-status--pending small mb-0';
+        statusEl.textContent = 'Pending for approval from management.';
+        statusEl.classList.remove('d-none');
+        return;
+    }
+
+    if (submission?.status === 'rejected') {
+        statusEl.className = 'profile-photo-status profile-photo-status--rejected small mb-0';
+        statusEl.textContent = submission.notes
+            ? `Photo rejected: ${submission.notes}`
+            : 'Profile photo rejected. Please upload a clearer face photo.';
+        statusEl.classList.remove('d-none');
+        return;
+    }
+
+    statusEl.classList.add('d-none');
+    statusEl.textContent = '';
+};
+
+const renderPersonChip = (person) => {
+    const photo = person.profile_photo_url
+        ? `<img src="${escapeHtml(person.profile_photo_url)}" alt="" class="profile-org-avatar-img">`
+        : `<span class="profile-org-avatar-initials">${escapeHtml(getInitials(person.full_name))}</span>`;
+
+    return `
+        <div class="profile-org-person">
+            <span class="profile-org-avatar">${photo}</span>
+            <span class="profile-org-person-name">${escapeHtml(person.full_name)}</span>
+        </div>
+    `;
+};
+
+const renderProfileOrgSidebar = (employee) => {
+    const managerList = document.getElementById('profileManagerList');
+    const reportsList = document.getElementById('profileDirectReportsList');
+
+    if (managerList) {
+        managerList.innerHTML = employee?.manager
+            ? renderPersonChip(employee.manager)
+            : '<span class="text-muted small">No manager assigned</span>';
+    }
+
+    if (reportsList) {
+        const reports = employee?.direct_reports || [];
+
+        reportsList.innerHTML = reports.length
+            ? reports.map((report) => renderPersonChip(report)).join('')
+            : '<span class="text-muted small">No direct reports</span>';
+    }
+};
+
+const populateProfileHeader = (user, employee = null) => {
+    const name = employee?.full_name || user.name;
+    const designation = employee?.designation || employee?.role?.name || user.role?.name || 'Employee';
+    const email = employee?.email || user.email || '—';
+
+    document.getElementById('profileDisplayName').textContent = name || '—';
+
+    const designationEl = document.getElementById('profileDisplayDesignation');
+    if (designationEl) {
+        designationEl.textContent = designation;
+    }
+
+    const emailEl = document.getElementById('profileDisplayEmail');
+    if (emailEl) {
+        emailEl.textContent = email;
+        emailEl.href = email.includes('@') ? `mailto:${email}` : '#';
+    }
+
+    if (employee) {
+        renderProfilePhoto(employee);
+        renderProfileOrgSidebar(employee);
+    }
+};
+
+const renderWorkTab = (employee) => {
+    const departments = employee.departments?.length
+        ? employee.departments.map((department) => department.name).join(', ')
+        : (employee.department?.name || '—');
+
+    renderDl(document.getElementById('profileWorkJob'), [
+        ['Employee Code', employee.employee_code],
+        ['Designation', employee.designation],
+        ['Employment Type', EMPLOYMENT_LABELS[employee.employment_type] || employee.employment_type],
+        ['Paid Employee', employee.is_paid_employee_label || (employee.is_paid_employee !== false ? 'Paid' : 'Non-paid')],
+        ['Joining Date', formatDate(employee.joining_date)],
+        ['Status', statusBadge(employee.status)],
+    ]);
+
+    renderDl(document.getElementById('profileWorkOrg'), [
+        ['Company', employee.company?.name],
+        ['Departments', departments],
+        ['System Role', employee.role?.name],
+        ['Reporting Manager', employee.manager?.full_name
+            ? `${employee.manager.full_name}${employee.manager.designation ? ` (${employee.manager.designation})` : ''}`
+            : '—'],
+        ['Shift', employee.shift
+            ? `${employee.shift.name} (${employee.shift.time_range || '—'})`
+            : '—'],
+    ]);
+
+    renderDl(document.getElementById('profileWorkProbation'), [
+        ['Probation Applicable', yesNo(employee.probation_applicable)],
+        ['Period (Months)', employee.probation_applicable ? employee.probation_period_months : '—'],
+        ['End Date', employee.probation_applicable ? formatDate(employee.probation_end_date) : '—'],
+        ['Status', employee.probation_applicable
+            ? (PROBATION_STATUS_LABELS[employee.probation_status] || employee.probation_status)
+            : 'Not Applicable'],
+    ]);
+};
+
+const getProfileSalaryValue = (id) => document.getElementById(id)?.value?.trim() ?? '';
+
+let profileSalaryFormMode = null;
+let profileCurrentSalarySnapshot = null;
+let profileEmployeeJoiningDate = null;
+
+const getProfileCtcChangeMode = () => document.querySelector('input[name="profile_ctc_mode"]:checked')?.value || 'percent';
+
+const getProfileResolvedAnnualCtc = () => {
+    if (profileSalaryFormMode === 'revise' || profileSalaryFormMode === 'increment') {
+        if (getProfileCtcChangeMode() === 'revised') {
+            return parseFloat(getProfileSalaryValue('profile_salary_revised_ctc')) || 0;
+        }
+
+        const currentCtc = Number(profileCurrentSalarySnapshot?.annual_ctc) || 0;
+        const increasePercent = parseFloat(getProfileSalaryValue('profile_salary_increase_percent')) || 0;
+
+        return currentCtc > 0 ? roundCurrency(currentCtc * (1 + increasePercent / 100)) : 0;
+    }
+
+    return parseFloat(getProfileSalaryValue('profile_salary_annual_ctc')) || 0;
+};
+
+const roundCurrency = (value) => Math.round((Number(value) || 0) * 100) / 100;
+
+const getProfileMonthlyCtc = () => {
+    const annualCtc = getProfileResolvedAnnualCtc();
+
+    return annualCtc > 0 ? annualCtc / 12 : 0;
+};
+
+const getProfileBasicAmount = () => {
+    const monthlyCtc = getProfileMonthlyCtc();
+    const basicPercent = parseFloat(companyPayrollSettings.basic_salary_percent) || 0;
+
+    return roundCurrency(monthlyCtc * basicPercent / 100);
+};
+
+const getProfileHraAmount = () => getProfileMonthlyCtc() * (parseFloat(companyPayrollSettings.hra_percent) || 0) / 100;
+
+const getProfileSpecialAllowanceAmount = () => getProfileMonthlyCtc() * (parseFloat(companyPayrollSettings.special_allowance_percent) || 0) / 100;
+
+const getProfileFixedAllowancesTotal = () => (
+    (parseFloat(companyPayrollSettings.conveyance_allowance) || 0)
+    + (parseFloat(companyPayrollSettings.medical_allowance) || 0)
+    + (parseFloat(companyPayrollSettings.other_allowance) || 0)
+);
+
+const calculateProfileMonthlyGross = () => {
+    const basic = getProfileBasicAmount();
+    const fixed = getProfileFixedAllowancesTotal();
+
+    return basic + getProfileHraAmount() + getProfileSpecialAllowanceAmount() + fixed;
+};
+
+const renderCompanySalaryStructureSummary = () => {
+    const container = document.getElementById('profileSalaryStructureSummary');
+
+    if (!container) {
+        return;
+    }
+
+    const basicPercent = companyPayrollSettings.basic_salary_percent ?? 50;
+    const hraPercent = companyPayrollSettings.hra_percent ?? 40;
+    const specialPercent = companyPayrollSettings.special_allowance_percent ?? 0;
+    const rows = [
+        ['Basic', `${basicPercent}% (${formatCurrency(getProfileBasicAmount())})`],
+        ['HRA', `${hraPercent}% (${formatCurrency(getProfileHraAmount())})`],
+        ['Special Allowance', `${specialPercent}% (${formatCurrency(getProfileSpecialAllowanceAmount())})`],
+        ['Fixed Allowances', formatCurrency(getProfileFixedAllowancesTotal())],
+    ];
+
+    container.innerHTML = rows.map(([label, value]) => `
+        <div class="profile-dl-row">
+            <dt>${label}</dt>
+            <dd>${value}</dd>
+        </div>
+    `).join('');
+};
+
+const renderProfileSalaryReviewSummary = () => {
+    const summary = document.getElementById('profileSalaryReviewSummary');
+
+    if (!summary) {
+        return;
+    }
+
+    const annualCtc = getProfileResolvedAnnualCtc();
+    const rows = [
+        ['Annual CTC', annualCtc ? formatCurrency(annualCtc) : '—'],
+        ['Basic', formatCurrency(getProfileBasicAmount())],
+        ['HRA', `${formatCurrency(getProfileHraAmount())} (${companyPayrollSettings.hra_percent || 0}%)`],
+        ['Special Allowance', `${formatCurrency(getProfileSpecialAllowanceAmount())} (${companyPayrollSettings.special_allowance_percent || 0}%)`],
+        ['Monthly Gross', formatCurrency(calculateProfileMonthlyGross())],
+        ['Effective Date', formatDate(getProfileSalaryValue('profile_salary_effective_from'))],
+        ['Payout From', formatDate(getProfileSalaryValue('profile_salary_payout_from'))],
+    ];
+
+    if ((profileSalaryFormMode === 'revise' || profileSalaryFormMode === 'increment') && profileCurrentSalarySnapshot?.annual_ctc) {
+        rows.unshift(['Previous CTC', formatCurrency(profileCurrentSalarySnapshot.annual_ctc)]);
+    }
+
+    summary.innerHTML = rows.map(([label, value]) => `
+        <div class="profile-dl-row">
+            <dt>${label}</dt>
+            <dd>${value}</dd>
+        </div>
+    `).join('');
+};
+
+const updateProfileSalaryPreview = () => {
+    const annual = getProfileResolvedAnnualCtc();
+    const monthly = calculateProfileMonthlyGross();
+    const revisedPreview = document.getElementById('profileRevisedCtcPreview');
+
+    if (revisedPreview) {
+        revisedPreview.textContent = annual > 0 ? formatCurrency(annual) : '—';
+    }
+
+    const annualInput = document.getElementById('profile_salary_annual_ctc');
+    if (annualInput && profileSalaryFormMode === 'add') {
+        annualInput.value = annual > 0 ? String(annual) : annualInput.value;
+    }
+
+    renderCompanySalaryStructureSummary();
+    renderCompanyStatutoryLabels();
+    renderProfileSalaryReviewSummary();
+};
+
+const toggleProfileCtcModeUi = () => {
+    const mode = getProfileCtcChangeMode();
+    const isIncrement = profileSalaryFormMode === 'increment';
+    document.getElementById('profileCtcPercentWrap')?.classList.toggle('d-none', !isIncrement && mode !== 'percent');
+    document.getElementById('profileCtcRevisedWrap')?.classList.toggle('d-none', isIncrement || mode !== 'revised');
+    syncProfileSalaryFormFields();
+    updateProfileSalaryPreview();
+};
+
+const syncProfileSalaryFormFields = () => {
+    const isAdd = profileSalaryFormMode === 'add';
+    const isRevise = profileSalaryFormMode === 'revise';
+    const isIncrement = profileSalaryFormMode === 'increment';
+    const ctcMode = getProfileCtcChangeMode();
+    const addCtcInput = document.getElementById('profile_salary_annual_ctc');
+    const revisedCtcInput = document.getElementById('profile_salary_revised_ctc');
+    const increaseInput = document.getElementById('profile_salary_increase_percent');
+
+    if (addCtcInput) {
+        addCtcInput.disabled = !isAdd;
+    }
+
+    if (revisedCtcInput) {
+        revisedCtcInput.disabled = !(isRevise || isIncrement) || ctcMode !== 'revised';
+    }
+
+    if (increaseInput) {
+        increaseInput.disabled = !(isRevise || isIncrement) || ctcMode !== 'percent';
+    }
+};
+
+const syncProfileSalaryDateFields = () => {
+    const effectiveInput = document.getElementById('profile_salary_effective_from');
+    const payoutInput = document.getElementById('profile_salary_payout_from');
+    const effectiveHint = document.getElementById('profileSalaryEffectiveDateHint');
+    const payoutHint = document.getElementById('profileSalaryPayoutDateHint');
+    const isIncrement = profileSalaryFormMode === 'increment';
+    const isRevise = profileSalaryFormMode === 'revise';
+
+    if (effectiveInput) {
+        effectiveInput.readOnly = isIncrement;
+        effectiveInput.classList.toggle('bg-light', isIncrement);
+    }
+
+    if (payoutInput) {
+        payoutInput.readOnly = isIncrement;
+        payoutInput.classList.toggle('bg-light', isIncrement);
+    }
+
+    if (effectiveHint) {
+        if (isIncrement) {
+            effectiveHint.textContent = profileEmployeeJoiningDate
+                ? 'Auto-set to the next joining-date anniversary (annual increment).'
+                : 'Auto-set to the next annual increment date.';
+        } else if (isRevise) {
+            effectiveHint.textContent = 'Salary changes from this date (e.g. correction or PIP adjustment). Defaults to today.';
+        } else {
+            effectiveHint.textContent = 'Date from which the CTC comes into effect.';
+        }
+    }
+
+    if (payoutHint) {
+        payoutHint.textContent = isIncrement
+            ? 'Matches the increment effective date.'
+            : 'Date from which the new salary is paid in payroll.';
+    }
+};
+
+const closeProfileSalaryForm = () => {
+    profileSalaryFormMode = null;
+    profileEmployeeJoiningDate = null;
+    document.getElementById('profileSalaryFormPanel')?.classList.add('d-none');
+    document.getElementById('profileSalaryStatusMsg')?.classList.add('d-none');
+};
+
+const openProfileSalaryForm = (mode, salary = {}, employee = {}) => {
+    profileSalaryFormMode = mode;
+    profileEmployeeJoiningDate = employee.joining_date || null;
+    profileCurrentSalarySnapshot = (mode === 'revise' || mode === 'increment') ? { ...salary } : null;
+
+    const panel = document.getElementById('profileSalaryFormPanel');
+    const title = document.getElementById('profileSalaryFormTitle');
+    const desc = document.getElementById('profileSalaryFormDesc');
+    const submitBtn = document.getElementById('profileSalarySubmit');
+
+    panel?.classList.remove('d-none');
+    document.getElementById('profileSalaryAddCtcBlock')?.classList.toggle('d-none', mode !== 'add');
+    document.getElementById('profileSalaryReviseCtcBlock')?.classList.toggle('d-none', mode === 'add');
+    document.getElementById('profileSalaryCurrentBlock')?.classList.toggle('d-none', mode === 'add');
+    document.querySelector('#profileSalaryReviseCtcBlock .salary-ctc-mode-toggle')
+        ?.classList.toggle('d-none', mode === 'increment');
+    document.getElementById('profileCtcRevisedWrap')?.classList.toggle('d-none', mode === 'increment' || getProfileCtcChangeMode() !== 'revised');
+
+    const titles = {
+        add: 'Add Salary',
+        revise: 'Revise Salary',
+        increment: 'Update Salary',
+    };
+    const descriptions = {
+        add: 'Enter compensation details for this employee.',
+        revise: 'Correct a wrong salary or apply a PIP-related change. The new salary takes effect from the revision date.',
+        increment: 'Record an annual increment. Effective date is set automatically from the employee joining date.',
+    };
+    const submitLabels = {
+        add: 'Submit Salary',
+        revise: 'Submit Revision',
+        increment: 'Submit Update',
+    };
+
+    if (title) {
+        title.textContent = titles[mode] || 'Salary';
+    }
+
+    if (desc) {
+        desc.textContent = descriptions[mode] || '';
+    }
+
+    if (submitBtn) {
+        submitBtn.textContent = submitLabels[mode] || 'Submit';
+    }
+
+    if (mode === 'revise' || mode === 'increment') {
+        document.getElementById('profileSalaryCurrentCtc').textContent = formatCurrency(salary.annual_ctc || 0);
+        document.getElementById('profile_ctc_mode_percent').checked = mode === 'increment';
+        document.getElementById('profile_ctc_mode_revised').checked = mode === 'revise';
+        document.getElementById('profile_salary_increase_percent').value = '';
+        document.getElementById('profile_salary_revised_ctc').value = salary.annual_ctc ?? '';
+        toggleProfileCtcModeUi();
+    }
+
+    fillProfileSalaryForm(salary, mode);
+    syncProfileSalaryFormFields();
+    syncProfileSalaryDateFields();
+    panel?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+};
+
+const buildSalaryDisplayRows = (salary = {}) => [
+    ['Annual CTC', salary.annual_ctc ? formatCurrency(salary.annual_ctc) : '—'],
+    ['Basic Salary', salary.basic_salary ? formatCurrency(salary.basic_salary) : '—'],
+    ['HRA', salary.hra ? `${formatCurrency(salary.hra)} (${salary.hra_percent || 0}% of monthly CTC)` : '—'],
+    ['Special Allowance', salary.special_allowance ? `${formatCurrency(salary.special_allowance)} (${salary.special_allowance_percent || 0}% of monthly CTC)` : '—'],
+    ['Conveyance', salary.conveyance_allowance ? formatCurrency(salary.conveyance_allowance) : '—'],
+    ['Medical', salary.medical_allowance ? formatCurrency(salary.medical_allowance) : '—'],
+    ['Other Allowance', salary.other_allowance ? formatCurrency(salary.other_allowance) : '—'],
+    ['Monthly Gross', salary.monthly_gross ? formatCurrency(salary.monthly_gross) : '—'],
+    ['Effective Date', formatDate(salary.salary_effective_from)],
+    ['Payout From', formatDate(salary.salary_payout_from || salary.salary_effective_from)],
+    ['PF Applicable', yesNo(salary.pf_applicable)],
+    ['ESI Applicable', yesNo(salary.esi_applicable)],
+    ['Professional Tax', yesNo(salary.professional_tax_applicable)],
+];
+
+const fillProfileSalaryForm = (salary = {}, mode = 'add') => {
+    const set = (id, value) => {
+        const input = document.getElementById(id);
+        if (input) {
+            input.value = value ?? '';
+        }
+    };
+
+    if (mode === 'add') {
+        set('profile_salary_annual_ctc', salary.annual_ctc ?? '');
+        set('profile_salary_effective_from', salary.salary_effective_from ?? '');
+        set('profile_salary_payout_from', salary.salary_payout_from || salary.salary_effective_from || '');
+    } else if (mode === 'revise') {
+        const today = todayDateInput();
+        set('profile_salary_effective_from', today);
+        set('profile_salary_payout_from', today);
+    } else if (mode === 'increment') {
+        const incrementDate = computeIncrementEffectiveDate(
+            profileEmployeeJoiningDate,
+            salary.salary_effective_from,
+        );
+        set('profile_salary_effective_from', incrementDate);
+        set('profile_salary_payout_from', incrementDate);
+    }
+
+    set('profile_salary_revision_notes', '');
+
+    renderCompanyStatutoryLabels();
+    renderCompanySalaryStructureSummary();
+    updateProfileSalaryPreview();
+};
+
+const renderSalaryRevisionsTable = (revisions = [], currentSalary = {}) => {
+    const container = document.getElementById('profileSalaryTimelineContainer');
+    const timelineTab = document.getElementById('profile-salary-timeline-tab');
+    const timelinePane = document.getElementById('profileSalaryTimelineSection');
+
+    renderSalaryRevisionTimeline(container, revisions, currentSalary);
+
+    const hasTimeline = hasSalaryRevisionTimeline(revisions, currentSalary);
+    timelineTab?.classList.toggle('d-none', !hasTimeline);
+    timelinePane?.classList.toggle('d-none', !hasTimeline);
+};
+
+const renderSalaryTab = (employee) => {
+    renderTaxRegimeSection(employee);
+
+    const salary = employee.salary || {};
+    const hasSalary = Boolean(salary.annual_ctc);
+    const desc = document.getElementById('profileSalaryTabDesc');
+    const manageSection = document.getElementById('profileSalaryManageSection');
+    const actions = document.getElementById('profileSalaryActions');
+    const addBtn = document.getElementById('profileSalaryAddBtn');
+    const updateBtn = document.getElementById('profileSalaryUpdateBtn');
+    const reviseBtn = document.getElementById('profileSalaryReviseBtn');
+
+    setVisible(
+        document.getElementById('profileSalaryContent'),
+        document.getElementById('profileSalaryEmpty'),
+        hasSalary || profileCanManageSalary,
+    );
+
+    if (!hasSalary && !profileCanManageSalary) {
+        return;
+    }
+
+    if (desc) {
+        desc.textContent = profileCanManageSalary
+            ? 'View current compensation. Use Update Salary for increments, or Revise Salary for corrections and PIP changes.'
+            : 'View your current compensation structure as recorded by HR.';
+    }
+
+    renderDl(document.getElementById('profileSalaryDisplay'), buildSalaryDisplayRows(salary));
+    document.getElementById('profileSummaryAnnualCtc').textContent = formatCurrency(salary.annual_ctc || 0);
+    document.getElementById('profileSummaryMonthlyGross').textContent = formatCurrency(salary.monthly_gross || 0);
+
+    manageSection?.classList.toggle('d-none', !profileCanManageSalary);
+    actions?.classList.toggle('d-none', !profileCanManageSalary);
+    addBtn?.classList.toggle('d-none', hasSalary);
+    updateBtn?.classList.toggle('d-none', !hasSalary);
+    reviseBtn?.classList.toggle('d-none', !hasSalary);
+
+    if (profileCanManageSalary) {
+        addBtn?.replaceWith(addBtn.cloneNode(true));
+        updateBtn?.replaceWith(updateBtn.cloneNode(true));
+        reviseBtn?.replaceWith(reviseBtn.cloneNode(true));
+        document.getElementById('profileSalaryAddBtn')?.addEventListener('click', () => openProfileSalaryForm('add', salary, employee));
+        document.getElementById('profileSalaryUpdateBtn')?.addEventListener('click', () => openProfileSalaryForm('increment', salary, employee));
+        document.getElementById('profileSalaryReviseBtn')?.addEventListener('click', () => openProfileSalaryForm('revise', salary, employee));
+    }
+
+    closeProfileSalaryForm();
+    renderSalaryRevisionsTable(employee.salary_revisions || [], salary);
+};
+
+const renderAssetStatus = (isAssigned) => {
+    const label = isAssigned ? 'Available' : 'Not Available';
+    const className = isAssigned ? 'profile-asset-status--available' : 'profile-asset-status--unavailable';
+
+    return `<span class="profile-asset-status ${className}">${label}</span>`;
+};
+
+const buildProfileAssetDescriptionView = (asset) => {
+    if (!asset.is_assigned || !asset.description) {
+        return '';
+    }
+
+    return `
+        <div class="profile-asset-details-box">
+            <div class="profile-asset-details-box-label">Details given</div>
+            <div class="profile-asset-details-box-body">${asset.description}</div>
+        </div>
+    `;
+};
+
+const buildProfileAssetListItem = (asset) => `
+    <li class="profile-asset-item">
+        <div class="profile-asset-item-header">
+            <div class="profile-asset-item-title">
+                <span class="profile-asset-icon" aria-hidden="true">i</span>
+                <span class="profile-asset-name">${escapeHtml(asset.name)}</span>
+            </div>
+            ${renderAssetStatus(asset.is_assigned)}
+        </div>
+        ${buildProfileAssetDescriptionView(asset)}
+    </li>
+`;
+
+const buildProfileAssetEditItem = (asset) => `
+    <li class="profile-asset-edit-item">
+        <div class="profile-asset-edit-item-head">
+            <div class="form-check mb-0">
+                <input
+                    class="form-check-input"
+                    type="checkbox"
+                    id="profile_asset_${asset.asset_type_id}"
+                    data-asset-type-id="${asset.asset_type_id}"
+                    ${asset.is_assigned ? 'checked' : ''}
+                >
+                <label class="form-check-label" for="profile_asset_${asset.asset_type_id}">${escapeHtml(asset.name)}</label>
+            </div>
+        </div>
+        <div class="profile-asset-description-wrap ${asset.is_assigned ? '' : 'd-none'}" data-asset-description-wrap="${asset.asset_type_id}">
+            <label class="form-label profile-asset-description-field-label" for="profile_asset_description_${asset.asset_type_id}">
+                Details of what has been given
+            </label>
+            <div id="profile_asset_editor_${asset.asset_type_id}" class="profile-asset-editor"></div>
+            <textarea id="profile_asset_description_${asset.asset_type_id}" class="d-none">${escapeHtml(asset.description || '')}</textarea>
+        </div>
+    </li>
+`;
+
+const toggleAssetDescriptionField = (assetTypeId, visible) => {
+    document
+        .querySelector(`[data-asset-description-wrap="${assetTypeId}"]`)
+        ?.classList.toggle('d-none', !visible);
+};
+
+const initAssetDescriptionEditors = (assets) => {
+    assetDescriptionEditors.clear();
+
+    assets.forEach((asset) => {
+        const container = document.getElementById(`profile_asset_editor_${asset.asset_type_id}`);
+        const textarea = document.getElementById(`profile_asset_description_${asset.asset_type_id}`);
+
+        if (!container || !textarea) {
+            return;
+        }
+
+        const editor = initRichTextEditor({
+            container,
+            textarea,
+            placeholder: 'Serial number, model, accessories, condition, handover notes...',
+        });
+
+        if (editor) {
+            assetDescriptionEditors.set(asset.asset_type_id, editor);
+        }
+    });
+};
+
+const bindAssetAssignmentEditors = () => {
+    document.querySelectorAll('#profileAssetEditList [data-asset-type-id]').forEach((checkbox) => {
+        checkbox.addEventListener('change', () => {
+            toggleAssetDescriptionField(Number(checkbox.dataset.assetTypeId), checkbox.checked);
+        });
+    });
+};
+
+const renderOtherTab = (employee) => {
+    const assets = employee.assets || [];
+    const hasAssets = assets.length > 0;
+    const desc = document.getElementById('profileOtherTabDesc');
+    const manageSection = document.getElementById('profileOtherManageSection');
+    const assetList = document.getElementById('profileAssetList');
+    const assetEditList = document.getElementById('profileAssetEditList');
+
+    setVisible(
+        document.getElementById('profileOtherContent'),
+        document.getElementById('profileOtherEmpty'),
+        hasAssets || profileCanManageAssets,
+    );
+
+    if (!hasAssets && !profileCanManageAssets) {
+        return;
+    }
+
+    if (desc) {
+        desc.textContent = profileCanManageAssets
+            ? 'View or update assets assigned to this employee.'
+            : 'View assets assigned to you by HR.';
+    }
+
+    if (assetList) {
+        assetList.innerHTML = hasAssets
+            ? assets.map((asset) => buildProfileAssetListItem(asset)).join('')
+            : '<li class="text-muted small">No asset types configured yet.</li>';
+    }
+
+    manageSection?.classList.toggle('d-none', !profileCanManageAssets);
+
+    if (profileCanManageAssets && assetEditList) {
+        assetEditList.innerHTML = hasAssets
+            ? assets.map((asset) => buildProfileAssetEditItem(asset)).join('')
+            : '<li class="text-muted small">Add asset types from Masters → Assets first.</li>';
+
+        if (hasAssets) {
+            initAssetDescriptionEditors(assets);
+            bindAssetAssignmentEditors();
+        }
+    }
+};
+
+const collectProfileAssetsPayload = () => {
+    const checkboxes = document.querySelectorAll('#profileAssetEditList [data-asset-type-id]');
+
+    return Array.from(checkboxes).map((checkbox) => {
+        const assetTypeId = Number(checkbox.dataset.assetTypeId);
+        const editor = assetDescriptionEditors.get(assetTypeId);
+        editor?.sync?.();
+
+        const textarea = document.getElementById(`profile_asset_description_${assetTypeId}`);
+
+        return {
+            asset_type_id: assetTypeId,
+            is_assigned: checkbox.checked,
+            description: checkbox.checked ? (textarea?.value.trim() || null) : null,
+        };
+    });
+};
+
+const collectProfileSalaryPayload = () => ({
+    salary_action: profileSalaryFormMode || 'add',
+    annual_ctc: getProfileResolvedAnnualCtc(),
+    salary_effective_from: getProfileSalaryValue('profile_salary_effective_from'),
+    salary_payout_from: getProfileSalaryValue('profile_salary_payout_from') || getProfileSalaryValue('profile_salary_effective_from'),
+    revision_notes: getProfileSalaryValue('profile_salary_revision_notes') || null,
+});
+
+const PERSONAL_SECTION_LABELS = {
+    family: 'Family Details',
+    address: 'Address',
+    emergency_contact: 'Emergency Contact',
+};
+
+const getPersonalSectionByType = (sections, type) => (sections || []).find((section) => section.section_type === type);
+
+const renderPersonalDisplayInfo = (employee) => {
+    renderDl(document.getElementById('profilePersonalDisplayInfo'), [
+        ['Full Name', employee.full_name],
+        ['Work Email', employee.email],
+        ['Personal Email', employee.personal_email || '—'],
+        ['Mobile Number', employee.phone || '—'],
+        ['Gender', GENDER_LABELS[employee.gender] || employee.gender || '—'],
+        ['Date of Birth', formatDate(employee.date_of_birth)],
+    ]);
+};
+
+const renderSectionStatusBadge = (element, section) => {
+    if (!element) {
+        return;
+    }
+
+    if (!section?.status) {
+        element.innerHTML = '<span class="text-muted small">Not submitted</span>';
+        return;
+    }
+
+    element.innerHTML = statusBadge(section.status, 'document');
+};
+
+const renderSectionReviewNotes = (container, section) => {
+    if (!container) {
+        return;
+    }
+
+    if (section?.status === 'rejected' && section.notes) {
+        container.innerHTML = `<div class="alert alert-danger py-2 small mb-3">Review notes: ${section.notes}</div>`;
+        return;
+    }
+
+    container.innerHTML = '';
+};
+
+const resetFamilyForm = (member = null) => {
+    const list = document.getElementById('profileFamilyMembersList');
+    const resubmitInput = document.getElementById('profileFamilyResubmitId');
+    const cancelBtn = document.getElementById('profileFamilyResubmitCancel');
+    const submitBtn = document.getElementById('profileFamilySectionSubmit');
+    const addBtn = document.getElementById('profileAddFamilyMember');
+    const hint = document.getElementById('profileFamilySectionHint');
+
+    if (!list) {
+        return;
+    }
+
+    list.innerHTML = '';
+    const row = createFamilyMemberRow(member || {});
+
+    if (row) {
+        list.appendChild(row);
+    }
+
+    updateFamilyMemberRemoveButtons();
+
+    if (resubmitInput) {
+        resubmitInput.value = member?.id ? String(member.id) : '';
+    }
+
+    const isResubmit = Boolean(member?.id);
+
+    cancelBtn?.classList.toggle('d-none', !isResubmit);
+    addBtn?.classList.toggle('d-none', isResubmit);
+
+    if (submitBtn) {
+        submitBtn.textContent = profileCanEditWithoutApproval
+            ? (isResubmit ? 'Save Changes' : 'Save Family Member')
+            : (isResubmit
+                ? (member.status === 'approved' ? 'Submit Changes for Approval' : 'Re-submit for Approval')
+                : 'Submit for Approval');
+    }
+
+    if (hint) {
+        hint.textContent = profileCanEditWithoutApproval
+            ? (isResubmit
+                ? 'Update this family member and save directly for the employee.'
+                : 'Add family members for this employee. Changes save immediately.')
+            : (isResubmit
+                ? 'Update this relation and submit for HR approval again.'
+                : 'Add family member details and submit for HR approval.');
+    }
+
+    syncFamilyEditorUi();
+};
+
+const setPersonalSectionFormState = (form, submitBtn, section) => {
+    const isLocked = !profileCanEditWithoutApproval && Boolean(section?.is_locked);
+    const canSubmit = canSubmitProfileSection(section);
+
+    if (!isSelfServiceProfile()) {
+        form?.classList.remove('d-none');
+    }
+
+    form?.querySelectorAll('input, select, textarea, button[type="button"]').forEach((element) => {
+        if (element.id === 'profileAddFamilyMember') {
+            element.disabled = isLocked || !canSubmit;
+            return;
+        }
+
+        element.disabled = isLocked || !canSubmit;
+    });
+
+    if (submitBtn) {
+        submitBtn.disabled = isLocked || !canSubmit;
+        submitBtn.textContent = profileSubmitLabel(section);
+    }
+};
+
+const updatePersonalSectionActions = (sectionType, section, employee) => {
+    const isAddress = sectionType === 'address';
+    const form = document.getElementById(isAddress ? 'profileAddressSectionForm' : 'profileEmergencySectionForm');
+    const submitBtn = document.getElementById(isAddress ? 'profileAddressSectionSubmit' : 'profileEmergencySectionSubmit');
+    const addBtn = document.getElementById(isAddress ? 'profileAddressAddBtn' : 'profileEmergencyAddBtn');
+    const changeBtn = document.getElementById(isAddress ? 'profileAddressChangeBtn' : 'profileEmergencyChangeBtn');
+    const editorKey = isAddress ? 'address' : 'emergency';
+
+    if (profileCanEditWithoutApproval) {
+        const editorOpen = profileFormEditor[editorKey];
+        const hasData = isAddress
+            ? Boolean(section?.status === 'approved' || employee.address_line_1)
+            : Boolean(section?.status === 'approved' || (employee.emergency_contacts || []).length || employee.emergency_contact_name);
+
+        form?.classList.toggle('d-none', !editorOpen);
+        form?.querySelectorAll('input, select, textarea, button[type="button"]').forEach((element) => {
+            if (element.id === 'profileAddEmergencyContact') {
+                element.disabled = !editorOpen;
+                return;
+            }
+
+            element.disabled = !editorOpen;
+        });
+
+        if (submitBtn) {
+            submitBtn.disabled = !editorOpen;
+            submitBtn.textContent = profileSubmitLabel(section);
+        }
+
+        addBtn?.classList.add('d-none');
+        changeBtn?.classList.add('d-none');
+        syncHrSectionEditors();
+
+        return;
+    }
+
+    const isPending = section?.status === 'pending';
+    const isRejected = section?.status === 'rejected';
+    const hasApprovedData = isAddress
+        ? Boolean(section?.status === 'approved' || employee.address_line_1)
+        : Boolean(section?.status === 'approved' || employee.emergency_contact_name);
+    const canChange = Boolean(section?.can_resubmit || (hasApprovedData && !isPending));
+    const canInitialAdd = !isPending && !hasApprovedData && !isRejected;
+    const editorOpen = profileFormEditor[editorKey];
+    const canSubmit = canSubmitProfileSection(section);
+    const isLocked = Boolean(section?.is_locked);
+    const showForm = editorOpen && canSubmit;
+
+    form?.classList.toggle('d-none', !showForm);
+    form?.querySelectorAll('input, select, textarea').forEach((element) => {
+        element.disabled = isLocked || !showForm;
+    });
+
+    if (submitBtn) {
+        submitBtn.disabled = isLocked || !showForm;
+        submitBtn.textContent = profileSubmitLabel(section);
+    }
+
+    addBtn?.classList.toggle('d-none', !canInitialAdd || editorOpen);
+    changeBtn?.classList.toggle('d-none', !canChange || isPending || editorOpen);
+    if (changeBtn) {
+        changeBtn.textContent = isRejected ? 'Re-submit' : 'Change';
+    }
+};
+
+const syncFamilyEditorUi = () => {
+    const form = document.getElementById('profileFamilySectionForm');
+    const addHeaderBtn = document.getElementById('profileAddFamilyMemberBtn');
+    const resubmitId = document.getElementById('profileFamilyResubmitId')?.value;
+
+    if (profileCanEditWithoutApproval) {
+        const isEditing = profileFormEditor.family || Boolean(resubmitId);
+        form?.classList.toggle('d-none', !isEditing);
+        addHeaderBtn?.classList.add('d-none');
+        syncHrSectionEditors();
+        return;
+    }
+
+    const isEditing = profileFormEditor.family || Boolean(resubmitId);
+    form?.classList.toggle('d-none', !isEditing);
+    addHeaderBtn?.classList.toggle('d-none', isEditing);
+};
+
+const updateFamilyMemberRemoveButtons = () => {
+    document.querySelectorAll('[data-family-member-row]').forEach((row, index) => {
+        const removeBtn = row.querySelector('[data-remove-family-member]');
+
+        if (removeBtn) {
+            removeBtn.classList.toggle('d-none', index === 0);
+        }
+    });
+};
+
+const createFamilyMemberRow = (member = {}) => {
+    const template = document.getElementById('profileFamilyMemberRowTemplate');
+    const row = template?.content.firstElementChild?.cloneNode(true);
+
+    if (!row) {
+        return null;
+    }
+
+    row.querySelector('[data-family-name]').value = member.name || '';
+    row.querySelector('[data-family-relation]').value = member.relation || '';
+    row.querySelector('[data-family-phone]').value = member.phone || '';
+    row.querySelector('[data-family-dob]').value = member.date_of_birth || '';
+    applyFamilyDobConstraints(row.querySelector('[data-family-dob]'));
+
+    return row;
+};
+
+const collectFamilyMembersFromForm = () => {
+    const resubmitId = document.getElementById('profileFamilyResubmitId')?.value;
+    const members = Array.from(document.querySelectorAll('[data-family-member-row]')).map((row) => ({
+        name: row.querySelector('[data-family-name]')?.value.trim() || '',
+        relation: row.querySelector('[data-family-relation]')?.value.trim() || '',
+        phone: (() => {
+            const value = row.querySelector('[data-family-phone]')?.value.trim() || '';
+            return value === '' ? null : value;
+        })(),
+        date_of_birth: row.querySelector('[data-family-dob]')?.value || null,
+    })).filter((member) => member.name || member.relation);
+
+    if (resubmitId) {
+        return members.map((member) => ({
+            ...member,
+            id: Number(resubmitId),
+        }));
+    }
+
+    return members;
+};
+
+const createEmergencyPhoneRow = (phone = '') => {
+    const template = document.getElementById('profileEmergencyPhoneRowTemplate');
+    const row = template?.content.firstElementChild?.cloneNode(true);
+
+    if (!row) {
+        return null;
+    }
+
+    const input = row.querySelector('[data-emergency-phone]');
+
+    if (input) {
+        input.value = phone || '';
+    }
+
+    return row;
+};
+
+const updateEmergencyPhoneRemoveButtons = (contactRow) => {
+    const phoneRows = contactRow.querySelectorAll('[data-emergency-phone-row]');
+
+    phoneRows.forEach((row, index) => {
+        const removeBtn = row.querySelector('[data-remove-emergency-phone]');
+
+        if (removeBtn) {
+            removeBtn.classList.toggle('d-none', phoneRows.length <= 1);
+        }
+    });
+};
+
+const createEmergencyContactRow = (contact = {}) => {
+    const template = document.getElementById('profileEmergencyContactRowTemplate');
+    const row = template?.content.firstElementChild?.cloneNode(true);
+
+    if (!row) {
+        return null;
+    }
+
+    row.querySelector('[data-emergency-name]').value = contact.name || '';
+    row.querySelector('[data-emergency-relation]').value = contact.relation || '';
+
+    const phonesList = row.querySelector('[data-emergency-phones-list]');
+    const phones = (contact.phones || []).filter(Boolean);
+
+    if (phones.length === 0 && contact.phone) {
+        phones.push(contact.phone);
+    }
+
+    (phones.length ? phones : ['']).forEach((phone) => {
+        const phoneRow = createEmergencyPhoneRow(phone);
+
+        if (phoneRow && phonesList) {
+            phonesList.appendChild(phoneRow);
+        }
+    });
+
+    updateEmergencyPhoneRemoveButtons(row);
+    updateEmergencyContactRemoveButtons();
+
+    return row;
+};
+
+const updateEmergencyContactRemoveButtons = () => {
+    const rows = document.querySelectorAll('[data-emergency-contact-row]');
+
+    rows.forEach((row, index) => {
+        const removeBtn = row.querySelector('[data-remove-emergency-contact]');
+
+        if (removeBtn) {
+            removeBtn.classList.toggle('d-none', rows.length <= 1);
+        }
+    });
+};
+
+const collectEmergencyContactsFromForm = () => Array.from(document.querySelectorAll('[data-emergency-contact-row]')).map((row) => ({
+    name: row.querySelector('[data-emergency-name]')?.value.trim() || '',
+    relation: row.querySelector('[data-emergency-relation]')?.value.trim() || '',
+    phones: Array.from(row.querySelectorAll('[data-emergency-phone]'))
+        .map((input) => input.value.trim())
+        .filter(Boolean),
+})).filter((contact) => contact.name || contact.relation || contact.phones.length);
+
+const fillEmergencyContactsList = (contacts = []) => {
+    const list = document.getElementById('profileEmergencyContactsList');
+
+    if (!list) {
+        return;
+    }
+
+    list.innerHTML = '';
+
+    const normalized = contacts.length
+        ? contacts
+        : [{ name: '', relation: '', phones: [''] }];
+
+    normalized.forEach((contact) => {
+        const row = createEmergencyContactRow(contact);
+
+        if (row) {
+            list.appendChild(row);
+        }
+    });
+};
+
+const normalizeEmergencyContacts = (section, employee) => {
+    if (usesSectionPayload(section) && section?.payload?.contacts?.length) {
+        return section.payload.contacts.map((contact) => ({
+            name: contact.name || '',
+            relation: contact.relation || '',
+            phones: (contact.phones || []).filter(Boolean).length
+                ? contact.phones.filter(Boolean)
+                : (contact.phone ? [contact.phone] : []),
+        }));
+    }
+
+    if (usesSectionPayload(section) && section?.payload?.name) {
+        return [{
+            name: section.payload.name || '',
+            relation: section.payload.relation || '',
+            phones: section.payload.phone ? [section.payload.phone] : [],
+        }];
+    }
+
+    if (Array.isArray(employee.emergency_contacts) && employee.emergency_contacts.length) {
+        return employee.emergency_contacts.map((contact) => ({
+            name: contact.name || '',
+            relation: contact.relation || '',
+            phones: (contact.phones || []).filter(Boolean),
+        }));
+    }
+
+    if (employee.emergency_contact_name) {
+        return [{
+            name: employee.emergency_contact_name || '',
+            relation: employee.emergency_contact_relation || '',
+            phones: employee.emergency_contact_phone ? [employee.emergency_contact_phone] : [],
+        }];
+    }
+
+    return [];
+};
+
+const formatEmergencyContactsHtml = (contacts = []) => {
+    if (!contacts.length) {
+        return '<p class="text-muted small mb-0">No emergency contacts submitted yet.</p>';
+    }
+
+    return contacts.map((contact) => `
+        <div class="profile-info-card mb-3">
+            <dl class="profile-dl mb-0">
+                <div class="profile-dl-row"><dt>Name</dt><dd>${contact.name || '—'}</dd></div>
+                <div class="profile-dl-row"><dt>Relation</dt><dd>${contact.relation || '—'}</dd></div>
+                <div class="profile-dl-row"><dt>Mobile</dt><dd>${(contact.phones || []).join(', ') || '—'}</dd></div>
+            </dl>
+        </div>
+    `).join('');
+};
+
+const formatAddressBlock = (address = {}) => [
+    address.address_line_1,
+    address.address_line_2,
+    address.city,
+    address.state,
+    address.postal_code,
+    address.country,
+].filter(Boolean).join(', ') || '—';
+
+const getApprovedFamilyMembers = (members = []) => members.filter((member) => member.status === 'approved');
+
+const renderFamilyMembersTable = (employee) => {
+    const tableBody = document.getElementById('profileFamilyMembersTableBody');
+    const members = employee.family_members || [];
+
+    if (!tableBody) {
+        return;
+    }
+
+    if (members.length === 0) {
+        tableBody.innerHTML = '<tr><td colspan="9" class="text-center text-muted py-4">No family members submitted yet.</td></tr>';
+        return;
+    }
+
+    tableBody.innerHTML = members.map((member) => `
+        <tr>
+            <td>${member.name}</td>
+            <td>${member.relation}</td>
+            <td>${member.phone || '—'}</td>
+            <td>${formatDate(member.date_of_birth)}</td>
+            <td>${statusBadge(member.status, 'document')}</td>
+            <td>${member.status === 'rejected' && member.notes
+        ? `<span class="text-danger small">${member.notes}</span>`
+        : '<span class="text-muted">—</span>'}</td>
+            <td>${formatDateTime(member.submitted_at)}</td>
+            <td>${formatReviewCell(member)}</td>
+            <td class="text-end">
+                <div class="table-action-group justify-content-end">
+                    ${member.can_resubmit
+        ? `<button type="button" class="btn btn-sm btn-outline-primary" data-resubmit-family-member="${member.id}">${member.status === 'approved' ? 'Change' : 'Re-submit'}</button>`
+        : ''}
+                    ${profileCanEditWithoutApproval && member.can_resubmit
+        ? renderEditIconButton('data-edit-family-member', member.id, 'Edit family member')
+        : ''}
+                    ${member.can_delete
+        ? renderDeleteButton('data-delete-family-member', member.id, 'Delete family member', member.name)
+        : ''}
+                </div>
+            </td>
+        </tr>
+    `).join('');
+
+    syncFamilyEditorUi();
+};
+
+const renderPendingFamilyMemberApprovals = (members = []) => {
+    const section = document.getElementById('profileFamilyApprovalsSection');
+    const tableBody = document.getElementById('profilePendingFamilyBody');
+    const countBadge = document.getElementById('profilePendingFamilyCount');
+
+    if (!section || !tableBody) {
+        return;
+    }
+
+    section.classList.toggle('d-none', members.length === 0);
+    countBadge.textContent = `${members.length} pending`;
+
+    if (members.length === 0) {
+        tableBody.innerHTML = '<tr><td colspan="6" class="text-center text-muted py-4">No pending family members.</td></tr>';
+        return;
+    }
+
+    tableBody.innerHTML = members.map((member) => `
+        <tr>
+            <td>
+                <strong>${member.employee?.full_name || '—'}</strong>
+                <div class="small text-muted">${member.employee?.employee_code || ''}</div>
+            </td>
+            <td>${member.name || '—'}</td>
+            <td>${member.relation || '—'}</td>
+            <td>${member.submitted_by?.name || '—'}${member.submitted_by?.role ? `<div class="small text-muted">${member.submitted_by.role}</div>` : ''}</td>
+            <td>${formatDateTime(member.submitted_at)}</td>
+            <td class="text-end">${renderReviewIconActionGroup('data-approve-family-member', 'data-reject-family-member', member.id)}</td>
+        </tr>
+    `).join('');
+};
+
+const loadPendingFamilyMemberApprovals = async (canReview) => {
+    if (!canReview) {
+        renderPendingFamilyMemberApprovals([]);
+        return;
+    }
+
+    try {
+        const { data } = await api.get('/employee-family-members/pending');
+        renderPendingFamilyMemberApprovals(data.data.family_members || []);
+    } catch (error) {
+        console.error(getErrorMessage(error));
+    }
+};
+
+const renderAddressDetailsView = (employee, section) => {
+    const container = document.getElementById('profileAddressApprovedView');
+    let permanent = null;
+    let temporary = null;
+    let sameAsPermanent = false;
+    let heading = '';
+
+    if (!container) {
+        return;
+    }
+
+    if (section?.status === 'pending') {
+        permanent = section.payload?.permanent || {};
+        temporary = section.payload?.temporary || {};
+        sameAsPermanent = Boolean(section.payload?.same_as_permanent);
+        heading = 'Submitted for Review';
+    } else if (section?.status === 'rejected') {
+        permanent = section.payload?.permanent || {};
+        temporary = section.payload?.temporary || {};
+        sameAsPermanent = Boolean(section.payload?.same_as_permanent);
+        heading = 'Rejected Submission';
+    } else if (employee.address_line_1) {
+        permanent = {
+            address_line_1: employee.address_line_1,
+            address_line_2: employee.address_line_2,
+            city: employee.city,
+            state: employee.state,
+            country: employee.country,
+            postal_code: employee.postal_code,
+        };
+        temporary = {
+            address_line_1: employee.temp_address_line_1,
+            address_line_2: employee.temp_address_line_2,
+            city: employee.temp_city,
+            state: employee.temp_state,
+            country: employee.temp_country,
+            postal_code: employee.temp_postal_code,
+        };
+        sameAsPermanent = !employee.temp_address_line_1 && !employee.temp_city && !employee.temp_state;
+        heading = 'Approved Details';
+    }
+
+    if (!permanent?.address_line_1) {
+        container.innerHTML = '<p class="text-muted small mb-0">No address submitted yet.</p>';
+        return;
+    }
+
+    container.innerHTML = `
+        <p class="small fw-semibold mb-2">${heading}</p>
+        <div class="table-responsive">
+            <table class="table profile-documents-table mb-0">
+                <thead>
+                    <tr>
+                        <th>Address Type</th>
+                        <th>Details</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td>Permanent</td>
+                        <td>${formatAddressBlock(permanent)}</td>
+                    </tr>
+                    <tr>
+                        <td>Current</td>
+                        <td>${sameAsPermanent ? 'Same as permanent address' : formatAddressBlock(temporary)}</td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+        ${section && section.status !== 'pending' ? `<div class="mt-3">${formatReviewCell(section)}</div>` : ''}
+    `;
+};
+
+const fillAddressSectionForm = (section, employee) => {
+    const permanent = usesSectionPayload(section)
+        ? (section.payload?.permanent || {})
+        : {
+            address_line_1: employee.address_line_1,
+            address_line_2: employee.address_line_2,
+            city: employee.city,
+            state: employee.state,
+            country: employee.country,
+            postal_code: employee.postal_code,
+        };
+    const temporary = usesSectionPayload(section)
+        ? (section.payload?.temporary || {})
+        : {
+            address_line_1: employee.temp_address_line_1,
+            address_line_2: employee.temp_address_line_2,
+            city: employee.temp_city,
+            state: employee.temp_state,
+            country: employee.temp_country,
+            postal_code: employee.temp_postal_code,
+        };
+    const sameAsPermanent = usesSectionPayload(section)
+        ? Boolean(section.payload?.same_as_permanent)
+        : !employee.temp_address_line_1 && !employee.temp_city && !employee.temp_state;
+
+    const set = (id, value) => {
+        const input = document.getElementById(id);
+        if (input) {
+            input.value = value ?? '';
+        }
+    };
+
+    set('profile_permanent_address_line_1', permanent.address_line_1);
+    set('profile_permanent_address_line_2', permanent.address_line_2);
+    set('profile_permanent_city', permanent.city);
+    set('profile_permanent_state', permanent.state);
+    set('profile_permanent_country', permanent.country || 'India');
+    set('profile_permanent_postal_code', permanent.postal_code);
+    set('profile_temp_address_line_1', temporary.address_line_1);
+    set('profile_temp_address_line_2', temporary.address_line_2);
+    set('profile_temp_city', temporary.city);
+    set('profile_temp_state', temporary.state);
+    set('profile_temp_country', temporary.country || 'India');
+    set('profile_temp_postal_code', temporary.postal_code);
+
+    const sameCheckbox = document.getElementById('profile_same_as_permanent');
+    if (sameCheckbox) {
+        sameCheckbox.checked = sameAsPermanent;
+    }
+
+    toggleTemporaryAddressFields();
+};
+
+const toggleTemporaryAddressFields = () => {
+    const sameAsPermanent = document.getElementById('profile_same_as_permanent')?.checked;
+    const fields = document.getElementById('profileTemporaryAddressFields');
+
+    fields?.querySelectorAll('input').forEach((input) => {
+        input.disabled = Boolean(sameAsPermanent);
+    });
+
+    if (sameAsPermanent) {
+        fields?.classList.add('opacity-50');
+    } else {
+        fields?.classList.remove('opacity-50');
+    }
+};
+
+const renderEmergencyApprovedView = (employee, section = null) => {
+    const container = document.getElementById('profileEmergencyApprovedView');
+
+    if (!container) {
+        return;
+    }
+
+    const contacts = normalizeEmergencyContacts(section, employee);
+
+    if (!contacts.length && !section) {
+        container.innerHTML = '<p class="text-muted small mb-0">No approved emergency contact yet.</p>';
+        return;
+    }
+
+    if (section && section.status !== 'approved') {
+        container.innerHTML = `
+            <p class="small fw-semibold mb-2">${section.status === 'pending' ? 'Submitted for Review' : 'Rejected Submission'}</p>
+            ${formatEmergencyContactsHtml(contacts)}
+            ${section.status !== 'pending' ? `<div class="mt-3">${formatReviewCell(section)}</div>` : ''}
+        `;
+        return;
+    }
+
+    container.innerHTML = `
+        ${formatEmergencyContactsHtml(contacts)}
+        ${section && section.status === 'approved' ? `<div class="mt-3">${formatReviewCell(section)}</div>` : ''}
+    `;
+};
+
+const getEmergencyContactDetails = (section, employee) => normalizeEmergencyContacts(section, employee)[0] || {
+    name: '',
+    relation: '',
+    phones: [],
+    phone: '',
+};
+
+const fillEmergencySectionForm = (section, employee) => {
+    fillEmergencyContactsList(normalizeEmergencyContacts(section, employee));
+};
+
+const renderPersonalTab = (employee) => {
+    const sections = employee.personal_sections || [];
+    const addressSection = getPersonalSectionByType(sections, 'address');
+    const emergencySection = getPersonalSectionByType(sections, 'emergency_contact');
+
+    renderPersonalDisplayInfo(employee);
+    renderFamilyMembersTable(employee);
+    resetFamilyForm();
+
+    renderSectionStatusBadge(document.getElementById('profileAddressSectionStatus'), addressSection);
+    renderSectionReviewNotes(document.getElementById('profileAddressSectionNotes'), addressSection);
+    renderAddressDetailsView(employee, addressSection);
+    fillAddressSectionForm(addressSection, employee);
+    updatePersonalSectionActions('address', addressSection, employee);
+
+    renderSectionStatusBadge(document.getElementById('profileEmergencySectionStatus'), emergencySection);
+    renderSectionReviewNotes(document.getElementById('profileEmergencySectionNotes'), emergencySection);
+    renderEmergencyApprovedView(employee, emergencySection);
+    fillEmergencySectionForm(emergencySection, employee);
+    updatePersonalSectionActions('emergency', emergencySection, employee);
+
+    document.getElementById('profileSubmissionPolicyAlert')?.classList.toggle('d-none', profileCanEditWithoutApproval);
+};
+
+const renderPendingPersonalSectionApprovals = (sections = []) => {
+    const section = document.getElementById('profilePersonalApprovalsSection');
+    const tableBody = document.getElementById('profilePendingPersonalBody');
+    const countBadge = document.getElementById('profilePendingPersonalCount');
+
+    if (!section || !tableBody) {
+        return;
+    }
+
+    section.classList.toggle('d-none', sections.length === 0);
+    countBadge.textContent = `${sections.length} pending`;
+
+    if (sections.length === 0) {
+        tableBody.innerHTML = '<tr><td colspan="6" class="text-center text-muted py-4">No pending personal sections.</td></tr>';
+        return;
+    }
+
+    tableBody.innerHTML = sections.map((item) => `
+        <tr>
+            <td>
+                <strong>${item.employee?.full_name || '—'}</strong>
+                <div class="small text-muted">${item.employee?.employee_code || ''}</div>
+            </td>
+            <td>${item.section_label || PERSONAL_SECTION_LABELS[item.section_type] || item.section_type}</td>
+            <td>${item.summary || '—'}</td>
+            <td>${item.submitted_by?.name || '—'}${item.submitted_by?.role ? `<div class="small text-muted">${item.submitted_by.role}</div>` : ''}</td>
+            <td>${formatDateTime(item.submitted_at)}</td>
+            <td class="text-end">${renderReviewIconActionGroup('data-approve-personal-section', 'data-reject-personal-section', item.id)}</td>
+        </tr>
+    `).join('');
+};
+
+const loadPendingPersonalSectionApprovals = async (canReview) => {
+    if (!canReview) {
+        renderPendingPersonalSectionApprovals([]);
+        return;
+    }
+
+    try {
+        const { data } = await api.get('/employee-personal-sections/pending');
+        renderPendingPersonalSectionApprovals(data.data.personal_sections || []);
+    } catch (error) {
+        console.error(getErrorMessage(error));
+    }
+};
+
+const collectAddressPayload = () => {
+    const sameAsPermanent = document.getElementById('profile_same_as_permanent')?.checked || false;
+    const get = (id) => document.getElementById(id)?.value.trim() || null;
+
+    return {
+        same_as_permanent: sameAsPermanent,
+        permanent: {
+            address_line_1: get('profile_permanent_address_line_1'),
+            address_line_2: get('profile_permanent_address_line_2'),
+            city: get('profile_permanent_city'),
+            state: get('profile_permanent_state'),
+            country: get('profile_permanent_country'),
+            postal_code: get('profile_permanent_postal_code'),
+        },
+        temporary: sameAsPermanent ? {} : {
+            address_line_1: get('profile_temp_address_line_1'),
+            address_line_2: get('profile_temp_address_line_2'),
+            city: get('profile_temp_city'),
+            state: get('profile_temp_state'),
+            country: get('profile_temp_country'),
+            postal_code: get('profile_temp_postal_code'),
+        },
+    };
+};
+
+const setContactInfoFormAccess = (canUpdateContactInfo) => {
+    const emailInput = document.querySelector('#profileForm #email');
+
+    if (emailInput) {
+        emailInput.readOnly = !canUpdateContactInfo;
+        emailInput.classList.toggle('bg-light', !canUpdateContactInfo);
+    }
+};
+
+const PAYMENT_MODE_OPTIONS = [
+    { value: 'bank_transfer', label: 'Bank Transfer' },
+    { value: 'cash', label: 'Cash' },
+    { value: 'cheque', label: 'Cheque' },
+];
+
+const toggleBankFields = () => {
+    const mode = document.getElementById('profile_payment_mode')?.value;
+    const fields = document.getElementById('profileBankFields');
+    const proofFields = document.getElementById('profileBankProofFields');
+    const note = document.getElementById('profileBankNonTransferNote');
+    const proofInput = document.getElementById('profile_bank_proofs');
+    const bankFieldIds = [
+        'profile_bank_name',
+        'profile_bank_branch',
+        'profile_bank_address',
+        'profile_account_holder_name',
+        'profile_account_number',
+        'profile_ifsc_code',
+    ];
+
+    if (fields) {
+        fields.classList.toggle('d-none', mode !== 'bank_transfer');
+    }
+
+    if (proofFields) {
+        proofFields.classList.toggle('d-none', mode !== 'bank_transfer');
+    }
+
+    if (note) {
+        note.classList.toggle('d-none', !mode || mode === 'bank_transfer');
+    }
+
+    if (mode !== 'bank_transfer') {
+        bankFieldIds.forEach((id) => {
+            const input = document.getElementById(id);
+            if (input) {
+                input.value = '';
+            }
+        });
+
+        if (proofInput) {
+            proofInput.value = '';
+        }
+    }
+};
+
+const getPaymentMethodByMode = (methods, mode) => methods.find((method) => method.payment_mode === mode);
+
+const getSubmittablePaymentModes = (methods) => {
+    if (profileCanEditWithoutApproval) {
+        return PAYMENT_MODE_OPTIONS;
+    }
+
+    return PAYMENT_MODE_OPTIONS.filter((option) => {
+        const existing = getPaymentMethodByMode(methods, option.value);
+        return !existing || existing.can_resubmit;
+    });
+};
+
+const paymentMethodOptionSuffix = (existing) => {
+    if (!existing?.can_resubmit) {
+        return '';
+    }
+
+    return existing.status === 'approved' ? ' (Change)' : ' (Re-submit)';
+};
+
+const fillPaymentMethodFormFields = (method) => {
+    const set = (id, value) => {
+        const input = document.getElementById(id);
+        if (input) {
+            input.value = value ?? '';
+        }
+    };
+
+    if (!method || method.payment_mode !== 'bank_transfer') {
+        return;
+    }
+
+    set('profile_bank_name', method.bank_name);
+    set('profile_bank_branch', method.bank_branch);
+    set('profile_bank_address', method.bank_address);
+    set('profile_account_holder_name', method.account_holder_name);
+    set('profile_account_number', method.account_number);
+    set('profile_ifsc_code', method.ifsc_code);
+};
+
+const handlePaymentModeChange = (methods = []) => {
+    toggleBankFields();
+
+    const mode = document.getElementById('profile_payment_mode')?.value;
+    const existing = getPaymentMethodByMode(methods, mode);
+
+    if (existing && (existing.can_resubmit || profileCanEditWithoutApproval)) {
+        fillPaymentMethodFormFields(existing);
+    }
+};
+
+let cachedPaymentMethods = [];
+
+const formatPaymentMethodProofLinks = (method) => {
+    const proofs = method.proofs || [];
+
+    if (!proofs.length) {
+        return '';
+    }
+
+    return `
+        <div class="small mt-1">
+            ${proofs.map((proof) => `
+                <button type="button" class="btn btn-link btn-sm p-0 me-2" data-view-bank-proof="${proof.id}" data-view-bank-proof-title="${escapeHtml(proof.original_name)}">
+                    📎 ${escapeHtml(proof.original_name)}
+                </button>
+            `).join('')}
+        </div>
+    `;
+};
+
+const formatPaymentMethodDetails = (method) => {
+    if (method.payment_mode !== 'bank_transfer') {
+        return '<span class="text-muted">No bank account required</span>';
+    }
+
+    const parts = [
+        method.bank_name,
+        method.bank_branch,
+        method.bank_address,
+        method.account_holder_name,
+        method.account_number ? `A/C ${method.account_number}` : null,
+        method.ifsc_code,
+    ].filter(Boolean);
+
+    const base = parts.length ? parts.join(' · ') : '—';
+
+    return base + formatPaymentMethodProofLinks(method);
+};
+
+const getNewPaymentModes = (methods) => PAYMENT_MODE_OPTIONS.filter((option) => !getPaymentMethodByMode(methods, option.value));
+
+const renderPaymentMethods = (employee) => {
+    const select = document.getElementById('profile_payment_mode');
+    const uploadForm = document.getElementById('profilePaymentMethodForm');
+    const uploadHint = document.getElementById('profilePaymentMethodUploadHint');
+    const addBtn = document.getElementById('profileAddPaymentMethodBtn');
+    const tableBody = document.getElementById('profilePaymentMethodsTableBody');
+    const requiredWrap = document.getElementById('profileRequiredPaymentMethods');
+    const methods = employee.payment_methods || [];
+    cachedPaymentMethods = methods;
+    const submittableModes = getSubmittablePaymentModes(methods);
+    const newModes = getNewPaymentModes(methods);
+
+    if (select) {
+        if (submittableModes.length === 0) {
+            select.innerHTML = '<option value="">No payment options available to submit</option>';
+            select.disabled = true;
+        } else {
+            select.disabled = false;
+            select.innerHTML = '<option value="">Select payment option</option>' + submittableModes
+                .map((option) => {
+                    const existing = getPaymentMethodByMode(methods, option.value);
+                    return `<option value="${option.value}">${option.label}${paymentMethodOptionSuffix(existing)}</option>`;
+                })
+                .join('');
+        }
+    }
+
+    if (uploadForm) {
+        if (profileCanEditWithoutApproval) {
+            uploadForm.classList.toggle('d-none', submittableModes.length === 0 || !profileFormEditor.bank);
+        } else {
+            uploadForm.classList.toggle('d-none', !profileFormEditor.bank);
+        }
+    }
+
+    if (addBtn) {
+        addBtn.classList.toggle('d-none', profileCanEditWithoutApproval || newModes.length === 0 || profileFormEditor.bank);
+    }
+
+    toggleHrSectionEditButton('profileBankEditBtn', submittableModes.length > 0 && !profileFormEditor.bank);
+
+    if (uploadHint) {
+        uploadHint.textContent = profileCanEditWithoutApproval
+            ? 'Select a payment option and save bank details directly for this employee.'
+            : (submittableModes.length
+                ? 'Select a payment option to submit, change approved details, or re-submit a rejected option.'
+                : 'All payment options are currently pending HR review.');
+    }
+
+    toggleBankFields();
+
+    if (tableBody) {
+        if (methods.length === 0) {
+            tableBody.innerHTML = '<tr><td colspan="7" class="text-center text-muted py-4">No payment options submitted yet.</td></tr>';
+        } else {
+            tableBody.innerHTML = methods.map((method) => `
+                <tr>
+                    <td>${PAYMENT_MODE_LABELS[method.payment_mode] || method.payment_mode}</td>
+                    <td>${formatPaymentMethodDetails(method)}</td>
+                    <td>${statusBadge(method.status, 'document')}</td>
+                    <td>${method.status === 'rejected' && method.notes
+                        ? `<span class="text-danger small">${method.notes}</span>`
+                        : '<span class="text-muted">—</span>'}</td>
+                    <td>${formatDateTime(method.submitted_at)}</td>
+                    <td>${formatReviewCell(method)}</td>
+                    <td class="text-end">
+                        ${method.can_resubmit || profileCanEditWithoutApproval
+        ? `<div class="table-action-group justify-content-end">${profileCanEditWithoutApproval
+            ? renderEditIconButton('data-change-payment-method', method.payment_mode, 'Edit payment option')
+            : `<button type="button" class="btn btn-sm btn-outline-primary" data-change-payment-method="${method.payment_mode}">${method.status === 'approved' ? 'Change' : 'Re-submit'}</button>`}</div>`
+        : '<span class="text-muted">—</span>'}
+                    </td>
+                </tr>
+            `).join('');
+        }
+    }
+
+    const paymentSubmitBtn = document.getElementById('profilePaymentMethodSubmit');
+    if (paymentSubmitBtn) {
+        paymentSubmitBtn.textContent = profileCanEditWithoutApproval ? 'Save' : 'Submit for Approval';
+    }
+
+    if (requiredWrap) {
+        requiredWrap.innerHTML = PAYMENT_MODE_OPTIONS.map((option) => {
+            const existing = getPaymentMethodByMode(methods, option.value);
+            let className = '';
+            let icon = '○';
+            let suffix = '';
+
+            if (existing) {
+                if (existing.status === 'approved') {
+                    className = 'profile-required-doc--uploaded';
+                    icon = '✓';
+                    suffix = ' (Approved — can be changed)';
+                } else if (existing.status === 'pending') {
+                    className = 'profile-required-doc--missing';
+                    icon = '⏳';
+                    suffix = ' (Pending)';
+                } else if (existing.status === 'rejected') {
+                    className = 'profile-required-doc--missing';
+                    icon = '✕';
+                    suffix = ' (Rejected — re-submit required)';
+                }
+            }
+
+            return `<span class="profile-required-doc ${className}">${icon} ${option.label}${suffix}</span>`;
+        }).join('');
+    }
+};
+
+const renderPendingPaymentMethodApprovals = (methods = []) => {
+    const section = document.getElementById('profileBankApprovalsSection');
+    const tableBody = document.getElementById('profilePendingBankBody');
+    const countBadge = document.getElementById('profilePendingBankCount');
+
+    if (!section || !tableBody) {
+        return;
+    }
+
+    section.classList.toggle('d-none', methods.length === 0);
+    countBadge.textContent = `${methods.length} pending`;
+
+    if (methods.length === 0) {
+        tableBody.innerHTML = '<tr><td colspan="6" class="text-center text-muted py-4">No pending payment options.</td></tr>';
+        return;
+    }
+
+    tableBody.innerHTML = methods.map((method) => `
+        <tr>
+            <td>
+                <strong>${method.employee?.full_name || '—'}</strong>
+                <div class="small text-muted">${method.employee?.employee_code || ''}</div>
+            </td>
+            <td>${PAYMENT_MODE_LABELS[method.payment_mode] || method.payment_mode || '—'}</td>
+            <td>${formatPaymentMethodDetails(method)}</td>
+            <td>${method.submitted_by?.name || '—'}${method.submitted_by?.role ? `<div class="small text-muted">${method.submitted_by.role}</div>` : ''}</td>
+            <td>${formatDateTime(method.submitted_at)}</td>
+            <td class="text-end">${renderReviewIconActionGroup('data-approve-payment-method', 'data-reject-payment-method', method.id)}</td>
+        </tr>
+    `).join('');
+};
+
+const loadPendingPaymentMethodApprovals = async (canReview) => {
+    if (!canReview) {
+        renderPendingPaymentMethodApprovals([]);
+        return;
+    }
+
+    try {
+        const { data } = await api.get('/employee-payment-methods/pending');
+        renderPendingPaymentMethodApprovals(data.data.payment_methods || []);
+    } catch (error) {
+        console.error(getErrorMessage(error));
+    }
+};
+
+const COMPLIANCE_FIELD_OPTIONS = [
+    { value: 'pan', label: 'PAN Number', inputMode: 'text', maxLength: 10, uppercase: true },
+    { value: 'aadhaar', label: 'Aadhaar Number', inputMode: 'numeric', maxLength: 12 },
+    { value: 'uan', label: 'UAN', inputMode: 'numeric', maxLength: 12 },
+    { value: 'pf', label: 'PF Number', inputMode: 'text', maxLength: 30 },
+    { value: 'esi', label: 'ESI Number', inputMode: 'text', maxLength: 30 },
+];
+
+const COMPLIANCE_FIELD_LABELS = Object.fromEntries(
+    COMPLIANCE_FIELD_OPTIONS.map((option) => [option.value, option.label]),
+);
+
+const getComplianceFieldOptionsForSalary = (salary = {}) => COMPLIANCE_FIELD_OPTIONS.filter((option) => {
+    if (option.value === 'pf') {
+        return Boolean(salary.pf_applicable);
+    }
+
+    if (option.value === 'esi') {
+        return Boolean(salary.esi_applicable);
+    }
+
+    return true;
+});
+
+const getComplianceFieldByType = (fields, fieldType) => fields.find((field) => field.field_type === fieldType);
+
+const getSubmittableComplianceFields = (fields, salary = {}) => {
+    const availableOptions = getComplianceFieldOptionsForSalary(salary);
+
+    if (profileCanEditWithoutApproval) {
+        return availableOptions;
+    }
+
+    return availableOptions.filter((option) => {
+        const existing = getComplianceFieldByType(fields, option.value);
+        return !existing || existing.can_resubmit;
+    });
+};
+
+const complianceFieldOptionSuffix = (existing) => {
+    if (!existing?.can_resubmit) {
+        return '';
+    }
+
+    return existing.status === 'approved' ? ' (Change)' : ' (Re-submit)';
+};
+
+const fillComplianceFieldForm = (field) => {
+    const valueInput = document.getElementById('profile_compliance_value');
+
+    if (valueInput) {
+        valueInput.value = field?.value ?? '';
+    }
+};
+
+const handleComplianceFieldTypeChange = (fields = []) => {
+    const fieldType = document.getElementById('profile_compliance_field_type')?.value;
+    const valueInput = document.getElementById('profile_compliance_value');
+    const option = COMPLIANCE_FIELD_OPTIONS.find((item) => item.value === fieldType);
+    const existing = getComplianceFieldByType(fields, fieldType);
+
+    if (valueInput) {
+        valueInput.inputMode = option?.inputMode || 'text';
+        valueInput.maxLength = option?.maxLength || 255;
+        valueInput.classList.toggle('text-uppercase', Boolean(option?.uppercase));
+
+        if (existing && (existing.can_resubmit || profileCanEditWithoutApproval)) {
+            fillComplianceFieldForm(existing);
+        } else if (!fieldType) {
+            valueInput.value = '';
+        }
+    }
+};
+
+let cachedComplianceFields = [];
+
+const getNewComplianceFieldOptions = (fields, salary = {}) => getComplianceFieldOptionsForSalary(salary)
+    .filter((option) => !getComplianceFieldByType(fields, option.value));
+
+const renderComplianceFields = (employee, salary = {}) => {
+    const select = document.getElementById('profile_compliance_field_type');
+    const uploadForm = document.getElementById('profileComplianceFieldForm');
+    const uploadHint = document.getElementById('profileComplianceFieldUploadHint');
+    const addBtn = document.getElementById('profileAddComplianceFieldBtn');
+    const tableBody = document.getElementById('profileComplianceFieldsTableBody');
+    const requiredWrap = document.getElementById('profileRequiredComplianceFields');
+    const fields = employee.compliance_fields || [];
+    cachedComplianceFields = fields;
+    const availableOptions = getComplianceFieldOptionsForSalary(salary);
+    const submittableOptions = getSubmittableComplianceFields(fields, salary);
+    const newOptions = getNewComplianceFieldOptions(fields, salary);
+
+    renderDl(document.getElementById('profileComplianceFlags'), [
+        ['PF Applicable', yesNo(salary.pf_applicable)],
+        ['ESI Applicable', yesNo(salary.esi_applicable)],
+        ['Professional Tax', yesNo(salary.professional_tax_applicable)],
+    ]);
+
+    if (select) {
+        if (submittableOptions.length === 0) {
+            select.innerHTML = '<option value="">No compliance fields available to submit</option>';
+            select.disabled = true;
+        } else {
+            select.disabled = false;
+            select.innerHTML = '<option value="">Select field</option>' + submittableOptions
+                .map((option) => {
+                    const existing = getComplianceFieldByType(fields, option.value);
+                    return `<option value="${option.value}">${option.label}${complianceFieldOptionSuffix(existing)}</option>`;
+                })
+                .join('');
+        }
+    }
+
+    if (uploadForm) {
+        if (profileCanEditWithoutApproval) {
+            uploadForm.classList.toggle('d-none', submittableOptions.length === 0 || !profileFormEditor.compliance);
+        } else {
+            uploadForm.classList.toggle('d-none', !profileFormEditor.compliance);
+        }
+    }
+
+    if (addBtn) {
+        addBtn.classList.toggle('d-none', profileCanEditWithoutApproval || newOptions.length === 0 || profileFormEditor.compliance);
+    }
+
+    toggleHrSectionEditButton('profileComplianceEditBtn', submittableOptions.length > 0 && !profileFormEditor.compliance);
+
+    if (uploadHint) {
+        uploadHint.textContent = profileCanEditWithoutApproval
+            ? 'Select a compliance field and save the value directly for this employee.'
+            : (submittableOptions.length
+                ? 'Select a field to submit, change approved details, or re-submit a rejected field.'
+                : 'All applicable compliance fields are currently pending HR review.');
+    }
+
+    handleComplianceFieldTypeChange(fields);
+
+    if (tableBody) {
+        if (fields.length === 0) {
+            tableBody.innerHTML = '<tr><td colspan="7" class="text-center text-muted py-4">No compliance fields submitted yet.</td></tr>';
+        } else {
+            tableBody.innerHTML = fields.map((field) => `
+                <tr>
+                    <td>${COMPLIANCE_FIELD_LABELS[field.field_type] || field.field_type}</td>
+                    <td>${field.value || '—'}</td>
+                    <td>${statusBadge(field.status, 'document')}</td>
+                    <td>${field.status === 'rejected' && field.notes
+                        ? `<span class="text-danger small">${field.notes}</span>`
+                        : '<span class="text-muted">—</span>'}</td>
+                    <td>${formatDateTime(field.submitted_at)}</td>
+                    <td>${formatReviewCell(field)}</td>
+                    <td class="text-end">
+                        ${field.can_resubmit || profileCanEditWithoutApproval
+        ? `<div class="table-action-group justify-content-end">${profileCanEditWithoutApproval
+            ? renderEditIconButton('data-change-compliance-field', field.field_type, 'Edit compliance field')
+            : `<button type="button" class="btn btn-sm btn-outline-primary" data-change-compliance-field="${field.field_type}">${field.status === 'approved' ? 'Change' : 'Re-submit'}</button>`}</div>`
+        : '<span class="text-muted">—</span>'}
+                    </td>
+                </tr>
+            `).join('');
+        }
+    }
+
+    const complianceSubmitBtn = document.getElementById('profileComplianceFieldSubmit');
+    if (complianceSubmitBtn) {
+        complianceSubmitBtn.textContent = profileCanEditWithoutApproval ? 'Save' : 'Submit for Approval';
+    }
+
+    if (requiredWrap) {
+        requiredWrap.innerHTML = availableOptions.map((option) => {
+            const existing = getComplianceFieldByType(fields, option.value);
+            let className = '';
+            let icon = '○';
+            let suffix = '';
+
+            if (existing) {
+                if (existing.status === 'approved') {
+                    className = 'profile-required-doc--uploaded';
+                    icon = '✓';
+                    suffix = profileCanEditWithoutApproval ? ' (Approved)' : ' (Approved — can be changed)';
+                } else if (existing.status === 'pending') {
+                    className = 'profile-required-doc--missing';
+                    icon = '⏳';
+                    suffix = ' (Pending)';
+                } else if (existing.status === 'rejected') {
+                    className = 'profile-required-doc--missing';
+                    icon = '✕';
+                    suffix = ' (Rejected — re-submit required)';
+                }
+            }
+
+            return `<span class="profile-required-doc ${className}">${icon} ${option.label}${suffix}</span>`;
+        }).join('');
+    }
+};
+
+const renderPendingComplianceApprovals = (fields = []) => {
+    const section = document.getElementById('profileComplianceApprovalsSection');
+    const tableBody = document.getElementById('profilePendingComplianceBody');
+    const countBadge = document.getElementById('profilePendingComplianceCount');
+
+    if (!section || !tableBody) {
+        return;
+    }
+
+    section.classList.toggle('d-none', fields.length === 0);
+    countBadge.textContent = `${fields.length} pending`;
+
+    if (fields.length === 0) {
+        tableBody.innerHTML = '<tr><td colspan="6" class="text-center text-muted py-4">No pending compliance fields.</td></tr>';
+        return;
+    }
+
+    tableBody.innerHTML = fields.map((field) => `
+        <tr>
+            <td>
+                <strong>${field.employee?.full_name || '—'}</strong>
+                <div class="small text-muted">${field.employee?.employee_code || ''}</div>
+            </td>
+            <td>${COMPLIANCE_FIELD_LABELS[field.field_type] || field.field_type || '—'}</td>
+            <td>${field.value || '—'}</td>
+            <td>${field.submitted_by?.name || '—'}${field.submitted_by?.role ? `<div class="small text-muted">${field.submitted_by.role}</div>` : ''}</td>
+            <td>${formatDateTime(field.submitted_at)}</td>
+            <td class="text-end">${renderReviewIconActionGroup('data-approve-compliance-field', 'data-reject-compliance-field', field.id)}</td>
+        </tr>
+    `).join('');
+};
+
+const loadPendingComplianceApprovals = async (canReview) => {
+    if (!canReview) {
+        renderPendingComplianceApprovals([]);
+        return;
+    }
+
+    try {
+        const { data } = await api.get('/employee-compliance-fields/pending');
+        renderPendingComplianceApprovals(data.data.compliance_fields || []);
+    } catch (error) {
+        console.error(getErrorMessage(error));
+    }
+};
+
+const getDocumentsByType = (documents, typeId) => documents.filter((document) => document.document_type_id === typeId);
+
+const getUploadableDocumentTypes = (documentTypes, documents) => {
+    if (profileCanEditWithoutApproval) {
+        return documentTypes;
+    }
+
+    return documentTypes.filter((type) => {
+        if (type.allow_multiple) {
+            return true;
+        }
+
+        const existing = getDocumentsByType(documents, type.id)[0];
+
+        return !existing || existing.can_reupload;
+    });
+};
+
+const DOCUMENT_MAX_FILE_BYTES = 5 * 1024 * 1024;
+const DOCUMENT_ALLOWED_EXTENSIONS = ['pdf', 'jpg', 'jpeg', 'png'];
+
+const formatFileMb = (bytes) => (bytes / (1024 * 1024)).toFixed(1);
+
+const validateDocumentFileSelection = () => {
+    const fileInput = document.getElementById('profile_document_file');
+    const form = document.getElementById('profileDocumentForm');
+    const files = Array.from(fileInput?.files || []);
+
+    let message = '';
+
+    const invalidType = files.find((file) => {
+        const extension = file.name.split('.').pop()?.toLowerCase() || '';
+
+        return !DOCUMENT_ALLOWED_EXTENSIONS.includes(extension);
+    });
+
+    const tooLarge = files.filter((file) => file.size > DOCUMENT_MAX_FILE_BYTES);
+
+    if (invalidType) {
+        message = `"${invalidType.name}" is not allowed. Only PDF, JPG, and PNG files are accepted.`;
+    } else if (tooLarge.length > 0) {
+        message = tooLarge
+            .map((file) => `"${file.name}" is ${formatFileMb(file.size)} MB`)
+            .join(', ')
+            + ' — maximum allowed size is 5 MB per file.';
+    }
+
+    if (form) {
+        setFieldError(form, 'file', message);
+    }
+
+    fileInput?.classList.toggle('is-invalid', Boolean(message));
+
+    if (message) {
+        fileInput.value = '';
+    }
+
+    return !message;
+};
+
+const syncDocumentFileInput = (documentTypes, typeId) => {
+    const fileInput = document.getElementById('profile_document_file');
+    const fileLabel = document.getElementById('profile_document_file_label');
+    const fileHint = document.getElementById('profile_document_file_hint');
+    const selectedType = documentTypes.find((type) => String(type.id) === String(typeId));
+
+    if (!fileInput) {
+        return;
+    }
+
+    fileInput.value = '';
+
+    const setHint = (text) => {
+        if (!fileHint) {
+            return;
+        }
+
+        fileHint.textContent = text;
+        fileHint.classList.toggle('d-none', !text);
+    };
+
+    if (selectedType?.allow_multiple) {
+        fileInput.setAttribute('multiple', 'multiple');
+        fileInput.name = 'files[]';
+
+        if (fileLabel) {
+            fileLabel.textContent = 'Files (PDF, JPG, PNG — max 5MB each) *';
+        }
+
+        setHint('You can select multiple files for this document type.');
+
+        return;
+    }
+
+    fileInput.removeAttribute('multiple');
+    fileInput.name = 'file';
+
+    if (fileLabel) {
+        fileLabel.textContent = 'File (PDF, JPG, PNG — max 5MB) *';
+    }
+
+    setHint(selectedType ? 'Select one file for this document type.' : '');
+};
+
+const renderDocuments = (employee, documentTypes = []) => {
+    const select = document.getElementById('profile_document_type_id');
+    const uploadForm = document.getElementById('profileDocumentForm');
+    const uploadHint = document.getElementById('profileDocumentUploadHint');
+    const addBtn = document.getElementById('profileAddDocumentBtn');
+    const tableBody = document.getElementById('profileDocumentsTableBody');
+    const requiredWrap = document.getElementById('profileRequiredDocuments');
+    const documents = employee.documents || [];
+    const uploadableTypes = getUploadableDocumentTypes(documentTypes, documents);
+    const newDocumentTypes = uploadableTypes.filter((type) => {
+        if (type.allow_multiple) {
+            return true;
+        }
+
+        return !getDocumentsByType(documents, type.id)[0];
+    });
+
+    if (select) {
+        if (uploadableTypes.length === 0) {
+            select.innerHTML = '<option value="">No document types available to upload</option>';
+            select.disabled = true;
+        } else {
+            select.disabled = false;
+            select.innerHTML = '<option value="">Select document type</option>' + uploadableTypes
+                .map((type) => {
+                    const existing = getDocumentsByType(documents, type.id)[0];
+                    const suffix = existing?.can_reupload
+                        ? (existing.status === 'approved' ? ' (Change)' : ' (Re-upload)')
+                        : '';
+                    const modeLabel = type.allow_multiple ? ' · Multiple' : '';
+                    return `<option value="${type.id}">${type.name}${type.is_required ? ' *' : ''}${modeLabel}${suffix}</option>`;
+                })
+                .join('');
+
+            syncDocumentFileInput(documentTypes, select.value);
+        }
+    }
+
+    if (uploadForm) {
+        if (profileCanEditWithoutApproval) {
+            uploadForm.classList.toggle('d-none', uploadableTypes.length === 0 || !profileFormEditor.document);
+        } else {
+            uploadForm.classList.toggle('d-none', !profileFormEditor.document);
+        }
+    }
+
+    if (addBtn) {
+        addBtn.classList.toggle('d-none', profileCanEditWithoutApproval || newDocumentTypes.length === 0 || profileFormEditor.document);
+    }
+
+    toggleHrSectionEditButton('profileDocumentEditBtn', uploadableTypes.length > 0 && !profileFormEditor.document);
+
+    const documentSubmitBtn = document.getElementById('profileDocumentSubmit');
+    if (documentSubmitBtn) {
+        documentSubmitBtn.textContent = profileCanEditWithoutApproval ? 'Save Document' : 'Upload';
+    }
+
+    if (uploadHint) {
+        uploadHint.textContent = profileCanEditWithoutApproval
+            ? 'Upload or replace documents directly for this employee.'
+            : (uploadableTypes.length
+                ? 'Select a document type to upload, change approved documents, or re-upload rejected ones.'
+                : 'All document types are currently pending HR review.');
+    }
+
+    if (tableBody) {
+        if (documents.length === 0) {
+            tableBody.innerHTML = '<tr><td colspan="6" class="text-center text-muted py-4">No documents uploaded yet.</td></tr>';
+        } else {
+            tableBody.innerHTML = documents.map((document) => `
+                <tr>
+                    <td>
+                        <div>${document.document_type?.name || '—'}</div>
+                        <div class="small text-muted">${document.original_name || '—'}</div>
+                    </td>
+                    <td>${statusBadge(document.status, 'document')}</td>
+                    <td>${document.status === 'rejected' && document.notes
+                        ? `<span class="text-danger small">${document.notes}</span>`
+                        : '<span class="text-muted">—</span>'}</td>
+                    <td>${formatDateTime(document.created_at)}</td>
+                    <td>${formatReviewCell(document)}</td>
+                    <td class="text-end">
+                        <div class="table-action-group justify-content-end">
+                            ${renderViewDocumentIconButton(document.id, document.document_type?.name || 'Document')}
+                            ${!profileCanEditWithoutApproval && document.can_reupload && !document.document_type?.allow_multiple
+        ? `<button type="button" class="btn btn-sm btn-outline-primary" data-change-document="${document.document_type_id}">${document.status === 'approved' ? 'Change' : 'Re-upload'}</button>`
+        : ''}
+                            ${document.can_delete
+                                ? renderDeleteDocumentIconButton(document.id, document.document_type?.name || 'Document')
+                                : ''}
+                        </div>
+                    </td>
+                </tr>
+            `).join('');
+        }
+    }
+
+    if (requiredWrap) {
+        if (documentTypes.length === 0) {
+            requiredWrap.innerHTML = '<p class="text-muted small mb-0">No document types configured by your company yet.</p>';
+        } else {
+            requiredWrap.innerHTML = documentTypes.map((type) => {
+                const typeDocuments = getDocumentsByType(documents, type.id);
+                const approvedCount = typeDocuments.filter((document) => document.status === 'approved').length;
+                const pendingCount = typeDocuments.filter((document) => document.status === 'pending').length;
+                const rejectedCount = typeDocuments.filter((document) => document.status === 'rejected').length;
+                let className = '';
+                let icon = '○';
+                let suffix = '';
+
+                if (typeDocuments.length > 0) {
+                    if (approvedCount > 0) {
+                        className = 'profile-required-doc--uploaded';
+                        icon = '✓';
+                        suffix = type.allow_multiple
+                            ? ` (${approvedCount} approved)`
+                            : ' (Approved)';
+                    } else if (pendingCount > 0) {
+                        className = 'profile-required-doc--missing';
+                        icon = '⏳';
+                        suffix = type.allow_multiple
+                            ? ` (${pendingCount} pending)`
+                            : ' (Pending)';
+                    } else if (rejectedCount > 0) {
+                        className = 'profile-required-doc--missing';
+                        icon = '✕';
+                        suffix = type.allow_multiple
+                            ? ` (${rejectedCount} rejected)`
+                            : ' (Rejected — re-upload required)';
+                    }
+                } else if (type.is_required) {
+                    className = 'profile-required-doc--missing';
+                    icon = '!';
+                    suffix = ' (Required)';
+                }
+
+                return `<span class="profile-required-doc ${className}">${icon} ${type.name}${suffix}</span>`;
+            }).join('');
+        }
+    }
+};
+
+const renderPendingDocumentApprovals = (documents = []) => {
+    const section = document.getElementById('profileDocumentApprovalsSection');
+    const tableBody = document.getElementById('profilePendingDocumentsBody');
+    const countBadge = document.getElementById('profilePendingDocumentsCount');
+
+    if (!section || !tableBody) {
+        return;
+    }
+
+    section.classList.toggle('d-none', documents.length === 0);
+    countBadge.textContent = `${documents.length} pending`;
+
+    if (documents.length === 0) {
+        tableBody.innerHTML = '<tr><td colspan="5" class="text-center text-muted py-4">No pending documents.</td></tr>';
+        return;
+    }
+
+    tableBody.innerHTML = documents.map((document) => `
+        <tr>
+            <td>
+                <strong>${document.employee?.full_name || '—'}</strong>
+                <div class="small text-muted">${document.employee?.employee_code || ''}</div>
+            </td>
+            <td>${document.document_type?.name || '—'}</td>
+            <td>${document.uploaded_by?.name || '—'}${document.uploaded_by?.role ? `<div class="small text-muted">${document.uploaded_by.role}</div>` : ''}</td>
+            <td>${formatDateTime(document.created_at)}</td>
+            <td class="text-end">
+                <div class="table-action-group">
+                    ${renderViewDocumentIconButton(document.id, document.document_type?.name || 'Document', 'data-view-review="1"')}
+                    ${renderReviewIconActions('data-approve-document', 'data-reject-document', document.id)}
+                </div>
+            </td>
+        </tr>
+    `).join('');
+};
+
+const loadPendingDocumentApprovals = async (canReview) => {
+    if (!canReview) {
+        renderPendingDocumentApprovals([]);
+        return;
+    }
+
+    try {
+        const { data } = await api.get('/employee-documents/pending');
+        renderPendingDocumentApprovals(data.data.documents || []);
+    } catch (error) {
+        console.error(getErrorMessage(error));
+    }
+};
+
+const showEmployeeSections = (hasEmployee) => {
+    const sections = [
+        ['profileWorkContent', 'profileWorkEmpty'],
+        ['profilePersonalContent', 'profilePersonalEmpty'],
+        ['profileSalaryContent', 'profileSalaryEmpty'],
+        ['profileBankContent', 'profileBankEmpty'],
+        ['profileCompliancesContent', 'profileCompliancesEmpty'],
+        ['profileDocumentsContent', 'profileDocumentsEmpty'],
+        ['profileOtherContent', 'profileOtherEmpty'],
+    ];
+
+    sections.forEach(([contentId, emptyId]) => {
+        setVisible(document.getElementById(contentId), document.getElementById(emptyId), hasEmployee);
+    });
+};
+
+const populateEmployeeProfile = (employee, documentTypes = []) => {
+    showEmployeeSections(true);
+    renderWorkTab(employee);
+    renderPersonalTab(employee);
+    renderSalaryTab(employee);
+    renderOtherTab(employee);
+    renderPaymentMethods(employee);
+    renderComplianceFields(employee, employee.salary);
+    renderDocuments(employee, documentTypes);
+    syncHrSectionEditors();
+};
+
+const showFormStatus = (element, message) => {
+    if (!element) {
+        return;
+    }
+
+    element.textContent = message;
+    element.classList.remove('d-none');
+};
+
+document.addEventListener('DOMContentLoaded', async () => {
+    const targetEmployeeId = window.PROFILE_TARGET_EMPLOYEE_ID || null;
+    const isAdminEmployeeProfile = Boolean(targetEmployeeId);
+    const profileEmployeeEndpoint = isAdminEmployeeProfile
+        ? `/employees/${targetEmployeeId}/profile`
+        : '/profile/employee';
+    const profileSubmitPrefix = isAdminEmployeeProfile
+        ? `/employees/${targetEmployeeId}/profile`
+        : '/profile';
+
+    const profileForm = document.getElementById('profileForm');
+    const familySectionForm = document.getElementById('profileFamilySectionForm');
+    const addressSectionForm = document.getElementById('profileAddressSectionForm');
+    const emergencySectionForm = document.getElementById('profileEmergencySectionForm');
+    const paymentMethodForm = document.getElementById('profilePaymentMethodForm');
+    const complianceFieldForm = document.getElementById('profileComplianceFieldForm');
+    const documentForm = document.getElementById('profileDocumentForm');
+    const salaryForm = document.getElementById('profileSalaryForm');
+    const assetsForm = document.getElementById('profileAssetsForm');
+    const tabButtons = document.querySelectorAll('#profileTabs [data-bs-toggle="tab"]');
+
+    let employeeProfile = null;
+    let documentTypes = [];
+    let canReviewDocuments = false;
+    let canReviewBank = false;
+    let canReviewCompliances = false;
+    let canReviewPersonalSections = false;
+    let canReviewFamilyMembers = false;
+    let canUpdateContactInfo = false;
+    let rejectDocumentId = null;
+    let rejectSubmission = null;
+    let rejectModal = null;
+    let rejectProfileSubmissionModal = null;
+    let previewBlobUrl = null;
+    let previewFallbackName = 'document';
+
+    try {
+        const { data } = await api.get('/payroll-settings');
+        companyPayrollSettings = data.data || companyPayrollSettings;
+        renderCompanyStatutoryLabels();
+        renderCompanySalaryStructureSummary();
+    } catch {
+        // Keep defaults when payroll settings are unavailable.
+    }
+
+    const lightboxEl = () => document.getElementById('viewDocumentLightbox');
+
+    const closeDocumentLightbox = () => {
+        const lightbox = lightboxEl();
+
+        if (!lightbox) {
+            return;
+        }
+
+        lightbox.classList.add('d-none');
+        document.body.classList.remove('document-lightbox-open');
+        clearDocumentPreview();
+    };
+
+    const openDocumentLightbox = (title = 'Document') => {
+        const lightbox = lightboxEl();
+        const titleEl = document.getElementById('viewDocumentLightboxTitle');
+
+        if (!lightbox) {
+            return;
+        }
+
+        if (titleEl) {
+            titleEl.textContent = title;
+        }
+
+        lightbox.classList.remove('d-none');
+        document.body.classList.add('document-lightbox-open');
+    };
+
+    const applyEmployeeProfilePayload = async (payload) => {
+        employeeProfile = payload.employee;
+        documentTypes = payload.document_types || [];
+        profileCanEditWithoutApproval = Boolean(
+            payload.capabilities?.can_edit_without_approval
+            ?? payload.capabilities?.can_edit_profile_without_approval,
+        );
+        profileCanManageSalary = Boolean(payload.capabilities?.can_manage_salary);
+        profileIncomeTaxApplicable = Boolean(
+            payload.capabilities?.income_tax_applicable
+            ?? payload.employee?.company?.income_tax_applicable,
+        );
+        profileCanManageAssets = Boolean(payload.capabilities?.can_manage_assets);
+        canReviewDocuments = Boolean(payload.capabilities?.can_review_documents ?? payload.capabilities?.can_review_profile);
+        profileCanDeleteDocuments = canReviewDocuments;
+        canReviewBank = Boolean(payload.capabilities?.can_review_bank ?? payload.capabilities?.can_review_profile);
+        canReviewCompliances = Boolean(payload.capabilities?.can_review_compliances ?? payload.capabilities?.can_review_profile);
+        canReviewPersonalSections = Boolean(payload.capabilities?.can_review_personal_sections ?? payload.capabilities?.can_review_profile);
+        canReviewFamilyMembers = Boolean(payload.capabilities?.can_review_family_members ?? payload.capabilities?.can_review_profile);
+        canUpdateContactInfo = Boolean(payload.capabilities?.can_update_contact_info ?? isAdminEmployeeProfile);
+        populateEmployeeProfile(employeeProfile, documentTypes);
+        setContactInfoFormAccess(canUpdateContactInfo);
+
+        if (! isAdminEmployeeProfile) {
+            await Promise.all([
+                loadPendingDocumentApprovals(canReviewDocuments),
+                loadPendingPaymentMethodApprovals(canReviewBank),
+                loadPendingComplianceApprovals(canReviewCompliances),
+                loadPendingPersonalSectionApprovals(canReviewPersonalSections),
+                loadPendingFamilyMemberApprovals(canReviewFamilyMembers),
+            ]);
+        }
+
+        return payload;
+    };
+
+    const refreshEmployeeProfile = async () => {
+        const { data } = await api.get(profileEmployeeEndpoint);
+
+        resetProfileFormEditors();
+
+        return applyEmployeeProfilePayload(data.data);
+    };
+
+    const refreshEmployeeDocuments = refreshEmployeeProfile;
+
+    tabButtons.forEach((button) => {
+        button.addEventListener('shown.bs.tab', (event) => {
+            const hashEntry = Object.entries(PROFILE_TAB_HASHES).find(([, tabId]) => tabId === event.target.id);
+
+            if (hashEntry) {
+                window.history.replaceState(null, '', `#${hashEntry[0]}`);
+            }
+        });
+    });
+
+    activateProfileTabFromHash();
+    window.addEventListener('hashchange', activateProfileTabFromHash);
+
+    document.getElementById('profile_payment_mode')?.addEventListener('change', () => {
+        handlePaymentModeChange(cachedPaymentMethods);
+    });
+
+    document.getElementById('profilePaymentMethodsTableBody')?.addEventListener('click', (event) => {
+        const changeBtn = event.target.closest('[data-change-payment-method]');
+
+        if (!changeBtn) {
+            return;
+        }
+
+        const select = document.getElementById('profile_payment_mode');
+        const form = document.getElementById('profilePaymentMethodForm');
+
+        openProfileFormEditor('bank');
+
+        if (select) {
+            select.value = changeBtn.dataset.changePaymentMethod;
+            handlePaymentModeChange(cachedPaymentMethods);
+        }
+
+        if (employeeProfile) {
+            renderPaymentMethods(employeeProfile);
+        }
+
+        form?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
+
+    document.getElementById('profileAddPaymentMethodBtn')?.addEventListener('click', () => {
+        const select = document.getElementById('profile_payment_mode');
+        const newModes = getNewPaymentModes(cachedPaymentMethods);
+
+        openProfileFormEditor('bank');
+
+        if (select && newModes[0]) {
+            select.value = newModes[0].value;
+            handlePaymentModeChange(cachedPaymentMethods);
+        }
+
+        if (employeeProfile) {
+            renderPaymentMethods(employeeProfile);
+        }
+
+        document.getElementById('profilePaymentMethodForm')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
+
+    document.getElementById('profile_compliance_field_type')?.addEventListener('change', () => {
+        handleComplianceFieldTypeChange(cachedComplianceFields);
+    });
+
+    document.getElementById('profileComplianceFieldsTableBody')?.addEventListener('click', (event) => {
+        const changeBtn = event.target.closest('[data-change-compliance-field]');
+
+        if (!changeBtn) {
+            return;
+        }
+
+        const select = document.getElementById('profile_compliance_field_type');
+        const form = document.getElementById('profileComplianceFieldForm');
+
+        openProfileFormEditor('compliance');
+
+        if (select) {
+            select.value = changeBtn.dataset.changeComplianceField;
+            handleComplianceFieldTypeChange(cachedComplianceFields);
+        }
+
+        if (employeeProfile) {
+            renderComplianceFields(employeeProfile, employeeProfile.salary);
+        }
+
+        form?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
+
+    document.getElementById('profileAddComplianceFieldBtn')?.addEventListener('click', () => {
+        const select = document.getElementById('profile_compliance_field_type');
+        const newOptions = getNewComplianceFieldOptions(cachedComplianceFields, employeeProfile?.salary || {});
+
+        openProfileFormEditor('compliance');
+
+        if (select && newOptions[0]) {
+            select.value = newOptions[0].value;
+            handleComplianceFieldTypeChange(cachedComplianceFields);
+        }
+
+        if (employeeProfile) {
+            renderComplianceFields(employeeProfile, employeeProfile.salary);
+        }
+
+        document.getElementById('profileComplianceFieldForm')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
+
+    document.getElementById('profileDocumentsTableBody')?.addEventListener('click', (event) => {
+        const changeBtn = event.target.closest('[data-change-document]');
+
+        if (!changeBtn) {
+            return;
+        }
+
+        const select = document.getElementById('profile_document_type_id');
+        openProfileFormEditor('document');
+
+        if (select) {
+            select.value = changeBtn.dataset.changeDocument;
+            syncDocumentFileInput(documentTypes, select.value);
+        }
+
+        if (employeeProfile) {
+            renderDocuments(employeeProfile, documentTypes);
+        }
+
+        document.getElementById('profileDocumentForm')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
+
+    document.getElementById('profileAddDocumentBtn')?.addEventListener('click', () => {
+        const select = document.getElementById('profile_document_type_id');
+        const documents = employeeProfile?.documents || [];
+        const uploadableTypes = getUploadableDocumentTypes(documentTypes, documents);
+        const newDocumentTypes = uploadableTypes.filter((type) => {
+            if (type.allow_multiple) {
+                return true;
+            }
+
+            return !getDocumentsByType(documents, type.id)[0];
+        });
+
+        openProfileFormEditor('document');
+
+        if (select && newDocumentTypes[0]) {
+            select.value = String(newDocumentTypes[0].id);
+            syncDocumentFileInput(documentTypes, select.value);
+        }
+
+        if (employeeProfile) {
+            renderDocuments(employeeProfile, documentTypes);
+        }
+
+        document.getElementById('profileDocumentForm')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
+
+    document.getElementById('profileAddFamilyMemberBtn')?.addEventListener('click', () => {
+        openProfileFormEditor('family');
+        resetFamilyForm();
+        document.getElementById('profileFamilySectionForm')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
+
+    document.getElementById('profileAddressAddBtn')?.addEventListener('click', () => {
+        openProfileFormEditor('address');
+
+        if (employeeProfile) {
+            renderPersonalTab(employeeProfile);
+        }
+
+        document.getElementById('profileAddressSectionForm')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
+
+    document.getElementById('profileAddressChangeBtn')?.addEventListener('click', () => {
+        openProfileFormEditor('address');
+
+        if (employeeProfile) {
+            renderPersonalTab(employeeProfile);
+        }
+
+        document.getElementById('profileAddressSectionForm')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
+
+    document.getElementById('profileEmergencyAddBtn')?.addEventListener('click', () => {
+        openProfileFormEditor('emergency');
+
+        if (employeeProfile) {
+            renderPersonalTab(employeeProfile);
+        }
+
+        document.getElementById('profileEmergencySectionForm')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
+
+    document.getElementById('profileEmergencyChangeBtn')?.addEventListener('click', () => {
+        openProfileFormEditor('emergency');
+
+        if (employeeProfile) {
+            renderPersonalTab(employeeProfile);
+        }
+
+        document.getElementById('profileEmergencySectionForm')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
+
+    document.getElementById('profileFamilySectionEditBtn')?.addEventListener('click', () => {
+        openProfileFormEditor('family');
+        resetFamilyForm();
+        document.getElementById('profileFamilySectionForm')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
+
+    document.getElementById('profileAddressEditBtn')?.addEventListener('click', () => {
+        openProfileFormEditor('address');
+
+        if (employeeProfile) {
+            renderPersonalTab(employeeProfile);
+        }
+
+        document.getElementById('profileAddressSectionForm')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
+
+    document.getElementById('profileEmergencyEditBtn')?.addEventListener('click', () => {
+        openProfileFormEditor('emergency');
+
+        if (employeeProfile) {
+            renderPersonalTab(employeeProfile);
+        }
+
+        document.getElementById('profileEmergencySectionForm')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
+
+    document.getElementById('profileBankEditBtn')?.addEventListener('click', () => {
+        openProfileFormEditor('bank');
+        renderPaymentMethods(employeeProfile);
+        document.getElementById('profilePaymentMethodForm')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
+
+    document.getElementById('profileComplianceEditBtn')?.addEventListener('click', () => {
+        openProfileFormEditor('compliance');
+        renderComplianceFields(employeeProfile, employeeProfile?.salary);
+        document.getElementById('profileComplianceFieldForm')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
+
+    document.getElementById('profileDocumentEditBtn')?.addEventListener('click', () => {
+        openProfileFormEditor('document');
+        renderDocuments(employeeProfile, documentTypes);
+        document.getElementById('profileDocumentForm')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
+
+    document.getElementById('profileAddEmergencyContact')?.addEventListener('click', () => {
+        const list = document.getElementById('profileEmergencyContactsList');
+        const row = createEmergencyContactRow();
+
+        if (row && list) {
+            list.appendChild(row);
+        }
+    });
+
+    emergencySectionForm?.addEventListener('click', (event) => {
+        const removeContactBtn = event.target.closest('[data-remove-emergency-contact]');
+
+        if (removeContactBtn) {
+            removeContactBtn.closest('[data-emergency-contact-row]')?.remove();
+            updateEmergencyContactRemoveButtons();
+            return;
+        }
+
+        const addPhoneBtn = event.target.closest('[data-add-emergency-phone]');
+
+        if (addPhoneBtn) {
+            const contactRow = addPhoneBtn.closest('[data-emergency-contact-row]');
+            const phonesList = contactRow?.querySelector('[data-emergency-phones-list]');
+            const phoneRow = createEmergencyPhoneRow();
+
+            if (phoneRow && phonesList) {
+                phonesList.appendChild(phoneRow);
+                updateEmergencyPhoneRemoveButtons(contactRow);
+            }
+
+            return;
+        }
+
+        const removePhoneBtn = event.target.closest('[data-remove-emergency-phone]');
+
+        if (removePhoneBtn) {
+            const contactRow = removePhoneBtn.closest('[data-emergency-contact-row]');
+            removePhoneBtn.closest('[data-emergency-phone-row]')?.remove();
+
+            if (contactRow) {
+                updateEmergencyPhoneRemoveButtons(contactRow);
+            }
+        }
+    });
+
+    emergencySectionForm?.addEventListener('input', (event) => {
+        if (event.target.matches('[data-emergency-phone]')) {
+            normalizePhoneInput(event.target);
+        }
+    });
+
+    document.getElementById('profile_compliance_value')?.addEventListener('input', (event) => {
+        const fieldType = document.getElementById('profile_compliance_field_type')?.value;
+        const option = COMPLIANCE_FIELD_OPTIONS.find((item) => item.value === fieldType);
+
+        if (option?.inputMode === 'numeric') {
+            event.target.value = event.target.value.replace(/\D/g, '');
+        }
+
+        if (option?.uppercase) {
+            event.target.value = event.target.value.toUpperCase();
+        }
+    });
+
+    ['profile_phone', 'profile_postal_code'].forEach((id) => {
+        document.getElementById(id)?.addEventListener('input', (event) => {
+            event.target.value = event.target.value.replace(/\D/g, '');
+        });
+    });
+
+    try {
+        if (isAdminEmployeeProfile) {
+            const employeeResponse = await api.get(profileEmployeeEndpoint);
+            await applyEmployeeProfilePayload(employeeResponse.data.data);
+
+            if (!profileCanEditWithoutApproval) {
+                throw new Error('You are not allowed to edit this employee profile.');
+            }
+
+            populateProfileHeader(
+                {
+                    name: employeeProfile.full_name,
+                    email: employeeProfile.email,
+                    role: employeeProfile.role,
+                    company: employeeProfile.company,
+                },
+                employeeProfile,
+            );
+        } else {
+        const [userResponse, employeeResponse] = await Promise.allSettled([
+            api.get('/profile'),
+            api.get(profileEmployeeEndpoint),
+        ]);
+
+        if (userResponse.status === 'fulfilled') {
+            const user = userResponse.value.data.data.user;
+            populateProfileHeader(user, employeeResponse.status === 'fulfilled'
+                ? employeeResponse.value.data.data.employee
+                : null);
+
+            if (profileForm) {
+                profileForm.querySelector('#name').value = user.name;
+                profileForm.querySelector('#email').value = user.email;
+            }
+        }
+
+        if (employeeResponse.status === 'fulfilled') {
+            await applyEmployeeProfilePayload(employeeResponse.value.data.data);
+
+            if (userResponse.status === 'fulfilled') {
+                populateProfileHeader(userResponse.value.data.data.user, employeeProfile);
+            }
+        } else {
+            showEmployeeSections(false);
+        }
+        }
+    } catch (error) {
+        console.error(getErrorMessage(error));
+        showEmployeeSections(false);
+    }
+
+    document.getElementById('profile_same_as_permanent')?.addEventListener('change', toggleTemporaryAddressFields);
+
+    document.getElementById('profileAddFamilyMember')?.addEventListener('click', () => {
+        const list = document.getElementById('profileFamilyMembersList');
+        const row = createFamilyMemberRow();
+
+        if (list && row) {
+            list.appendChild(row);
+            updateFamilyMemberRemoveButtons();
+        }
+    });
+
+    document.getElementById('profileFamilyMembersList')?.addEventListener('click', (event) => {
+        const removeBtn = event.target.closest('[data-remove-family-member]');
+
+        if (!removeBtn) {
+            return;
+        }
+
+        const rows = document.querySelectorAll('[data-family-member-row]');
+
+        if (rows.length <= 1) {
+            return;
+        }
+
+        removeBtn.closest('[data-family-member-row]')?.remove();
+        updateFamilyMemberRemoveButtons();
+    });
+
+    document.getElementById('profileFamilyMembersList')?.addEventListener('input', (event) => {
+        if (event.target.matches('[data-family-phone]')) {
+            normalizePhoneInput(event.target);
+        }
+
+        if (event.target.matches('[data-family-dob]')) {
+            applyFamilyDobConstraints(event.target);
+        }
+    });
+
+    ['profile_permanent_postal_code', 'profile_temp_postal_code'].forEach((id) => {
+        document.getElementById(id)?.addEventListener('input', (event) => {
+            event.target.value = event.target.value.replace(/\D/g, '');
+        });
+    });
+
+    document.querySelectorAll('.profile-salary-input').forEach((input) => {
+        input.addEventListener('input', updateProfileSalaryPreview);
+    });
+
+    document.querySelectorAll('input[name="profile_ctc_mode"]').forEach((input) => {
+        input.addEventListener('change', toggleProfileCtcModeUi);
+    });
+
+    document.getElementById('profileSalaryFormCancel')?.addEventListener('click', closeProfileSalaryForm);
+
+    document.getElementById('profileTaxRegimeForm')?.addEventListener('submit', async (event) => {
+        event.preventDefault();
+
+        if (profileCanManageSalary) {
+            return;
+        }
+
+        const statusEl = document.getElementById('profileTaxRegimeStatus');
+        const submitBtn = document.getElementById('profileTaxRegimeSave');
+        const regime = document.getElementById('profile_tax_regime')?.value || 'new';
+
+        try {
+            setSubmitLoading(submitBtn, true, { submittingText: 'Saving...' });
+            const { data } = await api.put('/profile/tax-regime', { tax_regime: regime });
+
+            if (data.data?.employee) {
+                renderTaxRegimeSection(data.data.employee);
+            }
+
+            if (statusEl) {
+                statusEl.textContent = data.message || 'Tax regime updated successfully.';
+                statusEl.classList.remove('d-none');
+            }
+        } catch (error) {
+            if (statusEl) {
+                statusEl.textContent = getErrorMessage(error);
+                statusEl.classList.remove('d-none');
+                statusEl.classList.remove('text-success');
+                statusEl.classList.add('text-danger');
+            }
+        } finally {
+            setSubmitLoading(submitBtn, false);
+            submitBtn.textContent = 'Save Regime';
+        }
+    });
+
+    document.getElementById('profile_salary_effective_from')?.addEventListener('change', (event) => {
+        const payoutInput = document.getElementById('profile_salary_payout_from');
+
+        if (payoutInput && !payoutInput.value) {
+            payoutInput.value = event.target.value;
+            updateProfileSalaryPreview();
+        }
+    });
+
+    document.getElementById('profile_salary_payout_from')?.addEventListener('input', updateProfileSalaryPreview);
+
+    salaryForm?.addEventListener('submit', async (event) => {
+        event.preventDefault();
+
+        if (!profileCanManageSalary) {
+            return;
+        }
+
+        const submitBtn = document.getElementById('profileSalarySubmit');
+        const statusEl = document.getElementById('profileSalaryStatusMsg');
+        const payload = collectProfileSalaryPayload();
+
+        if (!payload.annual_ctc || !payload.salary_effective_from || !payload.salary_payout_from) {
+            alert('Annual CTC, effective date, and payout from are required.');
+            return;
+        }
+
+        if (profileSalaryFormMode === 'add' && payload.annual_ctc <= 0) {
+            alert('Enter a valid annual CTC.');
+            return;
+        }
+
+        if (profileSalaryFormMode === 'revise' && getProfileCtcChangeMode() === 'revised'
+            && (parseFloat(getProfileSalaryValue('profile_salary_revised_ctc')) || 0) <= 0) {
+            alert('Enter a valid revised CTC.');
+            return;
+        }
+
+        if (profileSalaryFormMode === 'increment' && (parseFloat(getProfileSalaryValue('profile_salary_increase_percent')) || 0) <= 0) {
+            alert('Enter a valid increase % for the annual increment.');
+            return;
+        }
+
+        if ((profileSalaryFormMode === 'revise' || profileSalaryFormMode === 'increment') && profileCurrentSalarySnapshot?.annual_ctc
+            && Number(payload.annual_ctc) === Number(profileCurrentSalarySnapshot.annual_ctc)
+            && getProfileCtcChangeMode() === 'percent'
+            && !getProfileSalaryValue('profile_salary_increase_percent')) {
+            alert('Enter an increase % or switch to Revised CTC to change compensation.');
+            return;
+        }
+
+        setSubmitLoading(submitBtn, true, { submittingText: 'Submitting...' });
+
+        try {
+            const { data } = await api.put(`${profileSubmitPrefix}/salary`, payload);
+
+            await applyEmployeeProfilePayload(data.data);
+            closeProfileSalaryForm();
+            document.getElementById('profile-salary-timeline-tab')?.click();
+            alert(data.message || 'Salary saved.');
+        } catch (error) {
+            applyBackendErrors(salaryForm, error.response?.data?.errors, setFieldError);
+            alert(getErrorMessage(error));
+        } finally {
+            setSubmitLoading(submitBtn, false);
+        }
+    });
+
+    assetsForm?.addEventListener('submit', async (event) => {
+        event.preventDefault();
+
+        if (!profileCanManageAssets || !isAdminEmployeeProfile) {
+            return;
+        }
+
+        const submitBtn = document.getElementById('profileAssetsSubmit');
+        const statusEl = document.getElementById('profileAssetsStatusMsg');
+        const payload = { assets: collectProfileAssetsPayload() };
+
+        setSubmitLoading(submitBtn, true, { submittingText: 'Saving...' });
+
+        try {
+            const { data } = await api.put(`${profileSubmitPrefix}/assets`, payload);
+
+            await applyEmployeeProfilePayload(data.data);
+            showFormStatus(statusEl, data.message || 'Assets saved.');
+        } catch (error) {
+            applyBackendErrors(assetsForm, error.response?.data?.errors, setFieldError);
+            alert(getErrorMessage(error));
+        } finally {
+            setSubmitLoading(submitBtn, false);
+        }
+    });
+
+    familySectionForm?.addEventListener('submit', async (event) => {
+        event.preventDefault();
+        const submitBtn = document.getElementById('profileFamilySectionSubmit');
+        const statusEl = document.getElementById('profileFamilySectionStatusMsg');
+        const members = collectFamilyMembersFromForm();
+
+        if (members.length === 0) {
+            alert('Add at least one family member.');
+            return;
+        }
+
+        if (members.some((member) => !isValidTenDigitPhone(member.phone))) {
+            alert('Mobile number must be exactly 10 digits.');
+            return;
+        }
+
+        if (members.some((member) => !isValidFamilyDob(member.date_of_birth))) {
+            alert('Date of birth must be a valid date with a 4-digit year (YYYY-MM-DD), not in the future, and 1900 or later.');
+            return;
+        }
+
+        setSubmitLoading(submitBtn, true, { submittingText: 'Submitting...' });
+
+        try {
+            const { data } = await api.post(`${profileSubmitPrefix}/family-members`, { members });
+
+            await refreshEmployeeProfile();
+            resetFamilyForm();
+            showFormStatus(statusEl, data.message || 'Submitted.');
+        } catch (error) {
+            applyBackendErrors(familySectionForm, error.response?.data?.errors, setFieldError);
+            alert(getErrorMessage(error));
+        } finally {
+            setSubmitLoading(submitBtn, false);
+        }
+    });
+
+    addressSectionForm?.addEventListener('submit', async (event) => {
+        event.preventDefault();
+        const submitBtn = document.getElementById('profileAddressSectionSubmit');
+        const statusEl = document.getElementById('profileAddressSectionStatusMsg');
+        const addressPayload = collectAddressPayload();
+
+        setSubmitLoading(submitBtn, true, { submittingText: 'Submitting...' });
+
+        try {
+            const { data } = await api.post(`${profileSubmitPrefix}/personal-sections`, {
+                section_type: 'address',
+                ...addressPayload,
+            });
+
+            await refreshEmployeeProfile();
+            showFormStatus(statusEl, data.message || 'Submitted.');
+        } catch (error) {
+            applyBackendErrors(addressSectionForm, error.response?.data?.errors, setFieldError);
+            alert(getErrorMessage(error));
+        } finally {
+            setSubmitLoading(submitBtn, false);
+        }
+    });
+
+    emergencySectionForm?.addEventListener('submit', async (event) => {
+        event.preventDefault();
+        const submitBtn = document.getElementById('profileEmergencySectionSubmit');
+        const statusEl = document.getElementById('profileEmergencySectionStatusMsg');
+        const contacts = collectEmergencyContactsFromForm();
+
+        if (!contacts.length) {
+            alert('Add at least one emergency contact.');
+            return;
+        }
+
+        for (const contact of contacts) {
+            if (!contact.name || !contact.relation) {
+                alert('Each emergency contact needs a name and relation.');
+                return;
+            }
+
+            if (!contact.phones.length) {
+                alert('Each emergency contact needs at least one mobile number.');
+                return;
+            }
+
+            if (contact.phones.some((phone) => !isValidTenDigitPhone(phone))) {
+                alert('Each mobile number must be exactly 10 digits.');
+                return;
+            }
+        }
+
+        setSubmitLoading(submitBtn, true, { submittingText: 'Submitting...' });
+
+        try {
+            const { data } = await api.post(`${profileSubmitPrefix}/personal-sections`, {
+                section_type: 'emergency_contact',
+                contacts,
+            });
+
+            closeProfileFormEditor('emergency');
+            await refreshEmployeeProfile();
+            showFormStatus(statusEl, data.message || 'Submitted.');
+        } catch (error) {
+            applyBackendErrors(emergencySectionForm, error.response?.data?.errors, setFieldError);
+            alert(getErrorMessage(error));
+        } finally {
+            setSubmitLoading(submitBtn, false);
+        }
+    });
+
+    paymentMethodForm?.addEventListener('submit', async (event) => {
+        event.preventDefault();
+        const submitBtn = document.getElementById('profilePaymentMethodSubmit');
+        const statusEl = document.getElementById('profilePaymentMethodStatus');
+        const paymentMode = document.getElementById('profile_payment_mode')?.value;
+
+        if (!paymentMode) {
+            return;
+        }
+
+        setSubmitLoading(submitBtn, true, { submittingText: 'Submitting...' });
+
+        try {
+            if (paymentMode === 'bank_transfer') {
+                const proofInput = document.getElementById('profile_bank_proofs');
+                const selectedFiles = proofInput?.files ? Array.from(proofInput.files) : [];
+
+                if (!selectedFiles.length) {
+                    setFieldError(paymentMethodForm, 'proofs', 'Please attach at least one bank proof document.');
+                    return;
+                }
+
+                const formData = new FormData();
+                formData.append('payment_mode', paymentMode);
+                formData.append('bank_name', document.getElementById('profile_bank_name')?.value.trim() || '');
+                formData.append('bank_branch', document.getElementById('profile_bank_branch')?.value.trim() || '');
+                formData.append('bank_address', document.getElementById('profile_bank_address')?.value.trim() || '');
+                formData.append('account_holder_name', document.getElementById('profile_account_holder_name')?.value.trim() || '');
+                formData.append('account_number', document.getElementById('profile_account_number')?.value.trim() || '');
+                formData.append('ifsc_code', document.getElementById('profile_ifsc_code')?.value.trim().toUpperCase() || '');
+
+                const preparedFiles = await compressImageFiles(selectedFiles);
+                preparedFiles.forEach((file) => formData.append('proofs[]', file));
+
+                const { data } = await api.post(`${profileSubmitPrefix}/payment-methods`, formData, {
+                    headers: { 'Content-Type': 'multipart/form-data' },
+                });
+
+                await refreshEmployeeProfile();
+                paymentMethodForm.reset();
+                toggleBankFields();
+                showFormStatus(statusEl, data.message || 'Submitted.');
+                return;
+            }
+
+            const payload = { payment_mode: paymentMode };
+
+            const { data } = await api.post(`${profileSubmitPrefix}/payment-methods`, payload);
+
+            await refreshEmployeeProfile();
+            paymentMethodForm.reset();
+            toggleBankFields();
+            showFormStatus(statusEl, data.message || 'Submitted.');
+        } catch (error) {
+            applyBackendErrors(paymentMethodForm, error.response?.data?.errors, setFieldError);
+            alert(getErrorMessage(error));
+        } finally {
+            setSubmitLoading(submitBtn, false);
+        }
+    });
+
+    complianceFieldForm?.addEventListener('submit', async (event) => {
+        event.preventDefault();
+        const submitBtn = document.getElementById('profileComplianceFieldSubmit');
+        const statusEl = document.getElementById('profileComplianceFieldStatus');
+        const fieldType = document.getElementById('profile_compliance_field_type')?.value;
+        const valueInput = document.getElementById('profile_compliance_value');
+
+        if (!fieldType || !valueInput?.value.trim()) {
+            return;
+        }
+
+        setSubmitLoading(submitBtn, true, { submittingText: 'Submitting...' });
+
+        try {
+            const payload = {
+                field_type: fieldType,
+                value: valueInput.value.trim(),
+            };
+
+            if (fieldType === 'pan') {
+                payload.value = payload.value.toUpperCase();
+            }
+
+            const { data } = await api.post(`${profileSubmitPrefix}/compliance-fields`, payload);
+
+            await refreshEmployeeProfile();
+            complianceFieldForm.reset();
+            handleComplianceFieldTypeChange([]);
+            showFormStatus(statusEl, data.message || 'Submitted.');
+        } catch (error) {
+            applyBackendErrors(complianceFieldForm, error.response?.data?.errors, setFieldError);
+            alert(getErrorMessage(error));
+        } finally {
+            setSubmitLoading(submitBtn, false);
+        }
+    });
+
+    document.getElementById('profile_document_type_id')?.addEventListener('change', (event) => {
+        syncDocumentFileInput(documentTypes, event.target.value);
+
+        if (documentForm) {
+            setFieldError(documentForm, 'file', '');
+        }
+    });
+
+    document.getElementById('profile_document_file')?.addEventListener('change', () => {
+        validateDocumentFileSelection();
+    });
+
+    documentForm?.addEventListener('submit', async (event) => {
+        event.preventDefault();
+        const submitBtn = document.getElementById('profileDocumentSubmit');
+        const statusEl = document.getElementById('profileDocumentStatus');
+        const fileInput = document.getElementById('profile_document_file');
+        const typeSelect = document.getElementById('profile_document_type_id');
+        const selectedType = documentTypes.find((type) => String(type.id) === String(typeSelect?.value));
+        const selectedFiles = Array.from(fileInput?.files || []);
+
+        if (!selectedType || selectedFiles.length === 0) {
+            return;
+        }
+
+        if (!validateDocumentFileSelection()) {
+            return;
+        }
+
+        if (!selectedType.allow_multiple && selectedFiles.length > 1) {
+            alert('Only one file can be uploaded for this document type.');
+            return;
+        }
+
+        setSubmitLoading(submitBtn, true, { submittingText: 'Uploading...' });
+
+        const uploadProgress = bindUploadProgress({
+            wrap: document.getElementById('profileDocumentUploadProgress'),
+            bar: document.getElementById('profileDocumentUploadProgressBar'),
+            percentEl: document.getElementById('profileDocumentUploadProgressPercent'),
+            labelEl: document.getElementById('profileDocumentUploadProgressLabel'),
+        });
+
+        const fileLabel = selectedFiles.length === 1
+            ? `Uploading ${selectedFiles[0].name}...`
+            : `Uploading ${selectedFiles.length} files...`;
+
+        uploadProgress.update(0, fileLabel);
+        fileInput.disabled = true;
+        typeSelect.disabled = true;
+
+        try {
+            const formData = new FormData();
+            formData.append('document_type_id', typeSelect.value);
+
+            if (selectedType.allow_multiple) {
+                selectedFiles.forEach((file) => formData.append('files[]', file));
+            } else {
+                formData.append('file', selectedFiles[0]);
+            }
+
+            const { data } = await api.post(`${profileSubmitPrefix}/documents`, formData, {
+                headers: { 'Content-Type': 'multipart/form-data' },
+                onUploadProgress: uploadProgress.onUploadProgress,
+            });
+
+            uploadProgress.update(100, 'Upload complete. Saving...');
+
+            await refreshEmployeeProfile();
+            documentForm.reset();
+            syncDocumentFileInput(documentTypes, '');
+            showFormStatus(statusEl, data.message || 'Uploaded.');
+        } catch (error) {
+            applyBackendErrors(documentForm, error.response?.data?.errors, setFieldError);
+            alert(getErrorMessage(error));
+        } finally {
+            uploadProgress.hide();
+            fileInput.disabled = false;
+            typeSelect.disabled = false;
+            setSubmitLoading(submitBtn, false);
+        }
+    });
+
+    const clearDocumentPreview = () => {
+        const iframe = document.getElementById('viewDocumentFrame');
+        const img = document.getElementById('viewDocumentImage');
+
+        if (iframe) {
+            iframe.removeAttribute('src');
+        }
+
+        if (img) {
+            img.removeAttribute('src');
+        }
+
+        if (previewBlobUrl) {
+            window.URL.revokeObjectURL(previewBlobUrl);
+            previewBlobUrl = null;
+        }
+    };
+
+    const viewBankProofFile = async (proofId, useReviewEndpoint = false, title = 'Bank proof') => {
+        const url = useReviewEndpoint
+            ? `/employee-payment-method-proofs/${proofId}/download`
+            : `${profileSubmitPrefix}/payment-method-proofs/${proofId}/download`;
+
+        const response = await api.get(url, { responseType: 'blob' });
+        const mime = response.headers['content-type'] || response.data.type || 'application/octet-stream';
+        const disposition = response.headers['content-disposition'];
+        const match = disposition?.match(/filename="?([^"]+)"?/);
+
+        previewFallbackName = match?.[1] || 'bank-proof';
+        clearDocumentPreview();
+        previewBlobUrl = window.URL.createObjectURL(response.data);
+
+        const iframe = document.getElementById('viewDocumentFrame');
+        const img = document.getElementById('viewDocumentImage');
+        const unsupported = document.getElementById('viewDocumentUnsupported');
+
+        iframe?.classList.add('d-none');
+        img?.classList.add('d-none');
+        unsupported?.classList.add('d-none');
+
+        if (mime.startsWith('image/')) {
+            img.src = previewBlobUrl;
+            img.classList.remove('d-none');
+        } else if (mime === 'application/pdf') {
+            iframe.src = previewBlobUrl;
+            iframe.classList.remove('d-none');
+        } else {
+            unsupported?.classList.remove('d-none');
+        }
+
+        openDocumentLightbox(title);
+    };
+
+    const handleViewBankProofClick = async (button, useReviewEndpoint = false) => {
+        try {
+            await viewBankProofFile(
+                button.dataset.viewBankProof,
+                useReviewEndpoint,
+                button.dataset.viewBankProofTitle || 'Bank proof',
+            );
+        } catch (error) {
+            alert(getErrorMessage(error));
+        }
+    };
+
+    const viewDocumentFile = async (documentId, useReviewEndpoint = false, title = 'Document') => {
+        const url = useReviewEndpoint
+            ? `/employee-documents/${documentId}/download`
+            : `${profileSubmitPrefix}/documents/${documentId}/download`;
+
+        const response = await api.get(url, { responseType: 'blob' });
+        const mime = response.headers['content-type'] || response.data.type || 'application/octet-stream';
+        const disposition = response.headers['content-disposition'];
+        const match = disposition?.match(/filename="?([^"]+)"?/);
+
+        previewFallbackName = match?.[1] || 'document';
+        clearDocumentPreview();
+        previewBlobUrl = window.URL.createObjectURL(response.data);
+
+        const iframe = document.getElementById('viewDocumentFrame');
+        const img = document.getElementById('viewDocumentImage');
+        const unsupported = document.getElementById('viewDocumentUnsupported');
+
+        iframe?.classList.add('d-none');
+        img?.classList.add('d-none');
+        unsupported?.classList.add('d-none');
+
+        if (mime.startsWith('image/')) {
+            img.src = previewBlobUrl;
+            img.classList.remove('d-none');
+        } else if (mime === 'application/pdf') {
+            iframe.src = previewBlobUrl;
+            iframe.classList.remove('d-none');
+        } else {
+            unsupported?.classList.remove('d-none');
+        }
+
+        openDocumentLightbox(title);
+    };
+
+    document.getElementById('viewDocumentLightboxClose')?.addEventListener('click', closeDocumentLightbox);
+
+    lightboxEl()?.addEventListener('click', (event) => {
+        if (event.target === lightboxEl() || event.target.classList.contains('document-lightbox-stage')) {
+            closeDocumentLightbox();
+        }
+    });
+
+    document.addEventListener('keydown', (event) => {
+        if (event.key === 'Escape' && !lightboxEl()?.classList.contains('d-none')) {
+            closeDocumentLightbox();
+        }
+    });
+
+    document.getElementById('viewDocumentOpenTab')?.addEventListener('click', () => {
+        if (previewBlobUrl) {
+            window.open(previewBlobUrl, '_blank', 'noopener,noreferrer');
+        }
+    });
+
+    document.getElementById('viewDocumentFallbackDownload')?.addEventListener('click', () => {
+        if (!previewBlobUrl) {
+            return;
+        }
+
+        const link = document.createElement('a');
+        link.href = previewBlobUrl;
+        link.download = previewFallbackName;
+        link.click();
+    });
+
+    const handleViewDocumentClick = async (button) => {
+        try {
+            await viewDocumentFile(
+                button.dataset.viewDocument,
+                button.dataset.viewReview === '1',
+                button.dataset.viewTitle || 'Document',
+            );
+        } catch (error) {
+            alert(getErrorMessage(error));
+        }
+    };
+
+    const handleDeleteDocumentClick = async (button) => {
+        const title = button.dataset.deleteTitle || 'this document';
+
+        if (!window.confirm(`Delete ${title}? This will permanently remove the file.`)) {
+            return;
+        }
+
+        try {
+            await api.delete(`/employee-documents/${button.dataset.deleteDocument}`);
+            await refreshEmployeeProfile();
+        } catch (error) {
+            alert(getErrorMessage(error));
+        }
+    };
+
+    document.getElementById('profileDocumentsTableBody')?.addEventListener('click', async (event) => {
+        const viewBtn = event.target.closest('[data-view-document]');
+        const deleteBtn = event.target.closest('[data-delete-document]');
+
+        if (deleteBtn) {
+            await handleDeleteDocumentClick(deleteBtn);
+            return;
+        }
+
+        if (!viewBtn || viewBtn.closest('#profilePendingDocumentsBody')) {
+            return;
+        }
+
+        await handleViewDocumentClick(viewBtn);
+    });
+
+    const handleProfileReview = async (url, kind, action) => {
+        try {
+            const message = await patchProfileReviewAction(url, kind, action);
+            if (message) {
+                await refreshEmployeeProfile();
+            }
+        } catch (error) {
+            alert(getErrorMessage(error));
+        }
+    };
+
+    document.getElementById('profilePendingBankBody')?.addEventListener('click', async (event) => {
+        const proofBtn = event.target.closest('[data-view-bank-proof]');
+
+        if (proofBtn) {
+            await handleViewBankProofClick(proofBtn, true);
+        }
+    });
+
+    document.getElementById('profilePaymentMethodsTableBody')?.addEventListener('click', async (event) => {
+        const proofBtn = event.target.closest('[data-view-bank-proof]');
+
+        if (proofBtn) {
+            await handleViewBankProofClick(proofBtn, false);
+        }
+    });
+
+    document.getElementById('profilePendingDocumentsBody')?.addEventListener('click', async (event) => {
+        const viewBtn = event.target.closest('[data-view-document]');
+        const approveBtn = event.target.closest('[data-approve-document]');
+        const rejectBtn = event.target.closest('[data-reject-document]');
+
+        if (viewBtn) {
+            await handleViewDocumentClick(viewBtn);
+            return;
+        }
+
+        if (approveBtn) {
+            await handleProfileReview(
+                `/employee-documents/${approveBtn.dataset.approveDocument}/approve`,
+                'document',
+                'approve',
+            );
+            return;
+        }
+
+        if (rejectBtn) {
+            await handleProfileReview(
+                `/employee-documents/${rejectBtn.dataset.rejectDocument}/reject`,
+                'document',
+                'reject',
+            );
+        }
+    });
+
+    document.getElementById('rejectDocumentForm')?.addEventListener('submit', async (event) => {
+        event.preventDefault();
+
+        if (!rejectDocumentId) {
+            return;
+        }
+
+        const submitBtn = document.getElementById('rejectDocumentSubmit');
+        const notes = document.getElementById('rejectDocumentNotes')?.value.trim();
+
+        setSubmitLoading(submitBtn, true, { submittingText: 'Rejecting...' });
+
+        try {
+            await api.patch(`/employee-documents/${rejectDocumentId}/reject`, { notes });
+            rejectModal?.hide();
+            rejectDocumentId = null;
+            await refreshEmployeeProfile();
+        } catch (error) {
+            alert(getErrorMessage(error));
+        } finally {
+            setSubmitLoading(submitBtn, false);
+        }
+    });
+
+    const openRejectProfileSubmissionModal = (type, id) => {
+        rejectSubmission = { type, id };
+        document.getElementById('rejectProfileSubmissionNotes').value = '';
+        rejectProfileSubmissionModal = rejectProfileSubmissionModal
+            || Modal.getOrCreateInstance(document.getElementById('rejectProfileSubmissionModal'));
+        rejectProfileSubmissionModal.show();
+    };
+
+    document.getElementById('profileFamilyResubmitCancel')?.addEventListener('click', () => {
+        closeProfileFormEditor('family');
+        resetFamilyForm();
+    });
+
+    document.getElementById('profileFamilyMembersTableBody')?.addEventListener('click', async (event) => {
+        const deleteBtn = event.target.closest('[data-delete-family-member]');
+
+        if (deleteBtn) {
+            const memberName = deleteBtn.dataset.deleteName || 'this family member';
+
+            if (!window.confirm(`Delete ${memberName}? This cannot be undone.`)) {
+                return;
+            }
+
+            try {
+                await api.delete(`/employee-family-members/${deleteBtn.dataset.deleteFamilyMember}`);
+                await refreshEmployeeProfile();
+            } catch (error) {
+                alert(getErrorMessage(error));
+            }
+
+            return;
+        }
+
+        const editBtn = event.target.closest('[data-edit-family-member]');
+        const resubmitBtn = event.target.closest('[data-resubmit-family-member]');
+        const actionBtn = editBtn || resubmitBtn;
+
+        if (!actionBtn || !employeeProfile) {
+            return;
+        }
+
+        const memberId = Number(actionBtn.dataset.editFamilyMember || actionBtn.dataset.resubmitFamilyMember);
+        const member = (employeeProfile.family_members || []).find((item) => item.id === memberId);
+
+        if (!member) {
+            return;
+        }
+
+        openProfileFormEditor('family');
+        resetFamilyForm(member);
+        document.getElementById('profileFamilySectionForm')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
+
+    document.getElementById('profilePendingFamilyBody')?.addEventListener('click', async (event) => {
+        const approveBtn = event.target.closest('[data-approve-family-member]');
+        const rejectBtn = event.target.closest('[data-reject-family-member]');
+
+        if (approveBtn) {
+            await handleProfileReview(
+                `/employee-family-members/${approveBtn.dataset.approveFamilyMember}/approve`,
+                'family_member',
+                'approve',
+            );
+            return;
+        }
+
+        if (rejectBtn) {
+            await handleProfileReview(
+                `/employee-family-members/${rejectBtn.dataset.rejectFamilyMember}/reject`,
+                'family_member',
+                'reject',
+            );
+        }
+    });
+
+    document.getElementById('profilePendingBankBody')?.addEventListener('click', async (event) => {
+        const approveBtn = event.target.closest('[data-approve-payment-method]');
+        const rejectBtn = event.target.closest('[data-reject-payment-method]');
+
+        if (approveBtn) {
+            await handleProfileReview(
+                `/employee-payment-methods/${approveBtn.dataset.approvePaymentMethod}/approve`,
+                'payment_method',
+                'approve',
+            );
+            return;
+        }
+
+        if (rejectBtn) {
+            await handleProfileReview(
+                `/employee-payment-methods/${rejectBtn.dataset.rejectPaymentMethod}/reject`,
+                'payment_method',
+                'reject',
+            );
+        }
+    });
+
+    document.getElementById('profilePendingPersonalBody')?.addEventListener('click', async (event) => {
+        const approveBtn = event.target.closest('[data-approve-personal-section]');
+        const rejectBtn = event.target.closest('[data-reject-personal-section]');
+
+        if (approveBtn) {
+            await handleProfileReview(
+                `/employee-personal-sections/${approveBtn.dataset.approvePersonalSection}/approve`,
+                'personal_section',
+                'approve',
+            );
+            return;
+        }
+
+        if (rejectBtn) {
+            await handleProfileReview(
+                `/employee-personal-sections/${rejectBtn.dataset.rejectPersonalSection}/reject`,
+                'personal_section',
+                'reject',
+            );
+        }
+    });
+
+    document.getElementById('profilePendingComplianceBody')?.addEventListener('click', async (event) => {
+        const approveBtn = event.target.closest('[data-approve-compliance-field]');
+        const rejectBtn = event.target.closest('[data-reject-compliance-field]');
+
+        if (approveBtn) {
+            await handleProfileReview(
+                `/employee-compliance-fields/${approveBtn.dataset.approveComplianceField}/approve`,
+                'compliance_field',
+                'approve',
+            );
+            return;
+        }
+
+        if (rejectBtn) {
+            await handleProfileReview(
+                `/employee-compliance-fields/${rejectBtn.dataset.rejectComplianceField}/reject`,
+                'compliance_field',
+                'reject',
+            );
+        }
+    });
+
+    document.getElementById('rejectProfileSubmissionForm')?.addEventListener('submit', async (event) => {
+        event.preventDefault();
+
+        if (!rejectSubmission) {
+            return;
+        }
+
+        const submitBtn = document.getElementById('rejectProfileSubmissionSubmit');
+        const notes = document.getElementById('rejectProfileSubmissionNotes')?.value.trim();
+        const url = rejectSubmission.type === 'payment_method'
+            ? `/employee-payment-methods/${rejectSubmission.id}/reject`
+            : rejectSubmission.type === 'personal_section'
+                ? `/employee-personal-sections/${rejectSubmission.id}/reject`
+                : rejectSubmission.type === 'family_member'
+                    ? `/employee-family-members/${rejectSubmission.id}/reject`
+                    : `/employee-compliance-fields/${rejectSubmission.id}/reject`;
+
+        setSubmitLoading(submitBtn, true, { submittingText: 'Rejecting...' });
+
+        try {
+            await api.patch(url, { notes });
+            rejectProfileSubmissionModal?.hide();
+            rejectSubmission = null;
+            await refreshEmployeeProfile();
+        } catch (error) {
+            alert(getErrorMessage(error));
+        } finally {
+            setSubmitLoading(submitBtn, false);
+        }
+    });
+
+    if (profileForm) {
+        const statusEl = document.getElementById('profileSaveStatus');
+        const submitBtn = profileForm.querySelector('button[type="submit"]');
+        let isSubmitting = false;
+
+        profileForm.addEventListener('submit', async (event) => {
+            event.preventDefault();
+
+            if (isSubmitting) {
+                return;
+            }
+
+            isSubmitting = true;
+            setSubmitLoading(submitBtn, true, { isUpdate: true, updatingText: 'Saving...' });
+
+            try {
+                const formData = new FormData(profileForm);
+                const { data } = await api.put('/profile', {
+                    name: formData.get('name'),
+                    email: formData.get('email'),
+                });
+
+                populateProfileHeader(data.data.user, employeeProfile);
+
+                if (statusEl) {
+                    statusEl.textContent = data.message || 'Saved.';
+                    statusEl.classList.remove('d-none');
+                }
+            } catch (error) {
+                alert(getErrorMessage(error));
+            } finally {
+                isSubmitting = false;
+                setSubmitLoading(submitBtn, false, { isUpdate: true });
+            }
+        });
+    }
+
+    const profilePhotoInput = document.getElementById('profilePhotoInput');
+    const profilePhotoUploadBtn = document.getElementById('profilePhotoUploadBtn');
+    const profileViewWorkBtn = document.getElementById('profileViewWorkBtn');
+
+    initProfilePhotoCrop();
+
+    profilePhotoUploadBtn?.addEventListener('click', () => {
+        if (!profilePhotoUploadBtn.disabled) {
+            profilePhotoInput?.click();
+        }
+    });
+
+    profilePhotoInput?.addEventListener('change', async () => {
+        const file = profilePhotoInput.files?.[0];
+
+        if (!file) {
+            return;
+        }
+
+        const allowedTypes = ['image/jpeg', 'image/jpg', 'image/png'];
+        const extension = file.name.split('.').pop()?.toLowerCase() || '';
+
+        if (!allowedTypes.includes(file.type) && !['jpg', 'jpeg', 'png'].includes(extension)) {
+            alert('Only JPG and PNG images are allowed.');
+            profilePhotoInput.value = '';
+            return;
+        }
+
+        let croppedFile = file;
+
+        try {
+            croppedFile = await cropProfilePhotoFile(file);
+        } catch (error) {
+            if (error?.message !== 'cancelled') {
+                await showErrorAlert({ text: getErrorMessage(error, 'Unable to crop profile photo.') });
+            }
+
+            profilePhotoInput.value = '';
+            return;
+        }
+
+        try {
+            const { detectFaceInFile } = await import('./face-verification');
+            const hasFace = await detectFaceInFile(croppedFile);
+
+            if (!hasFace) {
+                await showErrorAlert({
+                    text: 'No face detected in the cropped photo. Frame your face inside the blue square and try again.',
+                });
+                profilePhotoInput.value = '';
+                return;
+            }
+        } catch (error) {
+            await showErrorAlert({
+                text: getErrorMessage(error, 'Unable to verify face in profile photo. Check your connection and try again.'),
+            });
+            profilePhotoInput.value = '';
+            return;
+        }
+
+        try {
+            const formData = new FormData();
+            formData.append('photo', croppedFile);
+            const { data } = await api.post(`${profileSubmitPrefix}/photo`, formData, {
+                headers: { 'Content-Type': 'multipart/form-data' },
+            });
+            const refresh = await api.get(profileEmployeeEndpoint);
+            await applyEmployeeProfilePayload(refresh.data.data);
+            populateProfileHeader(
+                refresh.data.data.user || {
+                    name: employeeProfile.full_name,
+                    email: employeeProfile.email,
+                    role: employeeProfile.role,
+                },
+                employeeProfile,
+            );
+
+            const approvedPhotoUrl = employeeProfile?.profile_photo_url;
+
+            if (approvedPhotoUrl && employeeProfile?.profile_photo_submission?.status !== 'pending') {
+                try {
+                    const { syncFaceReferenceFromProfilePhoto } = await import('./face-verification');
+                    await syncFaceReferenceFromProfilePhoto(approvedPhotoUrl);
+                } catch (error) {
+                    await showErrorAlert({
+                        text: getErrorMessage(error, 'Profile photo saved, but face recognition could not be updated. Re-upload your photo or try again from attendance.'),
+                    });
+                }
+            }
+
+            if (data.data?.profile_photo?.status === 'pending' || employeeProfile?.profile_photo_submission?.status === 'pending') {
+                await showProfilePhotoPendingNotice();
+            } else {
+                await showInfoAlert({
+                    title: 'Profile photo saved',
+                    text: data.message || 'Profile photo saved successfully.',
+                    icon: 'success',
+                });
+            }
+        } catch (error) {
+            await showErrorAlert({ text: getErrorMessage(error) });
+        } finally {
+            profilePhotoInput.value = '';
+        }
+    });
+
+    profileViewWorkBtn?.addEventListener('click', () => {
+        const tab = document.getElementById('profile-work-tab');
+
+        if (tab) {
+            Tab.getOrCreateInstance(tab).show();
+        }
+    });
+
+    initEmployeeJourneyTab({
+        tabId: 'profile-journey-tab',
+        endpoint: targetEmployeeId ? `/employees/${targetEmployeeId}/journey` : '/profile/journey',
+    });
+});

@@ -1,0 +1,190 @@
+<?php
+
+namespace App\Http\Controllers\Api\V1;
+
+use App\Http\Controllers\Controller;
+use App\Http\Concerns\ApiResponse;
+use App\Http\Requests\MarkEmployeeAbsentRequest;
+use App\Http\Requests\StoreAttendancePunchRequest;
+use App\Services\ActivityLogService;
+use App\Services\AttendanceCorrectionService;
+use App\Services\AttendanceNetworkService;
+use App\Services\AttendanceService;
+use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Request;
+
+class AttendanceController extends Controller
+{
+    use ApiResponse;
+
+    public function __construct(
+        private AttendanceService $attendanceService,
+        private AttendanceCorrectionService $attendanceCorrectionService,
+        private ActivityLogService $activityLogService,
+        private AttendanceNetworkService $attendanceNetworkService,
+    ) {}
+
+    public function status(Request $request): JsonResponse
+    {
+        $user = $request->user();
+
+        return $this->success([
+            ...$this->attendanceService->todayStatus($user),
+            'capabilities' => $this->capabilities($user),
+        ]);
+    }
+
+    public function punch(StoreAttendancePunchRequest $request): JsonResponse
+    {
+        $user = $request->user();
+
+        try {
+            $ipAddress = $this->attendanceNetworkService->resolveClientIpFromRequest($request);
+
+            $macAddress = $this->attendanceNetworkService->resolveClientMac(
+                [
+                    $request->header('X-Client-MAC'),
+                    $request->header('X-Device-MAC'),
+                    $request->header('X-Forwarded-Mac'),
+                ],
+                $request->input('mac_address'),
+            );
+
+            $result = $this->attendanceService->punch(
+                $user,
+                $request->file('selfie'),
+                (float) $request->input('latitude'),
+                (float) $request->input('longitude'),
+                $request->input('location_name'),
+                $request->filled('face_match_score') ? (float) $request->input('face_match_score') : null,
+                $request->input('selfie_face_descriptor'),
+                $ipAddress,
+                $macAddress,
+            );
+
+            $this->activityLogService->logAttendancePunch($user, $request, true, $result);
+
+            $label = $result['punch']['punch_type'] === 'in' ? 'Punch in' : 'Punch out';
+
+            return $this->success($result, "{$label} recorded successfully.", 201);
+        } catch (\Throwable $error) {
+            $this->activityLogService->logAttendancePunch($user, $request, false, null, $error);
+
+            throw $error;
+        }
+    }
+
+    public function calendar(Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'month' => ['required', 'date_format:Y-m'],
+            'employee_id' => ['nullable', 'integer', 'exists:employees,id'],
+        ]);
+
+        return $this->success([
+            ...$this->attendanceService->calendar(
+                $request->user(),
+                $validated['month'],
+                $validated['employee_id'] ?? null,
+            ),
+            'capabilities' => $this->capabilities($request->user()),
+        ]);
+    }
+
+    public function day(Request $request, string $date): JsonResponse
+    {
+        $validated = $request->validate([
+            'employee_id' => ['nullable', 'integer', 'exists:employees,id'],
+        ]);
+
+        if (! preg_match('/^\d{4}-\d{2}-\d{2}$/', $date)) {
+            abort(404);
+        }
+
+        return $this->success(
+            $this->attendanceService->dayDetail(
+                $request->user(),
+                $date,
+                $validated['employee_id'] ?? null,
+            )
+        );
+    }
+
+    public function todayOverview(Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'date' => ['nullable', 'date_format:Y-m-d'],
+        ]);
+
+        $payload = $this->attendanceService->todayOverview(
+            $request->user(),
+            $validated['date'] ?? null,
+        );
+
+        $payload['capabilities'] = [
+            'can_mark_absent' => $this->attendanceCorrectionService->canMarkAbsent($request->user()),
+        ];
+
+        return $this->success($payload);
+    }
+
+    public function markAbsent(MarkEmployeeAbsentRequest $request): JsonResponse
+    {
+        $validated = $request->validated();
+
+        $result = $this->attendanceCorrectionService->markAbsent(
+            $request->user(),
+            (int) $validated['employee_id'],
+            $validated['date'],
+            $validated['reason'],
+        );
+
+        return $this->success($result, $result['message']);
+    }
+
+    public function monthMatrix(Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'month' => ['required', 'date_format:Y-m'],
+            'department_id' => ['nullable', 'integer'],
+            'search' => ['nullable', 'string', 'max:120'],
+            'status' => ['nullable', 'in:active,inactive,all'],
+            'page' => ['nullable', 'integer', 'min:1'],
+            'per_page' => ['nullable', 'integer', 'min:10', 'max:50'],
+        ]);
+
+        return $this->success(
+            $this->attendanceService->companyMonthMatrix(
+                $request->user(),
+                $validated['month'],
+                $validated,
+            )
+        );
+    }
+
+    private function capabilities($user): array
+    {
+        $canViewAll = $this->attendanceService->canViewAllAttendance($user);
+        $canViewCompanyTeam = $this->attendanceService->canViewCompanyTeamAttendance($user);
+        $canViewTeam = ! $canViewAll && $this->attendanceService->canViewTeamAttendance($user);
+
+        return [
+            'can_mark' => $this->attendanceService->canMarkAttendance($user),
+            'can_view_all' => $canViewAll || $canViewCompanyTeam,
+            'can_view_team' => $canViewTeam && ! $canViewCompanyTeam,
+            'can_manage_attendance_masters' => $user->canManageAttendanceMasters(),
+            'can_regularize' => $user->canRegularizeAttendance()
+                && ($user->employee || $user->canManageRegularization())
+                && app(\App\Services\AttendanceRegularizationService::class)
+                    ->isEnabledForCompany((int) $user->company_id),
+            'team_employees' => ($canViewTeam || $canViewCompanyTeam) ? $this->attendanceService->teamEmployeesForUser($user) : [],
+            'self_employee_id' => $user->employee?->id,
+            'default_view_own' => ($user->isHrManager() && ! $user->isCompanyAdmin())
+                || (
+                    $user->employee?->id !== null
+                    && ! $canViewAll
+                    && ($canViewTeam || $canViewCompanyTeam)
+                ),
+        ];
+    }
+}

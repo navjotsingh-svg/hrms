@@ -1,0 +1,849 @@
+@php
+    $user = Auth::user();
+
+    $homeKeys = ['home', 'home.dashboard', 'home.moments'];
+    $employeeExperienceKeys = [
+        'experience.helpdesk',
+        'performance.goals',
+        'performance.kpi',
+        'performance.skills',
+        'performance.question_bank',
+        'performance.feedback_forms',
+        'performance.continuous_feedback',
+        'performance.praise',
+        'experience.social_wall',
+        'experience.polls',
+        'experience.public_praise',
+        'performance.one_on_one',
+        'performance.review_cycles',
+        'performance.reviews',
+        'performance.calibration',
+        'performance.insights',
+        'performance.promotions',
+        'performance.compensation',
+        'performance.pip',
+    ];
+    $peopleKeys = ['people', 'employees', 'org_chart'];
+    $coreHrKeys = [
+        'masters.departments', 'masters.shifts', 'masters.roles',
+    ];
+    $attendanceKeys = [
+        'attendance', 'attendance.holidays', 'attendance.team', 'attendance.today',
+        'masters.weekly_off', 'masters.portal_start',
+    ];
+    $leaveKeys = [
+        'leave.management', 'leave.calendar', 'leave.apply', 'leave.balances',
+        'masters.leave_types', 'masters.leave_balances',
+    ];
+    $wfhKeys = ['wfh.apply', 'wfh.management'];
+    $offboardingKeys = ['offboarding.apply', 'offboarding.management'];
+    $assetRequestKeys = ['assets.apply', 'assets.management'];
+    $payrollKeys = ['payroll.manage', 'payroll.payslips', 'payroll.settings'];
+    $hiringKeys = [
+        'hiring', 'hiring.jobs', 'hiring.candidates',
+        'hiring.offers', 'hiring.templates', 'hiring.interviews', 'hiring.careers',
+    ];
+    $documentsKeys = ['masters.documents', 'masters.assets'];
+    $projectsKeys = ['projects', 'timesheets'];
+    $analyticsKeys = [
+        'analytics.leave', 'analytics.leave_balances', 'analytics.attendance',
+        'analytics.people', 'analytics.expense', 'analytics.hiring', 'analytics.performance',
+    ];
+    $companyKeys = ['masters.departments', 'masters.shifts', 'masters.roles', 'activity_logs'];
+
+    $isHomeOpen = request()->routeIs('web.home.index', 'web.home.dashboard', 'web.home.moments', 'web.dashboard');
+    $isEmployeeExperienceOpen = request()->routeIs('web.employee-experience.*', 'web.helpdesk.*', 'web.assistant.*', 'web.performance.*');
+    $isCoreHrOpen = request()->routeIs(
+        'web.masters.departments.*',
+        'web.masters.shifts.*',
+        'web.masters.roles.*',
+    );
+    $isAttendanceOpen = request()->routeIs('web.attendance.*', 'web.masters.attendance.weekly-off.*', 'web.masters.attendance.portal-start.*');
+    $isLeaveOpen = request()->routeIs('web.leave.*', 'web.masters.leave-types.*', 'web.masters.attendance.holidays.*');
+    $isWfhOpen = request()->routeIs('web.wfh.*');
+    $isOffboardingOpen = request()->routeIs('web.offboarding.*');
+    $isAssetRequestsOpen = request()->routeIs('web.asset-requests.*');
+    $isPayrollOpen = request()->routeIs('web.payroll.*');
+    $isHiringOpen = request()->routeIs('web.hiring.*');
+    $isPeopleOpen = request()->routeIs('web.people.*', 'web.employees.*', 'web.org-chart.index');
+    $isDocumentsOpen = request()->routeIs('web.masters.documents.*', 'web.masters.assets.*');
+    $isProjectsOpen = request()->routeIs('web.projects.*', 'web.timesheets.*');
+    $isAnalyticsOpen = request()->routeIs('web.analytics.*');
+    $analyticsActiveSection = request()->route('section');
+    if (request()->routeIs('web.analytics.leave-balances')) {
+        $analyticsActiveSection = 'leave';
+    } elseif (request()->routeIs('web.analytics.report')) {
+        $reportKey = (string) request()->route('reportKey');
+        $analyticsActiveSection = match (true) {
+            str_starts_with($reportKey, 'leave-') => 'leave',
+            str_starts_with($reportKey, 'attendance-'), str_starts_with($reportKey, 'regularization-') => 'attendance',
+            str_starts_with($reportKey, 'employee-') => 'people',
+            str_starts_with($reportKey, 'expense-') => 'expense',
+            str_starts_with($reportKey, 'candidate-') => 'hiring',
+            str_starts_with($reportKey, 'review-') => 'performance',
+            default => $analyticsActiveSection,
+        };
+    }
+    $isCompanyOpen = request()->routeIs(
+        'web.masters.departments.*',
+        'web.masters.shifts.*',
+        'web.masters.roles.*',
+        'web.activity-logs.*'
+    );
+@endphp
+<aside class="sidebar" id="sidebar">
+    <div class="sidebar-header d-lg-none">
+        @include('layouts.partials.logo')
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="offcanvas" aria-label="Close" id="sidebarClose"></button>
+    </div>
+
+    <nav class="sidebar-nav">
+        <ul class="nav flex-column sidebar-menu">
+            @if ($user->company_id && ! $user->isSuperAdmin())
+                @if ($user->canSeeMenuSection($homeKeys))
+                    @if ($user->canSeeMenu('home'))
+                        @include('layouts.partials.sidebar-link', [
+                            'href' => route('web.home.index'),
+                            'label' => 'Home',
+                            'icon' => 'home',
+                            'active' => request()->routeIs('web.home.*', 'web.dashboard'),
+                            'badgeId' => $user->canSeeMenu('home.moments') ? 'sidebarMomentsBadge' : null,
+                        ])
+                    @endif
+                @endif
+
+                @if ($user->canSeeMenuSection($peopleKeys))
+                    @component('layouts.partials.sidebar-group', [
+                        'id' => 'sidebarPeopleMenu',
+                        'label' => 'People',
+                        'icon' => 'people',
+                        'open' => $isPeopleOpen,
+                    ])
+                        @if ($user->canSeeMenu('people'))
+                            <li class="nav-item">
+                                <a
+                                    class="nav-link {{ request()->routeIs('web.people.*') && ! request()->has('tab') ? 'active' : '' }}"
+                                    href="{{ route('web.people.index') }}"
+                                    id="sidebarPeopleSummaryLink"
+                                >
+                                    <span class="sidebar-icon">@include('layouts.partials.sidebar-icon', ['name' => 'users'])</span>
+                                    <span class="sidebar-link-label">Summary</span>
+                                </a>
+                            </li>
+                        @endif
+                        @if ($user->canSeeMenu('org_chart'))
+                            <li class="nav-item">
+                                <a
+                                    class="nav-link {{ request()->routeIs('web.org-chart.index') ? 'active' : '' }}"
+                                    href="{{ route('web.org-chart.index') }}"
+                                    id="sidebarPeopleOrgChartLink"
+                                >
+                                    <span class="sidebar-icon">@include('layouts.partials.sidebar-icon', ['name' => 'org-chart'])</span>
+                                    <span class="sidebar-link-label">Org Chart</span>
+                                </a>
+                            </li>
+                        @endif
+                        @if ($user->canSeeMenu('employees'))
+                            @include('layouts.partials.sidebar-link', [
+                                'href' => route('web.employees.index'),
+                                'label' => 'Employees',
+                                'icon' => 'employees',
+                                'active' => request()->routeIs('web.employees.*'),
+                            ])
+                        @endif
+                    @endcomponent
+                @endif
+
+                @if ($user->canSeeMenuSection($attendanceKeys))
+                    @component('layouts.partials.sidebar-group', [
+                        'id' => 'sidebarAttendanceMenu',
+                        'label' => 'Attendance',
+                        'icon' => 'attendance',
+                        'open' => $isAttendanceOpen,
+                    ])
+                        @if ($user->canSeeMenu('attendance'))
+                            @include('layouts.partials.sidebar-link', [
+                                'href' => route('web.attendance.index'),
+                                'label' => 'Attendance',
+                                'icon' => 'calendar',
+                                'active' => request()->routeIs('web.attendance.index'),
+                            ])
+                        @endif
+                        @if ($user->canSeeMenu('attendance.holidays'))
+                            @include('layouts.partials.sidebar-link', [
+                                'href' => route('web.attendance.holidays'),
+                                'label' => 'Holidays',
+                                'icon' => 'holiday',
+                                'active' => request()->routeIs('web.attendance.holidays', 'web.masters.attendance.holidays.*'),
+                            ])
+                        @endif
+                        @if ($user->canSeeMenu('attendance.team'))
+                            @include('layouts.partials.sidebar-link', [
+                                'href' => route('web.attendance.overview'),
+                                'label' => 'Team Attendance',
+                                'icon' => 'team',
+                                'active' => request()->routeIs('web.attendance.overview'),
+                            ])
+                        @endif
+                        @if ($user->canSeeMenu('attendance.today'))
+                            @include('layouts.partials.sidebar-link', [
+                                'href' => route('web.attendance.today'),
+                                'label' => "Today's Attendance",
+                                'icon' => 'clock',
+                                'active' => request()->routeIs('web.attendance.today'),
+                            ])
+                        @endif
+                        @if ($user->canSeeMenu('masters.weekly_off'))
+                            @include('layouts.partials.sidebar-link', [
+                                'href' => route('web.masters.attendance.weekly-off.index'),
+                                'label' => 'Weekly Off',
+                                'icon' => 'calendar',
+                                'active' => request()->routeIs('web.masters.attendance.weekly-off.*'),
+                            ])
+                        @endif
+                        @if ($user->canSeeMenu('masters.portal_start'))
+                            @include('layouts.partials.sidebar-link', [
+                                'href' => route('web.masters.attendance.portal-start.index'),
+                                'label' => 'Start Portal Day',
+                                'icon' => 'clock',
+                                'active' => request()->routeIs('web.masters.attendance.portal-start.*'),
+                            ])
+                        @endif
+                    @endcomponent
+                @endif
+
+                @if ($user->canSeeMenuSection($leaveKeys))
+                    @component('layouts.partials.sidebar-group', [
+                        'id' => 'sidebarLeaveMenu',
+                        'label' => 'Leave',
+                        'icon' => 'leave',
+                        'open' => $isLeaveOpen,
+                    ])
+                        @if ($user->canSeeMenu('leave.apply'))
+                            @include('layouts.partials.sidebar-link', [
+                                'href' => route('web.leave.apply'),
+                                'label' => 'Apply',
+                                'icon' => 'apply',
+                                'active' => request()->routeIs('web.leave.apply'),
+                            ])
+                        @endif
+                        @if ($user->canSeeMenu('leave.management'))
+                            @include('layouts.partials.sidebar-link', [
+                                'href' => route('web.leave.index'),
+                                'label' => 'Requests',
+                                'icon' => 'requests',
+                                'active' => request()->routeIs('web.leave.index', 'web.leave.show'),
+                            ])
+                        @endif
+                        @if ($user->canSeeMenu('leave.calendar'))
+                            @include('layouts.partials.sidebar-link', [
+                                'href' => route('web.leave.calendar'),
+                                'label' => 'Calendar',
+                                'icon' => 'calendar',
+                                'active' => request()->routeIs('web.leave.calendar'),
+                            ])
+                        @endif
+                        @if ($user->canSeeMenu('leave.balances'))
+                            @include('layouts.partials.sidebar-link', [
+                                'href' => route('web.leave.balances'),
+                                'label' => 'Balances',
+                                'icon' => 'balance',
+                                'active' => request()->routeIs('web.leave.balances'),
+                            ])
+                        @endif
+                        @if ($user->canSeeMenu('masters.leave_types'))
+                            @include('layouts.partials.sidebar-link', [
+                                'href' => route('web.masters.leave-types.index'),
+                                'label' => 'Leave Types',
+                                'icon' => 'documents',
+                                'active' => request()->routeIs('web.masters.leave-types.*'),
+                            ])
+                        @endif
+                        @if ($user->canSeeMenu('masters.leave_balances'))
+                            @include('layouts.partials.sidebar-link', [
+                                'href' => route('web.leave.manage-balances'),
+                                'label' => 'Manage Balances',
+                                'icon' => 'balance',
+                                'active' => request()->routeIs('web.leave.manage-balances'),
+                            ])
+                        @endif
+                    @endcomponent
+                @endif
+
+                @if ($user->canSeeMenu('requests'))
+                    @include('layouts.partials.sidebar-link', [
+                        'href' => route('web.requests.index'),
+                        'label' => 'Request',
+                        'icon' => 'requests',
+                        'active' => request()->routeIs('web.requests.*'),
+                    ])
+                @endif
+
+                @if ($user->canSeeMenuSection($wfhKeys))
+                    @component('layouts.partials.sidebar-group', [
+                        'id' => 'sidebarWfhMenu',
+                        'label' => 'WFH',
+                        'icon' => 'home',
+                        'open' => $isWfhOpen,
+                    ])
+                        @if ($user->canSeeMenu('wfh.apply'))
+                            @include('layouts.partials.sidebar-link', [
+                                'href' => route('web.wfh.apply'),
+                                'label' => 'Apply',
+                                'icon' => 'apply',
+                                'active' => request()->routeIs('web.wfh.apply'),
+                            ])
+                        @endif
+                        @if ($user->canSeeMenu('wfh.management'))
+                            @include('layouts.partials.sidebar-link', [
+                                'href' => route('web.wfh.index'),
+                                'label' => 'Requests',
+                                'icon' => 'requests',
+                                'active' => request()->routeIs('web.wfh.index', 'web.wfh.show'),
+                            ])
+                        @endif
+                    @endcomponent
+                @endif
+
+                @if ($user->canSeeMenuSection($offboardingKeys))
+                    @component('layouts.partials.sidebar-group', [
+                        'id' => 'sidebarOffboardingMenu',
+                        'label' => 'Offboarding',
+                        'icon' => 'requests',
+                        'open' => $isOffboardingOpen,
+                    ])
+                        @if ($user->canSeeMenu('offboarding.apply'))
+                            @include('layouts.partials.sidebar-link', [
+                                'href' => route('web.offboarding.apply'),
+                                'label' => 'Resignation',
+                                'icon' => 'apply',
+                                'active' => request()->routeIs('web.offboarding.apply'),
+                            ])
+                        @endif
+                        @if ($user->canSeeMenu('offboarding.management'))
+                            @include('layouts.partials.sidebar-link', [
+                                'href' => route('web.offboarding.index'),
+                                'label' => 'Exit Process',
+                                'icon' => 'requests',
+                                'active' => request()->routeIs('web.offboarding.index', 'web.offboarding.show'),
+                            ])
+                        @endif
+                    @endcomponent
+                @endif
+
+                @if ($user->canSeeMenuSection($assetRequestKeys))
+                    @component('layouts.partials.sidebar-group', [
+                        'id' => 'sidebarAssetRequestsMenu',
+                        'label' => 'Assets',
+                        'icon' => 'assets',
+                        'open' => $isAssetRequestsOpen,
+                    ])
+                        @if ($user->canSeeMenu('assets.apply'))
+                            @include('layouts.partials.sidebar-link', [
+                                'href' => route('web.asset-requests.apply'),
+                                'label' => 'Request Asset',
+                                'icon' => 'apply',
+                                'active' => request()->routeIs('web.asset-requests.apply'),
+                            ])
+                        @endif
+                        @if ($user->canSeeMenu('assets.management'))
+                            @include('layouts.partials.sidebar-link', [
+                                'href' => route('web.asset-requests.index'),
+                                'label' => 'Requests',
+                                'icon' => 'requests',
+                                'active' => request()->routeIs('web.asset-requests.index', 'web.asset-requests.show'),
+                            ])
+                        @endif
+                    @endcomponent
+                @endif
+
+                @if ($user->canSeeMenuSection($employeeExperienceKeys))
+                    @component('layouts.partials.sidebar-group', [
+                        'id' => 'sidebarEmployeeExperienceMenu',
+                        'label' => 'Employee Experience',
+                        'icon' => 'moments',
+                        'open' => $isEmployeeExperienceOpen,
+                    ])
+                        @if ($user->canSeeMenu('experience.helpdesk'))
+                            @include('layouts.partials.sidebar-link', [
+                                'href' => route('web.helpdesk.index'),
+                                'label' => 'Helpdesk',
+                                'icon' => 'requests',
+                                'active' => request()->routeIs('web.helpdesk.*'),
+                            ])
+                        @endif
+                        @if ($user->canSeeMenu('performance.goals'))
+                            @include('layouts.partials.sidebar-link', [
+                                'href' => route('web.performance.goals'),
+                                'label' => 'Department & Individual Goals',
+                                'icon' => 'target',
+                                'active' => request()->routeIs('web.performance.goals'),
+                            ])
+                        @endif
+                        @if ($user->canSeeMenu('performance.kpi'))
+                            @include('layouts.partials.sidebar-link', [
+                                'href' => route('web.performance.kpi'),
+                                'label' => 'KPI',
+                                'icon' => 'performance',
+                                'active' => request()->routeIs('web.performance.kpi'),
+                            ])
+                        @endif
+                        @if ($user->canSeeMenu('performance.skills'))
+                            @include('layouts.partials.sidebar-link', [
+                                'href' => route('web.performance.skills'),
+                                'label' => 'Skills and Competencies',
+                                'icon' => 'target',
+                                'active' => request()->routeIs('web.performance.skills'),
+                            ])
+                        @endif
+                        @if ($user->canSeeMenu('performance.question_bank'))
+                            @include('layouts.partials.sidebar-link', [
+                                'href' => route('web.performance.question-bank'),
+                                'label' => 'Question Bank',
+                                'icon' => 'documents',
+                                'active' => request()->routeIs('web.performance.question-bank'),
+                            ])
+                        @endif
+                        @if ($user->canSeeMenu('performance.feedback_forms'))
+                            @include('layouts.partials.sidebar-link', [
+                                'href' => route('web.performance.feedback-forms'),
+                                'label' => 'Feedback Forms',
+                                'icon' => 'documents',
+                                'active' => request()->routeIs('web.performance.feedback-forms'),
+                            ])
+                        @endif
+                        @if ($user->canSeeMenu('performance.continuous_feedback'))
+                            @include('layouts.partials.sidebar-link', [
+                                'href' => route('web.performance.continuous-feedback'),
+                                'label' => 'Continuous Feedback',
+                                'icon' => 'edit',
+                                'active' => request()->routeIs('web.performance.continuous-feedback'),
+                            ])
+                        @endif
+                        @if ($user->canSeeMenu('performance.praise'))
+                            @include('layouts.partials.sidebar-link', [
+                                'href' => route('web.performance.praise-recognition'),
+                                'label' => 'Praise & Recognition',
+                                'icon' => 'moments',
+                                'active' => request()->routeIs('web.performance.praise-recognition'),
+                            ])
+                        @endif
+                        @if ($user->canSeeMenu('experience.social_wall'))
+                            @include('layouts.partials.sidebar-link', [
+                                'href' => route('web.employee-experience.social-wall'),
+                                'label' => 'Social Wall',
+                                'icon' => 'moments',
+                                'active' => request()->routeIs('web.employee-experience.social-wall'),
+                            ])
+                        @endif
+                        @if ($user->canSeeMenu('experience.polls'))
+                            @include('layouts.partials.sidebar-link', [
+                                'href' => route('web.employee-experience.polls-announcements'),
+                                'label' => 'Polls and Announcements',
+                                'icon' => 'edit',
+                                'active' => request()->routeIs('web.employee-experience.polls-announcements'),
+                            ])
+                        @endif
+                        @if ($user->canSeeMenu('experience.public_praise'))
+                            @include('layouts.partials.sidebar-link', [
+                                'href' => route('web.employee-experience.public-praise'),
+                                'label' => 'Public Praise',
+                                'icon' => 'moments',
+                                'active' => request()->routeIs('web.employee-experience.public-praise'),
+                            ])
+                        @endif
+                        @if ($user->canSeeMenu('performance.one_on_one'))
+                            @include('layouts.partials.sidebar-link', [
+                                'href' => route('web.performance.one-on-one'),
+                                'label' => 'One-on-one Meetings',
+                                'icon' => 'users',
+                                'active' => request()->routeIs('web.performance.one-on-one'),
+                            ])
+                        @endif
+                        @if ($user->canSeeMenu('performance.review_cycles'))
+                            @include('layouts.partials.sidebar-link', [
+                                'href' => route('web.performance.review-cycles'),
+                                'label' => 'Review Cycles',
+                                'icon' => 'performance',
+                                'active' => request()->routeIs('web.performance.review-cycles'),
+                            ])
+                        @endif
+                        @if ($user->canSeeMenu('performance.reviews'))
+                            @include('layouts.partials.sidebar-link', [
+                                'href' => route('web.performance.reviews'),
+                                'label' => 'Performance Reviews',
+                                'icon' => 'documents',
+                                'active' => request()->routeIs('web.performance.reviews', 'web.performance.overview'),
+                            ])
+                        @endif
+                        @if ($user->canSeeMenu('performance.calibration'))
+                            @include('layouts.partials.sidebar-link', [
+                                'href' => route('web.performance.calibration'),
+                                'label' => 'Performance Calibration',
+                                'icon' => 'performance',
+                                'active' => request()->routeIs('web.performance.calibration'),
+                            ])
+                        @endif
+                        @if ($user->canSeeMenu('performance.insights'))
+                            @include('layouts.partials.sidebar-link', [
+                                'href' => route('web.performance.insights'),
+                                'label' => 'Performance Insights',
+                                'icon' => 'analytics',
+                                'active' => request()->routeIs('web.performance.insights'),
+                            ])
+                        @endif
+                        @if ($user->canSeeMenu('performance.promotions'))
+                            @include('layouts.partials.sidebar-link', [
+                                'href' => route('web.performance.promotions'),
+                                'label' => 'Promotions',
+                                'icon' => 'employees',
+                                'active' => request()->routeIs('web.performance.promotions'),
+                            ])
+                        @endif
+                        @if ($user->canSeeMenu('performance.compensation'))
+                            @include('layouts.partials.sidebar-link', [
+                                'href' => route('web.performance.compensation'),
+                                'label' => 'Basic Compensation Plans',
+                                'icon' => 'payroll',
+                                'active' => request()->routeIs('web.performance.compensation'),
+                            ])
+                        @endif
+                        @if ($user->canSeeMenu('performance.pip'))
+                            @include('layouts.partials.sidebar-link', [
+                                'href' => route('web.performance.pip'),
+                                'label' => 'Performance Improvement Plan',
+                                'icon' => 'performance',
+                                'active' => request()->routeIs('web.performance.pip'),
+                            ])
+                        @endif
+                    @endcomponent
+                @endif
+
+                @if ($user->canSeeMenuSection($coreHrKeys))
+                    @component('layouts.partials.sidebar-group', [
+                        'id' => 'sidebarCoreHrMenu',
+                        'label' => 'Core HR',
+                        'icon' => 'documents',
+                        'open' => $isCoreHrOpen,
+                    ])
+                        @if ($user->canSeeMenu('masters.departments'))
+                            @include('layouts.partials.sidebar-link', [
+                                'href' => route('web.masters.departments.index'),
+                                'label' => 'Departments',
+                                'icon' => 'departments',
+                                'active' => request()->routeIs('web.masters.departments.*'),
+                            ])
+                        @endif
+                        @if ($user->canSeeMenu('masters.shifts'))
+                            @include('layouts.partials.sidebar-link', [
+                                'href' => route('web.masters.shifts.index'),
+                                'label' => 'Shifts',
+                                'icon' => 'clock',
+                                'active' => request()->routeIs('web.masters.shifts.*'),
+                            ])
+                        @endif
+                        @if ($user->canSeeMenu('masters.roles'))
+                            @include('layouts.partials.sidebar-link', [
+                                'href' => route('web.masters.roles.index'),
+                                'label' => 'Roles',
+                                'icon' => 'roles',
+                                'active' => request()->routeIs('web.masters.roles.*'),
+                            ])
+                        @endif
+                        @if ($user->canSeeMenu('core_hr.documents_letters'))
+                            @include('layouts.partials.sidebar-link', [
+                                'href' => route('web.documents-letters.index'),
+                                'label' => 'Documents & Letters',
+                                'icon' => 'documents',
+                                'active' => request()->routeIs('web.documents-letters.*'),
+                            ])
+                        @endif
+                    @endcomponent
+                @endif
+
+                @if ($user->canSeeMenuSection($payrollKeys))
+                    @component('layouts.partials.sidebar-group', [
+                        'id' => 'sidebarPayrollMenu',
+                        'label' => 'Payroll',
+                        'icon' => 'payroll',
+                        'open' => $isPayrollOpen,
+                    ])
+                        @if ($user->canSeeMenu('payroll.manage'))
+                            @include('layouts.partials.sidebar-link', [
+                                'href' => route('web.payroll.index'),
+                                'label' => 'Payroll',
+                                'icon' => 'payroll',
+                                'active' => request()->routeIs('web.payroll.index'),
+                            ])
+                            @include('layouts.partials.sidebar-link', [
+                                'href' => route('web.payroll.settings'),
+                                'label' => 'Payroll Settings',
+                                'icon' => 'payroll',
+                                'active' => request()->routeIs('web.payroll.settings'),
+                            ])
+                        @endif
+                        @if ($user->canSeeMenu('payroll.payslips'))
+                            @include('layouts.partials.sidebar-link', [
+                                'href' => route('web.payroll.my-payslips'),
+                                'label' => 'My Payslips',
+                                'icon' => 'payslip',
+                                'active' => request()->routeIs('web.payroll.my-payslips'),
+                            ])
+                        @endif
+                    @endcomponent
+                @endif
+
+                @if ($user->canSeeMenuSection($hiringKeys))
+                    @component('layouts.partials.sidebar-group', [
+                        'id' => 'sidebarHiringMenu',
+                        'label' => 'Hiring',
+                        'icon' => 'hiring',
+                        'open' => $isHiringOpen,
+                    ])
+                        @if ($user->canSeeMenu('hiring.careers'))
+                            @include('layouts.partials.sidebar-link', [
+                                'href' => route('web.hiring.careers'),
+                                'label' => 'Careers Page',
+                                'icon' => 'globe',
+                                'active' => request()->routeIs('web.hiring.careers'),
+                            ])
+                        @endif
+                        @if ($user->canSeeMenu('hiring.jobs'))
+                            @include('layouts.partials.sidebar-link', [
+                                'href' => route('web.hiring.jobs'),
+                                'label' => 'Jobs',
+                                'icon' => 'briefcase',
+                                'active' => request()->routeIs('web.hiring.jobs'),
+                            ])
+                        @endif
+                        @if ($user->canSeeMenu('hiring.candidates'))
+                            @include('layouts.partials.sidebar-link', [
+                                'href' => route('web.hiring.candidates'),
+                                'label' => 'Candidates',
+                                'icon' => 'employees',
+                                'active' => request()->routeIs('web.hiring.candidates'),
+                            ])
+                        @endif
+                        @if ($user->canSeeMenu('hiring'))
+                            @include('layouts.partials.sidebar-link', [
+                                'href' => route('web.hiring.overview'),
+                                'label' => 'Overview',
+                                'icon' => 'documents',
+                                'active' => request()->routeIs('web.hiring.overview'),
+                            ])
+                        @endif
+                        @if ($user->canSeeMenu('hiring.offers'))
+                            @include('layouts.partials.sidebar-link', [
+                                'href' => route('web.hiring.offers'),
+                                'label' => 'Offers',
+                                'icon' => 'employees',
+                                'active' => request()->routeIs('web.hiring.offers'),
+                            ])
+                        @endif
+                        @if ($user->canSeeMenu('hiring.templates'))
+                            @include('layouts.partials.sidebar-link', [
+                                'href' => route('web.hiring.templates'),
+                                'label' => 'Templates',
+                                'icon' => 'documents',
+                                'active' => request()->routeIs('web.hiring.templates'),
+                            ])
+                        @endif
+                        @if ($user->canSeeMenu('hiring.interviews'))
+                            @include('layouts.partials.sidebar-link', [
+                                'href' => route('web.hiring.interviews'),
+                                'label' => 'Interviews',
+                                'icon' => 'calendar',
+                                'active' => request()->routeIs('web.hiring.interviews'),
+                            ])
+                        @endif
+                    @endcomponent
+                @endif
+
+                @if ($user->canSeeMenuSection($documentsKeys))
+                    @component('layouts.partials.sidebar-group', [
+                        'id' => 'sidebarDocumentsMenu',
+                        'label' => 'Documents',
+                        'icon' => 'documents',
+                        'open' => $isDocumentsOpen,
+                    ])
+                        @if ($user->canSeeMenu('masters.documents'))
+                            @include('layouts.partials.sidebar-link', [
+                                'href' => route('web.masters.documents.index'),
+                                'label' => 'Document Types',
+                                'icon' => 'documents',
+                                'active' => request()->routeIs('web.masters.documents.*'),
+                            ])
+                        @endif
+                        @if ($user->canSeeMenu('masters.assets'))
+                            @include('layouts.partials.sidebar-link', [
+                                'href' => route('web.masters.assets.index'),
+                                'label' => 'Asset Types',
+                                'icon' => 'assets',
+                                'active' => request()->routeIs('web.masters.assets.*'),
+                            ])
+                        @endif
+                    @endcomponent
+                @endif
+
+                @if ($user->canSeeMenuSection($projectsKeys))
+                    @component('layouts.partials.sidebar-group', [
+                        'id' => 'sidebarProjectsMenu',
+                        'label' => 'Projects & Time',
+                        'icon' => 'projects',
+                        'open' => $isProjectsOpen,
+                    ])
+                        @if ($user->canSeeMenu('projects'))
+                            @include('layouts.partials.sidebar-link', [
+                                'href' => route('web.projects.index'),
+                                'label' => 'Projects',
+                                'icon' => 'projects',
+                                'active' => request()->routeIs('web.projects.*'),
+                            ])
+                        @endif
+                        @if ($user->canSeeMenu('timesheets'))
+                            @include('layouts.partials.sidebar-link', [
+                                'href' => route('web.timesheets.index'),
+                                'label' => 'Timesheets',
+                                'icon' => 'timesheet',
+                                'active' => request()->routeIs('web.timesheets.*'),
+                            ])
+                        @endif
+                    @endcomponent
+                @endif
+
+                @if ($user->canSeeMenu('expenses'))
+                    @include('layouts.partials.sidebar-link', [
+                        'href' => route('web.expenses.index'),
+                        'label' => 'Expenses',
+                        'icon' => 'expense',
+                        'active' => request()->routeIs('web.expenses.*'),
+                    ])
+                @endif
+
+                @if ($user->canSeeMenuSection($analyticsKeys))
+                    @component('layouts.partials.sidebar-group', [
+                        'id' => 'sidebarAnalyticsMenu',
+                        'label' => 'Analytics',
+                        'icon' => 'analytics',
+                        'open' => $isAnalyticsOpen,
+                    ])
+                        @if ($user->canSeeMenu('analytics.leave') || $user->canSeeMenu('analytics.leave_balances'))
+                            @include('layouts.partials.sidebar-link', [
+                                'href' => route('web.analytics.section', ['section' => 'leave']),
+                                'label' => 'Leave',
+                                'icon' => 'leave',
+                                'active' => $analyticsActiveSection === 'leave',
+                            ])
+                        @endif
+                        @if ($user->canSeeMenu('analytics.attendance'))
+                            @include('layouts.partials.sidebar-link', [
+                                'href' => route('web.analytics.section', ['section' => 'attendance']),
+                                'label' => 'Attendance',
+                                'icon' => 'attendance',
+                                'active' => $analyticsActiveSection === 'attendance',
+                            ])
+                        @endif
+                        @if ($user->canSeeMenu('analytics.people'))
+                            @include('layouts.partials.sidebar-link', [
+                                'href' => route('web.analytics.section', ['section' => 'people']),
+                                'label' => 'People',
+                                'icon' => 'people',
+                                'active' => $analyticsActiveSection === 'people',
+                            ])
+                        @endif
+                        @if ($user->canSeeMenu('analytics.expense'))
+                            @include('layouts.partials.sidebar-link', [
+                                'href' => route('web.analytics.section', ['section' => 'expense']),
+                                'label' => 'Expense',
+                                'icon' => 'expense',
+                                'active' => $analyticsActiveSection === 'expense',
+                            ])
+                        @endif
+                        @if ($user->canSeeMenu('analytics.hiring'))
+                            @include('layouts.partials.sidebar-link', [
+                                'href' => route('web.analytics.section', ['section' => 'hiring']),
+                                'label' => 'Hiring',
+                                'icon' => 'hiring',
+                                'active' => $analyticsActiveSection === 'hiring',
+                            ])
+                        @endif
+                        @if ($user->canSeeMenu('analytics.performance'))
+                            @include('layouts.partials.sidebar-link', [
+                                'href' => route('web.analytics.section', ['section' => 'performance']),
+                                'label' => 'Performance',
+                                'icon' => 'performance',
+                                'active' => $analyticsActiveSection === 'performance',
+                            ])
+                        @endif
+                    @endcomponent
+                @endif
+
+                @if ($user->canSeeMenu('reports'))
+                    @include('layouts.partials.sidebar-link', [
+                        'href' => route('web.reports.index'),
+                        'label' => 'Reports & Export',
+                        'icon' => 'reports',
+                        'active' => request()->routeIs('web.reports.*'),
+                    ])
+                @endif
+
+                @if ($user->canSeeMenuSection($companyKeys))
+                    @component('layouts.partials.sidebar-group', [
+                        'id' => 'sidebarCompanyMenu',
+                        'label' => 'Company',
+                        'icon' => 'company',
+                        'open' => $isCompanyOpen,
+                    ])
+                        @if ($user->canSeeMenu('masters.departments'))
+                            @include('layouts.partials.sidebar-link', [
+                                'href' => route('web.masters.departments.index'),
+                                'label' => 'Departments',
+                                'icon' => 'building',
+                                'active' => request()->routeIs('web.masters.departments.*'),
+                            ])
+                        @endif
+                        @if ($user->canSeeMenu('masters.shifts'))
+                            @include('layouts.partials.sidebar-link', [
+                                'href' => route('web.masters.shifts.index'),
+                                'label' => 'Shifts',
+                                'icon' => 'shift',
+                                'active' => request()->routeIs('web.masters.shifts.*'),
+                            ])
+                        @endif
+                        @if ($user->canSeeMenu('masters.roles'))
+                            @include('layouts.partials.sidebar-link', [
+                                'href' => route('web.masters.roles.index'),
+                                'label' => 'Manage Roles',
+                                'icon' => 'roles',
+                                'active' => request()->routeIs('web.masters.roles.*'),
+                            ])
+                        @endif
+                        @if ($user->canSeeMenu('activity_logs'))
+                            @include('layouts.partials.sidebar-link', [
+                                'href' => route('web.activity-logs.index'),
+                                'label' => 'Activity Logs',
+                                'icon' => 'logs',
+                                'active' => request()->routeIs('web.activity-logs.*'),
+                            ])
+                        @endif
+                    @endcomponent
+                @endif
+            @endif
+
+            @if ($user->isSuperAdmin())
+                @include('layouts.partials.sidebar-link', [
+                    'href' => route('web.dashboard'),
+                    'label' => 'Dashboard',
+                    'icon' => 'dashboard',
+                    'active' => request()->routeIs('web.dashboard'),
+                ])
+                @include('layouts.partials.sidebar-link', [
+                    'href' => route('web.companies.index'),
+                    'label' => 'Companies',
+                    'icon' => 'companies',
+                    'active' => request()->routeIs('web.companies.*'),
+                ])
+            @endif
+        </ul>
+    </nav>
+</aside>
