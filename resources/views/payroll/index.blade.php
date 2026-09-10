@@ -17,7 +17,7 @@
     <div class="content-card mb-4">
         <div class="content-card-body">
             <h2 class="h6 mb-3">Generate Payroll</h2>
-            <p class="small text-muted mb-3">Payroll includes everyone who worked in the selected month, including people who were later offboarded. New joiners appear only from their joining month. People leaving in that month are paid under offboard payroll instead. If a period was generated with the wrong people, use Regenerate Payroll.</p>
+            <p class="small text-muted mb-3">Payroll includes everyone who worked in the selected month, including offboarded employees who still had working days or attendance. New joiners appear only from their joining month. If an Offboard slip already exists for that month, that person is not added again. If a period was generated with the wrong people, use Regenerate Payroll.</p>
             <form id="payrollGenerateForm" class="row g-3 align-items-end">
                 <div class="col-md-3">
                     <label for="payrollYear" class="form-label">Year</label>

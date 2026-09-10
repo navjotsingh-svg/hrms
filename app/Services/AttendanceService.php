@@ -489,10 +489,11 @@ class AttendanceService
             }
         }
 
-        if ($employee->last_working_date) {
-            $lastWorkingDate = $employee->last_working_date->toDateString();
+        // Stop pay on last working date, or inactivation date when LWD is blank.
+        $employmentEndDate = $this->employmentEndDate($employee);
 
-            if ($lastWorkingDate < $periodStart) {
+        if ($employmentEndDate) {
+            if ($employmentEndDate < $periodStart) {
                 return [
                     'month_days' => $daysInMonth,
                     'payable_days' => 0.0,
@@ -501,8 +502,8 @@ class AttendanceService
                 ];
             }
 
-            if ($lastWorkingDate < $periodEnd) {
-                $periodEnd = $lastWorkingDate;
+            if ($employmentEndDate < $periodEnd) {
+                $periodEnd = $employmentEndDate;
             }
         }
 

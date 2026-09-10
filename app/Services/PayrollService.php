@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Models\AttendancePunch;
 use App\Models\Employee;
 use App\Models\EmployeePaymentMethod;
 use App\Models\ExitCase;
@@ -342,53 +343,74 @@ class PayrollService
     }
 
     /**
-     * Regular payroll includes anyone who actually worked that month:
-     * still-active staff, later offboarded staff, and excludes people
-     * who had not joined yet or whose last working date is that month.
+     * Regular payroll includes anyone who worked that month: active staff,
+     * later offboarded staff, and leavers whose last working date falls in
+     * the month. People already paid on an Offboard slip for this month are skipped.
      *
-     * @return \Illuminate\Support\Collection<int, Employee>
+     * @return SupportCollection<int, Employee>
      */
     private function employeesEligibleForRegularPayroll(int $companyId, int $year, int $month): SupportCollection
     {
         $periodStart = Carbon::create($year, $month, 1)->startOfDay();
         $periodEnd = $periodStart->copy()->endOfMonth();
 
+        $alreadyPaidOffboardIds = PayrollPeriod::query()
+            ->where('company_id', $companyId)
+            ->where('type', PayrollPeriod::TYPE_OFFBOARD)
+            ->where('year', $year)
+            ->where('month', $month)
+            ->pluck('employee_id')
+            ->filter()
+            ->unique()
+            ->values();
+
+        $employeeIdsWithAttendance = AttendancePunch::query()
+            ->where('company_id', $companyId)
+            ->whereBetween('punched_at', [$periodStart, $periodEnd->copy()->endOfDay()])
+            ->pluck('employee_id')
+            ->unique();
+
         return Employee::query()
             ->where('company_id', $companyId)
             ->whereIn('status', ['active', 'inactive'])
             ->where('is_paid_employee', true)
             ->whereHas('salary')
+            ->when(
+                $alreadyPaidOffboardIds->isNotEmpty(),
+                fn ($query) => $query->whereNotIn('id', $alreadyPaidOffboardIds),
+            )
             ->with(['salary', 'department', 'departments', 'company'])
             ->orderedByName()
             ->get()
-            ->filter(fn (Employee $employee) => $this->isEligibleForRegularPayroll($employee, $periodStart, $periodEnd))
+            ->filter(fn (Employee $employee) => $this->isEligibleForRegularPayroll(
+                $employee,
+                $periodStart,
+                $periodEnd,
+                $employeeIdsWithAttendance->contains($employee->id),
+            ))
             ->values();
     }
 
-    private function isEligibleForRegularPayroll(Employee $employee, Carbon $periodStart, Carbon $periodEnd): bool
-    {
-        if ($employee->joining_date && $employee->joining_date->gt($periodEnd)) {
+    private function isEligibleForRegularPayroll(
+        Employee $employee,
+        Carbon $periodStart,
+        Carbon $periodEnd,
+        bool $hasAttendance = false,
+    ): bool {
+        if ($employee->joining_date && $employee->joining_date->gt($periodEnd) && ! $hasAttendance) {
             return false;
         }
 
         $payoutFrom = $employee->salary?->salary_payout_from
             ?? $employee->salary?->salary_effective_from;
 
-        if ($payoutFrom && Carbon::parse($payoutFrom)->gt($periodEnd)) {
+        if ($payoutFrom && Carbon::parse($payoutFrom)->gt($periodEnd) && ! $hasAttendance) {
             return false;
         }
 
         $lastWorkingDate = $this->resolveEffectiveLastWorkingDate($employee);
 
-        if ($lastWorkingDate && $lastWorkingDate->lt($periodStart)) {
-            return false;
-        }
-
-        if (
-            $lastWorkingDate
-            && (int) $lastWorkingDate->year === (int) $periodStart->year
-            && (int) $lastWorkingDate->month === (int) $periodStart->month
-        ) {
+        if ($lastWorkingDate && $lastWorkingDate->lt($periodStart) && ! $hasAttendance) {
             return false;
         }
 
