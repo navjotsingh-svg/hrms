@@ -6,7 +6,7 @@
     <div class="d-flex flex-wrap align-items-center justify-content-between gap-2">
         <div>
             <h1 class="page-title mb-1">Payroll</h1>
-            <p class="page-subtitle mb-0">Generate monthly payroll and process final settlement for offboarded employees.</p>
+            <p class="page-subtitle mb-0">Generate monthly payroll. Offboarded employees are included for any month they still worked.</p>
         </div>
     </div>
 @endsection
@@ -17,7 +17,7 @@
     <div class="content-card mb-4">
         <div class="content-card-body">
             <h2 class="h6 mb-3">Generate Payroll</h2>
-            <p class="small text-muted mb-3">Payroll includes everyone who worked in the selected month, including offboarded employees who still had working days or attendance. New joiners appear only from their joining month. If an Offboard slip already exists for that month, that person is not added again. If a period was generated with the wrong people, use Regenerate Payroll.</p>
+            <p class="small text-muted mb-3">Payroll includes everyone who worked in the selected month, including offboarded employees. Their pay stops on last working date (or the inactivation date if last working date is blank). New joiners appear only from their joining month. If a period was generated with the wrong people, use Regenerate Payroll.</p>
             <form id="payrollGenerateForm" class="row g-3 align-items-end">
                 <div class="col-md-3">
                     <label for="payrollYear" class="form-label">Year</label>
@@ -30,26 +30,6 @@
                 <div class="col-md-6 d-flex flex-wrap gap-2">
                     <button type="submit" class="btn btn-primary" id="payrollGenerateBtn">Generate Payroll</button>
                     <button type="button" class="btn btn-outline-warning" id="payrollRegenerateBtn">Regenerate Payroll</button>
-                </div>
-            </form>
-        </div>
-    </div>
-
-    <div class="content-card mb-4">
-        <div class="content-card-body">
-            <h2 class="h6 mb-3">Pay Offboard Employee</h2>
-            <p class="small text-muted mb-3">Generate the final payslip for the exit month only. Earlier months stay on the regular period — select that month below to view the slip. After offboard payroll is generated, choose the <strong>Offboard</strong> period to view, download, or export the final slip.</p>
-            <form id="payrollOffboardForm" class="row g-3 align-items-end">
-                <div class="col-md-6">
-                    <label for="payrollOffboardEmployee" class="form-label">Offboarded employee</label>
-                    <select class="form-select" id="payrollOffboardEmployee" required>
-                        <option value="">Loading eligible employees...</option>
-                    </select>
-                    <div id="payrollOffboardHint" class="form-text">Employees with salary and a last working date appear here until their offboard payslip exists.</div>
-                </div>
-                <div class="col-md-6 d-flex flex-wrap gap-2">
-                    <button type="submit" class="btn btn-primary" id="payrollOffboardGenerateBtn">Generate Offboard Payroll</button>
-                    <button type="button" class="btn btn-outline-secondary" id="payrollOffboardRefreshBtn">Refresh List</button>
                 </div>
             </form>
         </div>

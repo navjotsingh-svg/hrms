@@ -11,7 +11,6 @@ use App\Models\PayrollPeriod;
 use App\Models\Payslip;
 use App\Models\User;
 use Illuminate\Database\Eloquent\Collection;
-use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection as SupportCollection;
 use Illuminate\Support\Facades\DB;
@@ -143,99 +142,9 @@ class PayrollService
 
     public function generateOffboard(int $companyId, int $employeeId, User $user): PayrollPeriod
     {
-        $employee = Employee::query()
-            ->where('company_id', $companyId)
-            ->where('id', $employeeId)
-            ->with(['salary', 'department', 'departments', 'company'])
-            ->first();
-
-        if (! $employee) {
-            throw new NotFoundHttpException('Employee not found.');
-        }
-
-        if (! $employee->is_paid_employee || ! $employee->salary) {
-            throw new UnprocessableEntityHttpException('This employee does not have salary details configured for payroll.');
-        }
-
-        $exitCase = ExitCase::query()
-            ->with('fullAndFinalSettlement')
-            ->where('company_id', $companyId)
-            ->where('employee_id', $employeeId)
-            ->whereIn('status', [ExitCase::STATUS_IN_PROGRESS, ExitCase::STATUS_COMPLETED])
-            ->latest('id')
-            ->first();
-
-        $lastWorkingDate = $exitCase?->last_working_date
-            ? Carbon::parse($exitCase->last_working_date)
-            : $this->resolveEffectiveLastWorkingDate($employee);
-
-        if (! $lastWorkingDate) {
-            throw new UnprocessableEntityHttpException('This employee does not have a last working date from offboarding.');
-        }
-
-        $existing = PayrollPeriod::query()
-            ->where('company_id', $companyId)
-            ->where('type', PayrollPeriod::TYPE_OFFBOARD)
-            ->where(function ($query) use ($exitCase, $employeeId) {
-                $query->where('employee_id', $employeeId);
-
-                if ($exitCase) {
-                    $query->orWhere('exit_case_id', $exitCase->id);
-                }
-            })
-            ->first();
-
-        if ($existing) {
-            throw new UnprocessableEntityHttpException('Offboard payroll has already been generated for this employee. Select the Offboard period below to view or export the payslip.');
-        }
-
-        if (! $employee->last_working_date) {
-            $employee->last_working_date = $lastWorkingDate->toDateString();
-            $employee->save();
-        }
-
-        $year = (int) $lastWorkingDate->year;
-        $month = (int) $lastWorkingDate->month;
-
-        $this->assertPeriodWithinPortalStart($companyId, $year, $month);
-
-        try {
-            return DB::transaction(function () use ($companyId, $year, $month, $user, $employee, $exitCase) {
-                $period = PayrollPeriod::create([
-                    'company_id' => $companyId,
-                    'year' => $year,
-                    'month' => $month,
-                    'type' => PayrollPeriod::TYPE_OFFBOARD,
-                    'employee_id' => $employee->id,
-                    'exit_case_id' => $exitCase?->id,
-                    'status' => PayrollPeriod::STATUS_PROCESSED,
-                    'processed_by_user_id' => $user->id,
-                    'processed_at' => now(),
-                ]);
-
-                $payload = $exitCase
-                    ? $this->buildOffboardPayslipPayload($employee, $exitCase, $year, $month)
-                    : $this->buildPayslipPayload($employee, $year, $month);
-
-                Payslip::create([
-                    'payroll_period_id' => $period->id,
-                    ...$payload,
-                ]);
-
-                if ($exitCase?->fullAndFinalSettlement) {
-                    $exitCase->fullAndFinalSettlement->update([
-                        'payroll_period_id' => $period->id,
-                    ]);
-                }
-
-                return $period->load(['processedBy', 'employee'])->loadCount('payslips');
-            });
-        } catch (UniqueConstraintViolationException $exception) {
-            throw new UnprocessableEntityHttpException(
-                'Offboard payroll has already been generated for this employee. Select the Offboard period below to view or export the payslip.',
-                $exception
-            );
-        }
+        throw new UnprocessableEntityHttpException(
+            'Offboarded employees are paid on the regular monthly payroll for any month they worked. Generate or regenerate that month instead.'
+        );
     }
 
     public function listPayslipsForPeriod(PayrollPeriod $period, ?int $employeeId = null): Collection
@@ -311,6 +220,7 @@ class PayrollService
     private function createPayrollPeriod(int $companyId, int $year, int $month, User $user): PayrollPeriod
     {
         $this->assertPeriodWithinPortalStart($companyId, $year, $month);
+        $this->discardUnpaidOffboardPeriodsForMonth($companyId, $year, $month);
 
         $employees = $this->employeesEligibleForRegularPayroll($companyId, $year, $month);
 
@@ -342,10 +252,30 @@ class PayrollService
         });
     }
 
+    private function discardUnpaidOffboardPeriodsForMonth(int $companyId, int $year, int $month): void
+    {
+        $periods = PayrollPeriod::query()
+            ->where('company_id', $companyId)
+            ->where('year', $year)
+            ->where('month', $month)
+            ->where('type', PayrollPeriod::TYPE_OFFBOARD)
+            ->where('status', '!=', PayrollPeriod::STATUS_PAID)
+            ->get();
+
+        foreach ($periods as $period) {
+            FullAndFinalSettlement::query()
+                ->where('payroll_period_id', $period->id)
+                ->update(['payroll_period_id' => null]);
+
+            $period->delete();
+        }
+    }
+
     /**
      * Regular payroll includes anyone who worked that month: active staff,
      * later offboarded staff, and leavers whose last working date falls in
-     * the month. People already paid on an Offboard slip for this month are skipped.
+     * the month. Pay is capped at last working date (or inactivation date).
+     * People already paid on a leftover Offboard slip for this month are skipped.
      *
      * @return SupportCollection<int, Employee>
      */
@@ -359,6 +289,7 @@ class PayrollService
             ->where('type', PayrollPeriod::TYPE_OFFBOARD)
             ->where('year', $year)
             ->where('month', $month)
+            ->where('status', PayrollPeriod::STATUS_PAID)
             ->pluck('employee_id')
             ->filter()
             ->unique()
