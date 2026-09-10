@@ -49,7 +49,7 @@ const statusClass = (status, awaitingPunchOut = false) => {
         return 'attendance-day--weekly-off';
     }
 
-    if (status === 'before_portal') {
+    if (status === 'before_portal' || status === 'after_exit') {
         return 'attendance-day--blank';
     }
 
@@ -153,7 +153,7 @@ const renderJoiningMarker = (dayData) => {
 const renderDayPunchTimes = (dayData) => {
     const joiningMarker = renderJoiningMarker(dayData);
 
-    if (dayData.status === 'before_portal' || dayData.status === 'future') {
+    if (dayData.status === 'before_portal' || dayData.status === 'after_exit' || dayData.status === 'future') {
         return joiningMarker
             ? `<div class="attendance-day-content">${joiningMarker}</div>`
             : '';
@@ -254,11 +254,15 @@ document.addEventListener('DOMContentLoaded', async () => {
         return employeeAutocomplete?.getSelectedId?.() || null;
     };
 
-    const employeeOption = (employee) => ({
-        id: employee.id,
-        label: formatEmployeeLabel(employee),
-        employee,
-    });
+    const employeeOption = (employee) => {
+        const inactive = employee.status === 'inactive' ? ' · Inactive' : '';
+
+        return {
+            id: employee.id,
+            label: `${formatEmployeeLabel(employee)}${inactive}`,
+            employee,
+        };
+    };
 
     const findEmployeeById = (employeeId) => {
         if (!employeeId) {
@@ -392,7 +396,13 @@ document.addEventListener('DOMContentLoaded', async () => {
                     return filterLocalEmployees(term);
                 }
 
-                return searchEmployees(term);
+                const items = await searchEmployees(term, {
+                    employed_month: currentMonth,
+                    status: 'all',
+                    per_page: 50,
+                });
+
+                return items.map((item) => employeeOption(item.employee || item));
             },
             onSelect: () => {
                 loadCalendar();
@@ -400,25 +410,51 @@ document.addEventListener('DOMContentLoaded', async () => {
         });
     };
 
+    const applyTeamEmployeesFromCapabilities = () => {
+        employees = [...(capabilities.team_employees || [])];
+
+        if (capabilities.self_employee_id) {
+            const selfAlreadyListed = employees.some(
+                (employee) => Number(employee.id) === Number(capabilities.self_employee_id),
+            );
+
+            if (!selfAlreadyListed) {
+                employees.unshift({
+                    id: Number(capabilities.self_employee_id),
+                    full_name: 'My Attendance',
+                    employee_code: '',
+                });
+            }
+        }
+    };
+
+    const loadEmployeesForMonth = async () => {
+        if (!capabilities.can_view_all) {
+            if (capabilities.can_view_team) {
+                applyTeamEmployeesFromCapabilities();
+            }
+
+            return;
+        }
+
+        try {
+            const { data } = await api.get('/employees', {
+                params: {
+                    per_page: 500,
+                    status: 'all',
+                    employed_month: currentMonth,
+                },
+            });
+            employees = data.data.employees || [];
+        } catch (error) {
+            console.error(getErrorMessage(error));
+        }
+    };
+
     const loadFilters = async () => {
         if (!capabilities.can_view_all) {
             if (capabilities.can_view_team && filterEmployeeInput) {
-                employees = [...(capabilities.team_employees || [])];
-
-                if (capabilities.self_employee_id) {
-                    const selfAlreadyListed = employees.some(
-                        (employee) => Number(employee.id) === Number(capabilities.self_employee_id),
-                    );
-
-                    if (!selfAlreadyListed) {
-                        employees.unshift({
-                            id: Number(capabilities.self_employee_id),
-                            full_name: 'My Attendance',
-                            employee_code: '',
-                        });
-                    }
-                }
-
+                applyTeamEmployeesFromCapabilities();
                 initEmployeeFilter();
                 ensureEmployeeSelection();
             }
@@ -426,15 +462,9 @@ document.addEventListener('DOMContentLoaded', async () => {
             return;
         }
 
-        try {
-            const { data } = await api.get('/employees', { params: { per_page: 100, status: 'active' } });
-            employees = data.data.employees || [];
-
-            initEmployeeFilter();
-            ensureEmployeeSelection();
-        } catch (error) {
-            console.error(getErrorMessage(error));
-        }
+        await loadEmployeesForMonth();
+        initEmployeeFilter();
+        ensureEmployeeSelection();
     };
 
     const filteredEmployees = () => {
@@ -559,10 +589,10 @@ document.addEventListener('DOMContentLoaded', async () => {
 
             const dayNumberClass = dayData.is_today ? 'attendance-day-number attendance-day-number--today' : 'attendance-day-number';
 
-            if (dayData.status === 'before_portal') {
+            if (dayData.status === 'before_portal' || dayData.status === 'after_exit') {
                 const dayContent = renderDayPunchTimes(dayData);
                 cells.push(`
-                    <td class="attendance-day attendance-day--blank${dayData.is_joining_date ? ' attendance-day--joining' : ''}" data-date="${date}" title="${dayData.is_joining_date ? 'Joining date' : 'Before attendance tracking'}">
+                    <td class="attendance-day attendance-day--blank${dayData.is_joining_date ? ' attendance-day--joining' : ''}" data-date="${date}" title="${dayData.status === 'after_exit' ? 'After last working date' : (dayData.is_joining_date ? 'Joining date' : 'Before attendance tracking')}">
                         <span class="${dayNumberClass}">${day}</span>
                         ${dayContent}
                     </td>
@@ -588,6 +618,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                 : `${dayData.status_label || dayData.status}${approverNote}${joiningNote} · ${dayData.worked_hours_label} / ${dayData.required_hours_label}`;
             const dayContent = renderDayPunchTimes(dayData);
             const isInteractive = dayData.status !== 'before_portal'
+                && dayData.status !== 'after_exit'
                 && (dayData.status === 'on_leave' || dayData.status === 'wfh' || dayData.status === 'holiday' || !dayData.is_future);
 
             if (isInteractive) {
@@ -647,6 +678,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
         try {
             if (capabilities.can_view_all || capabilities.can_view_team) {
+                await loadEmployeesForMonth();
                 ensureEmployeeSelection();
             }
 
@@ -666,6 +698,10 @@ document.addEventListener('DOMContentLoaded', async () => {
             const { data } = await api.get('/attendance/calendar', { params });
             const payload = data.data;
             capabilities = payload.capabilities || capabilities;
+
+            if (!capabilities.can_view_all && capabilities.can_view_team) {
+                applyTeamEmployeesFromCapabilities();
+            }
             const subtitle = document.getElementById('attendanceSubtitle');
 
             if (subtitle) {
@@ -771,6 +807,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                 ? null
                 : payload.day_message
                 || (payload.status === 'before_portal' ? 'Attendance tracking had not started on this date.' : null)
+                || (payload.status === 'after_exit' ? 'After last working date.' : null)
                 || (payload.status === 'weekly_off' ? 'Weekly off day.' : null)
                 || (payload.status === 'regularization_pending' ? 'Regularization request is pending approval.' : null)
                 || (payload.status === 'on_leave' ? 'Approved leave for this day.' : null)
@@ -910,7 +947,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     });
 
     try {
-        const statusResponse = await api.get('/attendance/status');
+        const statusResponse = await api.get('/attendance/status', { params: { month: currentMonth } });
         capabilities = statusResponse.data.data.capabilities || capabilities;
     } catch (error) {
         console.error(getErrorMessage(error));

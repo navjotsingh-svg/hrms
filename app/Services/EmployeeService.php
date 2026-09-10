@@ -12,6 +12,7 @@ use App\Models\LeaveType;
 use App\Models\Role;
 use App\Models\User;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Str;
@@ -67,8 +68,13 @@ class EmployeeService
             });
         }
 
-        if (! empty($filters['status'])) {
+        if (! empty($filters['status']) && $filters['status'] !== 'all') {
             $query->where('status', $filters['status']);
+        }
+
+        if (! empty($filters['employed_month']) && preg_match('/^\d{4}-\d{2}$/', (string) $filters['employed_month'])) {
+            $monthStart = Carbon::createFromFormat('Y-m', $filters['employed_month'])->startOfMonth();
+            $query->employedDuring($monthStart->toDateString(), $monthStart->copy()->endOfMonth()->toDateString());
         }
 
         if (! empty($filters['employee_id'])) {

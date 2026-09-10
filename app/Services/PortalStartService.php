@@ -84,17 +84,11 @@ class PortalStartService
 
     /**
      * Attendance is tracked from the company portal start date or the
-     * employee's joining date, whichever is later. The date the employee was
-     * actually given portal access does NOT delay tracking: days between the
-     * tracking start and the access grant show as absent and can be
-     * regularized.
+     * employee's joining date, whichever is later. Current portal login
+     * is not required: offboarded people keep historical punches and absents.
      */
     public function attendanceTrackingStartDate(Employee $employee): ?string
     {
-        if (! $this->hasPortalAccess($employee)) {
-            return null;
-        }
-
         $candidates = [];
 
         $companyStart = $this->portalStartDate($employee->company_id);
@@ -117,10 +111,6 @@ class PortalStartService
     public function isBeforeAttendanceTracking(Employee $employee, string $date): bool
     {
         if ($this->isBeforePortalStart($employee->company_id, $date)) {
-            return true;
-        }
-
-        if (! $this->hasPortalAccess($employee)) {
             return true;
         }
 

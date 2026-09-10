@@ -78,11 +78,11 @@ class EmployeeAccessService
     }
 
     /**
-     * Active employees in the reporting tree below the signed-in user.
+     * Employees in the reporting tree below the signed-in user.
      *
      * @return array<int>
      */
-    public function subordinateIdsForUser(User $user): array
+    public function subordinateIdsForUser(User $user, bool $activeOnly = true): array
     {
         $employee = $this->linkedEmployee($user);
 
@@ -96,10 +96,15 @@ class EmployeeAccessService
             return [];
         }
 
-        return Employee::query()
+        $query = Employee::query()
             ->where('company_id', $user->company_id)
-            ->where('status', 'active')
-            ->whereIn('id', $subordinateIds)
+            ->whereIn('id', $subordinateIds);
+
+        if ($activeOnly) {
+            $query->where('status', 'active');
+        }
+
+        return $query
             ->pluck('id')
             ->map(fn ($id) => (int) $id)
             ->values()
@@ -107,13 +112,13 @@ class EmployeeAccessService
     }
 
     /**
-     * Active subordinates plus the signed-in user's own employee record.
+     * Subordinates plus the signed-in user's own employee record.
      *
      * @return array<int>
      */
-    public function teamScopeEmployeeIds(User $user): array
+    public function teamScopeEmployeeIds(User $user, bool $activeOnly = true): array
     {
-        $ids = $this->subordinateIdsForUser($user);
+        $ids = $this->subordinateIdsForUser($user, $activeOnly);
         $employee = $this->linkedEmployee($user);
 
         if ($employee) {

@@ -38,6 +38,7 @@ const cellClass = (status, awaitingPunchOut = false) => {
         regularization_pending: 'attendance-matrix-cell attendance-matrix-cell--regularization-pending',
         incomplete: 'attendance-matrix-cell attendance-matrix-cell--incomplete',
         before_portal: 'attendance-matrix-cell attendance-matrix-cell--muted',
+        after_exit: 'attendance-matrix-cell attendance-matrix-cell--muted',
         future: 'attendance-matrix-cell attendance-matrix-cell--muted',
     }[status] || 'attendance-matrix-cell attendance-matrix-cell--muted');
 };
@@ -124,7 +125,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     const filters = () => ({
         month: currentMonth,
         department_id: departmentSelect?.value || undefined,
-        status: statusSelect?.value || 'active',
+        status: statusSelect?.value || 'all',
         search: searchInput?.value?.trim() || undefined,
         page: currentPage,
         per_page: currentPerPage,
@@ -142,8 +143,8 @@ document.addEventListener('DOMContentLoaded', async () => {
 
         if (subtitle) {
             subtitle.textContent = scope === 'team'
-                ? 'Team attendance matrix — click any day for punch details.'
-                : 'Company-wide attendance matrix — click any day for punch details.';
+                ? 'Team attendance for everyone who worked this month — click any day for punch details.'
+                : 'Company attendance for everyone who worked this month, including later offboarded staff.';
         }
     };
 
@@ -402,7 +403,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
 
         if (statusSelect) {
-            statusSelect.value = 'active';
+            statusSelect.value = 'all';
         }
 
         if (searchInput) {

@@ -6,7 +6,7 @@
     <div class="d-flex flex-wrap align-items-center justify-content-between gap-2">
         <div>
             <h1 class="page-title mb-1">Team Attendance</h1>
-            <p class="page-subtitle mb-0" id="attendanceOverviewSubtitle">Month matrix for all employees — click any day for details.</p>
+            <p class="page-subtitle mb-0" id="attendanceOverviewSubtitle">Month matrix for everyone who worked this month, including people who later left.</p>
         </div>
         <div class="d-flex flex-wrap align-items-center gap-2">
             <a href="{{ route('web.attendance.index') }}" class="btn btn-outline-secondary btn-sm">Calendar</a>
@@ -62,9 +62,9 @@
                 <div class="col-md-2">
                     <label for="attendanceOverviewStatus" class="form-label">Employee status</label>
                     <select class="form-select" id="attendanceOverviewStatus">
-                        <option value="active" selected>Active</option>
-                        <option value="inactive">Inactive</option>
-                        <option value="all">All</option>
+                        <option value="all" selected>All who worked this month</option>
+                        <option value="active">Currently active</option>
+                        <option value="inactive">Currently inactive</option>
                     </select>
                 </div>
                 <div class="col-md-4">

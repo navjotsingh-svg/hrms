@@ -188,7 +188,8 @@ class ReportsService
         $employeeQuery = Employee::query()
             ->with('department')
             ->where('company_id', $user->company_id)
-            ->where('status', 'active')
+            ->whereIn('status', ['active', 'inactive'])
+            ->employedDuring($from->toDateString(), $to->toDateString())
             ->orderedByName();
 
         if (! empty($filters['department_id'])) {

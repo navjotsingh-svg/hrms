@@ -27,10 +27,13 @@ class AttendanceController extends Controller
     public function status(Request $request): JsonResponse
     {
         $user = $request->user();
+        $validated = $request->validate([
+            'month' => ['nullable', 'date_format:Y-m'],
+        ]);
 
         return $this->success([
             ...$this->attendanceService->todayStatus($user),
-            'capabilities' => $this->capabilities($user),
+            'capabilities' => $this->capabilities($user, $validated['month'] ?? null),
         ]);
     }
 
@@ -87,7 +90,7 @@ class AttendanceController extends Controller
                 $validated['month'],
                 $validated['employee_id'] ?? null,
             ),
-            'capabilities' => $this->capabilities($request->user()),
+            'capabilities' => $this->capabilities($request->user(), $validated['month']),
         ]);
     }
 
@@ -162,7 +165,7 @@ class AttendanceController extends Controller
         );
     }
 
-    private function capabilities($user): array
+    private function capabilities($user, ?string $month = null): array
     {
         $canViewAll = $this->attendanceService->canViewAllAttendance($user);
         $canViewCompanyTeam = $this->attendanceService->canViewCompanyTeamAttendance($user);
@@ -177,7 +180,9 @@ class AttendanceController extends Controller
                 && ($user->employee || $user->canManageRegularization())
                 && app(\App\Services\AttendanceRegularizationService::class)
                     ->isEnabledForCompany((int) $user->company_id),
-            'team_employees' => ($canViewTeam || $canViewCompanyTeam) ? $this->attendanceService->teamEmployeesForUser($user) : [],
+            'team_employees' => ($canViewTeam || $canViewCompanyTeam)
+                ? $this->attendanceService->teamEmployeesForUser($user, $month)
+                : [],
             'self_employee_id' => $user->employee?->id,
             'default_view_own' => ($user->isHrManager() && ! $user->isCompanyAdmin())
                 || (

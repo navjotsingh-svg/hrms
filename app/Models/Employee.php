@@ -2,11 +2,13 @@
 
 namespace App\Models;
 
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasOne;
+use Illuminate\Support\Carbon;
 
 class Employee extends Model
 {
@@ -314,6 +316,43 @@ class Employee extends Model
             ->orderBy('first_name')
             ->orderBy('last_name')
             ->orderBy('employee_code');
+    }
+
+    /**
+     * Employees who had at least one employed day in the date range,
+     * including people who later became inactive / offboarded.
+     */
+    public function scopeEmployedDuring(Builder $query, mixed $start, mixed $end): Builder
+    {
+        $periodStart = Carbon::parse($start)->toDateString();
+        $periodEnd = Carbon::parse($end)->toDateString();
+
+        return $query
+            ->where(function (Builder $builder) use ($periodEnd) {
+                $builder
+                    ->whereNull('joining_date')
+                    ->orWhereDate('joining_date', '<=', $periodEnd);
+            })
+            ->where(function (Builder $builder) use ($periodStart) {
+                $builder
+                    ->where(function (Builder $inner) {
+                        $inner->whereNull('last_working_date')->where('status', 'active');
+                    })
+                    ->orWhere(function (Builder $inner) use ($periodStart) {
+                        $inner->whereNotNull('last_working_date')
+                            ->whereDate('last_working_date', '>=', $periodStart);
+                    })
+                    ->orWhere(function (Builder $inner) use ($periodStart) {
+                        $inner->whereNull('last_working_date')
+                            ->where('status', 'inactive')
+                            ->whereDate('updated_at', '>=', $periodStart);
+                    });
+            });
+    }
+
+    public function scopeEmployedOn(Builder $query, mixed $date): Builder
+    {
+        return $query->employedDuring($date, $date);
     }
 
     public function getFullAddressAttribute(): string

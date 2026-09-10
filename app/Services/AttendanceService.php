@@ -55,15 +55,24 @@ class AttendanceService
         return $user->canViewCompanyTeamAttendance();
     }
 
-    public function teamEmployeesForUser(User $user): array
+    public function teamEmployeesForUser(User $user, ?string $month = null): array
     {
         $query = Employee::query()
             ->where('company_id', $user->company_id)
-            ->where('status', 'active')
+            ->whereIn('status', ['active', 'inactive'])
             ->orderedByName();
 
+        $monthDate = $month && preg_match('/^\d{4}-\d{2}$/', $month)
+            ? Carbon::createFromFormat('Y-m', $month)->startOfMonth()
+            : now()->copy()->startOfMonth();
+
+        $query->employedDuring(
+            $monthDate->toDateString(),
+            $monthDate->copy()->endOfMonth()->toDateString(),
+        );
+
         if (! $this->canViewAllAttendance($user) && ! $this->canViewCompanyTeamAttendance($user)) {
-            $scopeIds = $this->employeeAccessService->teamScopeEmployeeIds($user);
+            $scopeIds = $this->employeeAccessService->teamScopeEmployeeIds($user, false);
 
             if ($scopeIds === []) {
                 return [];
@@ -78,6 +87,7 @@ class AttendanceService
                 'id' => $employee->id,
                 'full_name' => $employee->full_name,
                 'employee_code' => $employee->employee_code,
+                'status' => $employee->status,
             ])
             ->values()
             ->all();
@@ -515,7 +525,7 @@ class AttendanceService
                 continue;
             }
 
-            if (in_array($day['status'], ['before_portal', 'future', 'weekly_off', 'holiday'], true)) {
+            if (in_array($day['status'], ['before_portal', 'after_exit', 'future', 'weekly_off', 'holiday'], true)) {
                 continue;
             }
 
@@ -753,7 +763,8 @@ class AttendanceService
 
         $employees = Employee::query()
             ->where('company_id', $companyId)
-            ->where('status', 'active')
+            ->whereIn('status', ['active', 'inactive'])
+            ->employedOn($date)
             ->with(['department', 'shift'])
             ->orderedByName()
             ->get();
@@ -832,6 +843,7 @@ class AttendanceService
                 'weekly_off',
                 'on_leave',
                 'before_portal',
+                'after_exit',
             ], true);
 
             $hasMarked = $punches->isNotEmpty();
@@ -926,7 +938,7 @@ class AttendanceService
             ->orderedByName();
 
         if (! $canViewAll && ! $canViewCompanyTeam) {
-            $scopeIds = $this->employeeAccessService->teamScopeEmployeeIds($user);
+            $scopeIds = $this->employeeAccessService->teamScopeEmployeeIds($user, false);
 
             if ($scopeIds === []) {
                 throw new AccessDeniedHttpException('You are not allowed to view team attendance.');
@@ -935,11 +947,13 @@ class AttendanceService
             $query->whereIn('id', $scopeIds);
         }
 
-        $status = $filters['status'] ?? 'active';
+        $status = $filters['status'] ?? 'all';
 
         if ($status !== 'all') {
             $query->where('status', $status);
         }
+
+        $query->employedDuring($startDate, $endDate);
 
         if (! empty($filters['department_id'])) {
             $departmentId = (int) $filters['department_id'];
@@ -1059,7 +1073,7 @@ class AttendanceService
                     $statusKey = 'regularization_pending';
                 }
 
-                if ($statusKey === 'before_portal' || $statusKey === 'future') {
+                if ($statusKey === 'before_portal' || $statusKey === 'after_exit' || $statusKey === 'future') {
                     continue;
                 }
 
@@ -1188,7 +1202,7 @@ class AttendanceService
             'awaiting_punch_out' => (bool) ($dayMeta['awaiting_punch_out'] ?? false),
             'is_today' => $isToday,
             'is_future' => $isFuture,
-            'is_clickable' => ! in_array($status, ['before_portal', 'future'], true),
+            'is_clickable' => ! in_array($status, ['before_portal', 'after_exit', 'future'], true),
         ];
     }
 
@@ -1204,7 +1218,7 @@ class AttendanceService
             'weekly_off' => 'WO',
             'regularization_pending' => 'RP',
             'incomplete' => '…',
-            'before_portal', 'future' => '',
+            'before_portal', 'after_exit', 'future' => '',
             default => '·',
         };
     }
@@ -1291,6 +1305,19 @@ class AttendanceService
         return $segments;
     }
 
+    private function employmentEndDate(Employee $employee): ?string
+    {
+        if ($employee->last_working_date) {
+            return $employee->last_working_date->toDateString();
+        }
+
+        if ($employee->status === 'inactive' && $employee->updated_at) {
+            return Carbon::parse($employee->updated_at)->toDateString();
+        }
+
+        return null;
+    }
+
     private function requiredMinutesForEmployee(Employee $employee): int
     {
         return $employee->shift?->requiredWorkMinutes() ?? 540;
@@ -1330,6 +1357,21 @@ class AttendanceService
         $weeklyOffWeekdays ??= $this->attendancePolicyService->weeklyOffWeekdaysForEmployee($employee);
         $holiday ??= $this->attendancePolicyService->holidayOnDate($companyId, $dateString);
         $punchSummary = $this->summarizeDayPunches($punches);
+        $employmentEndDate = $this->employmentEndDate($employee);
+
+        if ($employmentEndDate && $dateString > $employmentEndDate) {
+            return [
+                'status' => 'after_exit',
+                'status_label' => '',
+                'holiday_name' => null,
+                'worked_minutes' => 0,
+                'required_minutes' => $requiredMinutes,
+                'punch_in_label' => null,
+                'punch_out_label' => null,
+                'can_mark' => false,
+                'day_message' => 'After last working date.',
+            ];
+        }
 
         if ($holiday) {
             return [
@@ -1599,6 +1641,7 @@ class AttendanceService
             'holiday' => 'Holiday',
             'future' => 'Upcoming',
             'before_portal' => '',
+            'after_exit' => '',
             'on_leave' => 'On Leave',
             'wfh' => 'Work From Home',
             'regularization_pending' => 'Regularization Pending',
