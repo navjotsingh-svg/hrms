@@ -220,8 +220,11 @@ export function initAttendancePunch({
         if (todaySummary) {
             if (status.awaiting_punch_out) {
                 const punchInLabel = status.current_punch_in_label || status.punch_in_label || '—';
+                const expectedOutLabel = status.leave_session_label && status.leave_session_label !== 'Full Day'
+                    ? `Expected clock out for remaining half ${status.expected_clock_out_label}`
+                    : `Expected clock out time for full day present ${status.expected_clock_out_label}`;
                 const expectedOut = status.expected_clock_out_label
-                    ? `<span class="attendance-punch-stat attendance-punch-stat--expected-out">Expected clock out time for full day present ${status.expected_clock_out_label}</span>`
+                    ? `<span class="attendance-punch-stat attendance-punch-stat--expected-out">${expectedOutLabel}</span>`
                     : '';
 
                 todaySummary.innerHTML = `

@@ -166,13 +166,14 @@ class AttendanceService
             'today_punches' => $punches->map(fn (AttendancePunch $punch) => $this->formatPunch($punch))->values()->all(),
             'today_worked_minutes' => $dayMeta['worked_minutes'],
             'required_minutes' => $dayMeta['required_minutes'],
-            'is_complete' => $dayMeta['status'] === 'present',
+            'is_complete' => (bool) ($dayMeta['is_complete'] ?? ($dayMeta['status'] === 'present')),
             'status' => $dayMeta['status'],
             'status_label' => $dayMeta['status_label'],
             'punch_in_label' => $dayMeta['punch_in_label'],
             'current_punch_in_label' => $dayMeta['current_punch_in_label'] ?? null,
             'punch_out_label' => $dayMeta['punch_out_label'],
             'day_message' => $dayMeta['day_message'],
+            'leave_session_label' => $dayMeta['leave_session_label'] ?? null,
             'awaiting_punch_out' => (bool) ($dayMeta['awaiting_punch_out'] ?? false),
             'expected_clock_out_at' => $dayMeta['expected_clock_out_at'] ?? null,
             'expected_clock_out_label' => $dayMeta['expected_clock_out_label'] ?? null,
@@ -295,6 +296,7 @@ class AttendanceService
         ]);
 
         $updatedPunches = $this->punchesForDate($employee, $today);
+        $requiredMinutes = $this->requiredMinutesForEmployeeOnDate($employee, $today);
 
         return [
             'punch' => $this->formatPunch($punch),
@@ -303,8 +305,8 @@ class AttendanceService
                 $updatedPunches,
                 $this->shouldIncludeOpenSession($updatedPunches, true),
             ),
-            'required_minutes' => $this->requiredMinutesForEmployee($employee),
-            'is_complete' => $this->isDayComplete($employee, $updatedPunches, true),
+            'required_minutes' => $requiredMinutes,
+            'is_complete' => $this->isDayComplete($employee, $updatedPunches, true, $today),
         ];
     }
 
@@ -1324,16 +1326,67 @@ class AttendanceService
         return $employee->shift?->requiredWorkMinutes() ?? 540;
     }
 
-    private function isDayComplete(Employee $employee, Collection $punches, bool $isToday): bool
-    {
+    private function isDayComplete(
+        Employee $employee,
+        Collection $punches,
+        bool $isToday,
+        ?string $date = null,
+    ): bool {
         if ($punches->isEmpty() || $this->hasUnclosedPunchSession($punches)) {
             return false;
         }
 
-        $required = $this->requiredMinutesForEmployee($employee);
+        $required = $this->requiredMinutesForEmployeeOnDate($employee, $date ?? now()->toDateString());
         $worked = $this->workedMinutesForPunches($punches, $this->shouldIncludeOpenSession($punches, $isToday));
 
         return $worked >= $required;
+    }
+
+    private function leaveSessionAllowsWorkingPunch(LeaveRequestDay $leaveDay): bool
+    {
+        return in_array($leaveDay->session, [
+            LeaveRequestDay::SESSION_FIRST_HALF,
+            LeaveRequestDay::SESSION_SECOND_HALF,
+            LeaveRequestDay::SESSION_HOURLY,
+        ], true);
+    }
+
+    private function remainingWorkMinutesForLeaveDay(LeaveRequestDay $leaveDay, int $requiredMinutes): int
+    {
+        if ($requiredMinutes <= 0) {
+            return 0;
+        }
+
+        if ($leaveDay->session === LeaveRequestDay::SESSION_HOURLY) {
+            $leaveMinutes = (int) ($leaveDay->duration_minutes ?: 0);
+
+            if ($leaveMinutes <= 0 && (float) $leaveDay->day_value > 0) {
+                $leaveMinutes = (int) round($requiredMinutes * (float) $leaveDay->day_value);
+            }
+
+            return max($requiredMinutes - $leaveMinutes, 0);
+        }
+
+        if (in_array($leaveDay->session, [
+            LeaveRequestDay::SESSION_FIRST_HALF,
+            LeaveRequestDay::SESSION_SECOND_HALF,
+        ], true)) {
+            return (int) floor($requiredMinutes / 2);
+        }
+
+        return 0;
+    }
+
+    private function requiredMinutesForEmployeeOnDate(Employee $employee, string $date): int
+    {
+        $requiredMinutes = $this->requiredMinutesForEmployee($employee);
+        $leaveDay = $this->leaveRequestService->approvedLeaveDayOnDate($employee, $date);
+
+        if ($leaveDay && $this->leaveSessionAllowsWorkingPunch($leaveDay)) {
+            return $this->remainingWorkMinutesForLeaveDay($leaveDay, $requiredMinutes);
+        }
+
+        return $requiredMinutes;
     }
 
     private function shouldIncludeOpenSession(Collection $punches, bool $isToday): bool
@@ -1434,6 +1487,8 @@ class AttendanceService
                 $workedMinutes,
                 $requiredMinutes,
                 $punchSummary,
+                $punches,
+                $isToday,
             );
         }
 
@@ -1545,29 +1600,100 @@ class AttendanceService
         int $workedMinutes,
         int $requiredMinutes,
         array $punchSummary,
+        Collection $punches,
+        bool $isToday,
     ): array {
         $leaveDay->loadMissing('leaveRequest.leaveType', 'leaveRequest.reviewedBy');
         $leaveType = $leaveDay->leaveRequest?->leaveType;
-        $allowsPunch = $leaveType?->allowsAttendancePunch() ?? false;
+        $allowsTypePunch = $leaveType?->allowsAttendancePunch() ?? false;
+        $allowsWorkingHalf = $this->leaveSessionAllowsWorkingPunch($leaveDay);
+        $canMark = $allowsTypePunch || $allowsWorkingHalf;
+        $remainingRequired = $allowsWorkingHalf
+            ? $this->remainingWorkMinutesForLeaveDay($leaveDay, $requiredMinutes)
+            : $requiredMinutes;
+        $leaveLabel = $this->leaveRequestService->leaveDayCalendarLabel($leaveDay);
+        $approvalMeta = $this->leaveRequestService->leaveApprovalMeta($leaveDay->leaveRequest);
 
-        return array_merge([
-            'status' => $allowsPunch ? 'wfh' : 'on_leave',
-            'status_label' => $allowsPunch
-                ? ($leaveType?->name ?? 'Work From Home')
-                : $this->leaveRequestService->leaveDayCalendarLabel($leaveDay),
+        if ($allowsTypePunch) {
+            return array_merge([
+                'status' => 'wfh',
+                'status_label' => $leaveType?->name ?? 'Work From Home',
+                'holiday_name' => null,
+                'worked_minutes' => $workedMinutes,
+                'required_minutes' => $requiredMinutes,
+                'punch_in_label' => $punchSummary['punch_in_label'],
+                'punch_out_label' => $punchSummary['punch_out_label'],
+                'can_mark' => true,
+                'is_complete' => $workedMinutes >= $requiredMinutes && ! $this->hasUnclosedPunchSession($punches),
+                'day_message' => 'Work from home approved — punch in/out to log your hours.',
+                'leave_type_name' => $leaveDay->leaveRequest?->leaveType?->name,
+                'leave_session_label' => $leaveDay->sessionLabel(),
+                'leave_request_id' => $leaveDay->leave_request_id,
+            ], $approvalMeta);
+        }
+
+        if (! $allowsWorkingHalf) {
+            return array_merge([
+                'status' => 'on_leave',
+                'status_label' => $leaveLabel,
+                'holiday_name' => null,
+                'worked_minutes' => $workedMinutes,
+                'required_minutes' => $requiredMinutes,
+                'punch_in_label' => $punchSummary['punch_in_label'],
+                'punch_out_label' => $punchSummary['punch_out_label'],
+                'can_mark' => false,
+                'is_complete' => true,
+                'day_message' => 'Approved leave for this day.',
+                'leave_type_name' => $leaveDay->leaveRequest?->leaveType?->name,
+                'leave_session_label' => $leaveDay->sessionLabel(),
+                'leave_request_id' => $leaveDay->leave_request_id,
+            ], $approvalMeta);
+        }
+
+        $dayMessage = 'Approved '.$leaveDay->sessionLabel().' leave — punch in/out for the remaining half.';
+        $base = [
             'holiday_name' => null,
             'worked_minutes' => $workedMinutes,
-            'required_minutes' => $requiredMinutes,
+            'required_minutes' => $remainingRequired,
             'punch_in_label' => $punchSummary['punch_in_label'],
             'punch_out_label' => $punchSummary['punch_out_label'],
-            'can_mark' => $allowsPunch,
-            'day_message' => $allowsPunch
-                ? 'Work from home approved — punch in/out to log your hours.'
-                : 'Approved leave for this day.',
+            'can_mark' => $canMark,
+            'day_message' => $dayMessage,
             'leave_type_name' => $leaveDay->leaveRequest?->leaveType?->name,
             'leave_session_label' => $leaveDay->sessionLabel(),
             'leave_request_id' => $leaveDay->leave_request_id,
-        ], $this->leaveRequestService->leaveApprovalMeta($leaveDay->leaveRequest));
+        ];
+
+        if ($this->hasUnclosedPunchSession($punches) && $isToday) {
+            return array_merge($base, [
+                'status' => 'incomplete',
+                'status_label' => $leaveLabel,
+                'current_punch_in_label' => $punchSummary['current_punch_in_label'] ?? null,
+                'punch_out_label' => null,
+                'is_complete' => false,
+                'awaiting_punch_out' => true,
+            ], $this->expectedClockOutForPunches($punches, $remainingRequired), $approvalMeta);
+        }
+
+        $hasPunches = $punches->isNotEmpty();
+        $completedRemaining = $remainingRequired <= 0
+            || ($hasPunches && ! $this->hasUnclosedPunchSession($punches) && $workedMinutes >= $remainingRequired);
+
+        if ($hasPunches) {
+            return array_merge($base, [
+                'status' => $completedRemaining ? 'half_day' : ($isToday ? 'incomplete' : 'half_day'),
+                'status_label' => $completedRemaining
+                    ? $leaveLabel
+                    : ($isToday ? 'In progress' : $leaveLabel),
+                'is_complete' => $completedRemaining,
+            ], $approvalMeta);
+        }
+
+        return array_merge($base, [
+            'status' => 'on_leave',
+            'status_label' => $leaveLabel,
+            'is_complete' => false,
+        ], $approvalMeta);
     }
 
     private function approvedWfhDayMeta(
