@@ -1,7 +1,7 @@
 @php
     $user = Auth::user();
 
-    $homeKeys = ['home', 'home.dashboard', 'home.moments'];
+    $homeKeys = ['home', 'home.dashboard', 'home.moments', 'company_policies'];
     $employeeExperienceKeys = [
         'experience.helpdesk',
         'performance.goals',
@@ -25,7 +25,7 @@
     ];
     $peopleKeys = ['people', 'employees', 'org_chart'];
     $coreHrKeys = [
-        'masters.departments', 'masters.shifts', 'masters.roles',
+        'masters.departments', 'masters.shifts', 'masters.roles', 'core_hr.documents_letters',
     ];
     $attendanceKeys = [
         'attendance', 'attendance.holidays', 'attendance.team', 'attendance.today',
@@ -51,12 +51,13 @@
     ];
     $companyKeys = ['masters.departments', 'masters.shifts', 'masters.roles', 'activity_logs'];
 
-    $isHomeOpen = request()->routeIs('web.home.index', 'web.home.dashboard', 'web.home.moments', 'web.dashboard');
+    $isHomeOpen = request()->routeIs('web.home.index', 'web.home.dashboard', 'web.home.moments', 'web.dashboard', 'web.company-policies.*');
     $isEmployeeExperienceOpen = request()->routeIs('web.employee-experience.*', 'web.helpdesk.*', 'web.assistant.*', 'web.performance.*');
     $isCoreHrOpen = request()->routeIs(
         'web.masters.departments.*',
         'web.masters.shifts.*',
         'web.masters.roles.*',
+        'web.documents-letters.*',
     );
     $isAttendanceOpen = request()->routeIs('web.attendance.*', 'web.masters.attendance.weekly-off.*', 'web.masters.attendance.portal-start.*');
     $isLeaveOpen = request()->routeIs('web.leave.*', 'web.masters.leave-types.*', 'web.masters.attendance.holidays.*');
@@ -108,6 +109,14 @@
                             'icon' => 'home',
                             'active' => request()->routeIs('web.home.*', 'web.dashboard'),
                             'badgeId' => $user->canSeeMenu('home.moments') ? 'sidebarMomentsBadge' : null,
+                        ])
+                    @endif
+                    @if ($user->canSeeMenu('company_policies'))
+                        @include('layouts.partials.sidebar-link', [
+                            'href' => route('web.company-policies.index'),
+                            'label' => 'Company Policies',
+                            'icon' => 'documents',
+                            'active' => request()->routeIs('web.company-policies.*'),
                         ])
                     @endif
                 @endif

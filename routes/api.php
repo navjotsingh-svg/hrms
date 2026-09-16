@@ -686,6 +686,27 @@ Route::prefix('v1')->name('api.')->group(function () {
                 Route::patch('document-letters/{document_letter}/cancel', [\App\Http\Controllers\Api\V1\DocumentLetterController::class, 'cancel'])
                     ->name('document-letters.cancel')
                     ->whereNumber('document_letter');
+                Route::post('company-policies', [\App\Http\Controllers\Api\V1\CompanyPolicyController::class, 'store'])
+                    ->name('company-policies.store');
+                Route::put('company-policies/{company_policy}', [\App\Http\Controllers\Api\V1\CompanyPolicyController::class, 'update'])
+                    ->name('company-policies.update')
+                    ->whereNumber('company_policy');
+                Route::post('company-policies/{company_policy}', [\App\Http\Controllers\Api\V1\CompanyPolicyController::class, 'update'])
+                    ->name('company-policies.update-multipart')
+                    ->whereNumber('company_policy');
+                Route::delete('company-policies/{company_policy}', [\App\Http\Controllers\Api\V1\CompanyPolicyController::class, 'destroy'])
+                    ->name('company-policies.destroy')
+                    ->whereNumber('company_policy');
+            });
+
+            Route::middleware('company.member')->group(function () {
+                Route::get('company-policies/meta', [\App\Http\Controllers\Api\V1\CompanyPolicyController::class, 'meta'])
+                    ->name('company-policies.meta');
+                Route::get('company-policies', [\App\Http\Controllers\Api\V1\CompanyPolicyController::class, 'index'])
+                    ->name('company-policies.index');
+                Route::get('company-policies/{company_policy}/download', [\App\Http\Controllers\Api\V1\CompanyPolicyController::class, 'download'])
+                    ->name('company-policies.download')
+                    ->whereNumber('company_policy');
             });
 
             Route::middleware('company.permission:documents.view,documents.manage,documents.sign')->group(function () {

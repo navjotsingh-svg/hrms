@@ -465,6 +465,7 @@ return [
             'permissions' => ['documents.view', 'documents.manage', 'documents.sign'],
             'feature' => 'documents_letters_menu_enabled',
         ],
+        'company_policies' => ['rule' => 'company_member'],
         'org_chart' => ['permissions' => ['employees.view', 'employees.manage']],
 
         'masters.departments' => ['permissions' => ['departments.view', 'departments.manage']],

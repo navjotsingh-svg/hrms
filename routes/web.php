@@ -73,6 +73,10 @@ Route::redirect('/register', '/');
         });
     });
 
+    Route::middleware('company.member')->prefix('company-policies')->name('company-policies.')->group(function () {
+        Route::get('/', [\App\Http\Controllers\CompanyPolicyController::class, 'index'])->name('index');
+    });
+
     Route::get('/profile', fn () => view('profile.edit'))->name('profile');
     Route::get('/profile/change-password', fn () => view('profile.change-password'))->name('profile.change-password');
 

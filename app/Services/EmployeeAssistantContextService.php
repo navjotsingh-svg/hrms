@@ -396,7 +396,22 @@ class EmployeeAssistantContextService
     /** @return array<int, array<string, mixed>> */
     private function policyDocumentsSummary(int $companyId): array
     {
-        return DocumentLetter::query()
+        $uploaded = \App\Models\CompanyPolicy::query()
+            ->where('company_id', $companyId)
+            ->where('status', \App\Models\CompanyPolicy::STATUS_PUBLISHED)
+            ->orderByDesc('updated_at')
+            ->limit(10)
+            ->get()
+            ->map(fn (\App\Models\CompanyPolicy $policy) => [
+                'title' => $policy->title,
+                'status' => $policy->status,
+                'category' => $policy->categoryLabel(),
+                'issued_at' => $policy->updated_at?->toDateString(),
+                'summary' => str((string) ($policy->description ?: $policy->title))->limit(400)->value(),
+            ])
+            ->all();
+
+        $letters = DocumentLetter::query()
             ->where('company_id', $companyId)
             ->where('category', 'policy')
             ->whereIn('status', ['signed', 'pending_signature'])
@@ -407,9 +422,11 @@ class EmployeeAssistantContextService
                 'title' => $letter->title,
                 'status' => $letter->status,
                 'issued_at' => $letter->issued_at?->toDateString(),
-                'summary' => str(strip_tags((string) ($letter->rendered_html ?: $letter->body_html)))->limit(400)->value(),
+                'summary' => str(strip_tags((string) $letter->rendered_html))->limit(400)->value(),
             ])
             ->all();
+
+        return array_slice(array_merge($uploaded, $letters), 0, 10);
     }
 
     /** @return array<string, mixed> */
