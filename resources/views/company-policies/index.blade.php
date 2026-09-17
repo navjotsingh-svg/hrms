@@ -10,12 +10,12 @@
             <h1 class="page-title mb-1">Company Policies</h1>
             <p class="page-subtitle mb-0">
                 {{ $canManage
-                    ? 'Upload and publish company policies such as Code of Conduct for employees to view.'
-                    : 'View company policies shared by HR.' }}
+                    ? 'Create policy pages (CoC, etc.) for employees to read and consent with signature.'
+                    : 'Read company policies and give consent with your personal email and signature.' }}
             </p>
         </div>
         @if ($canManage)
-            <button type="button" class="btn btn-primary" id="companyPolicyUploadBtn">+ Upload Policy</button>
+            <a href="{{ route('web.company-policies.create') }}" class="btn btn-primary">+ Add Policy Page</a>
         @endif
     </div>
 @endsection
@@ -67,14 +67,12 @@
                         <th class="companies-th-serial">#</th>
                         <th>Policy</th>
                         <th>Category</th>
-                        <th>File</th>
+                        <th>Consent</th>
                         <th>Updated</th>
                         @if ($canManage)
                             <th>Status</th>
-                            <th class="companies-th-actions">Actions</th>
-                        @else
-                            <th class="companies-th-actions">Actions</th>
                         @endif
+                        <th class="companies-th-actions">Actions</th>
                     </tr>
                 </thead>
                 <tbody id="companyPoliciesTableBody">
@@ -85,52 +83,6 @@
             </table>
         </div>
     </div>
-
-    @if ($canManage)
-        <div class="modal fade" id="companyPolicyModal" tabindex="-1" aria-hidden="true">
-            <div class="modal-dialog modal-lg">
-                <form class="modal-content" id="companyPolicyForm" enctype="multipart/form-data">
-                    <div class="modal-header">
-                        <h5 class="modal-title" id="companyPolicyModalTitle">Upload Policy</h5>
-                        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-                    </div>
-                    <div class="modal-body">
-                        <input type="hidden" id="companyPolicyId" value="">
-                        <div class="row g-3">
-                            <div class="col-md-8">
-                                <label for="companyPolicyTitle" class="form-label">Title <span class="text-danger">*</span></label>
-                                <input type="text" class="form-control" id="companyPolicyTitle" required maxlength="255" placeholder="e.g. Code of Conduct">
-                            </div>
-                            <div class="col-md-4">
-                                <label for="companyPolicyCategory" class="form-label">Category <span class="text-danger">*</span></label>
-                                <select class="form-select" id="companyPolicyCategory" required></select>
-                            </div>
-                            <div class="col-12">
-                                <label for="companyPolicyDescription" class="form-label">Description</label>
-                                <textarea class="form-control" id="companyPolicyDescription" rows="3" maxlength="2000" placeholder="Optional short summary"></textarea>
-                            </div>
-                            <div class="col-md-6">
-                                <label for="companyPolicyStatus" class="form-label">Status</label>
-                                <select class="form-select" id="companyPolicyStatus">
-                                    <option value="published">Published</option>
-                                    <option value="draft">Draft</option>
-                                </select>
-                            </div>
-                            <div class="col-md-6">
-                                <label for="companyPolicyFile" class="form-label">File <span class="text-danger" id="companyPolicyFileRequired">*</span></label>
-                                <input type="file" class="form-control" id="companyPolicyFile">
-                                <div class="form-text" id="companyPolicyFileHelp">PDF, Word, Excel, or image up to 10 MB.</div>
-                            </div>
-                        </div>
-                    </div>
-                    <div class="modal-footer">
-                        <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
-                        <button type="submit" class="btn btn-primary" id="companyPolicySaveBtn">Save Policy</button>
-                    </div>
-                </form>
-            </div>
-        </div>
-    @endif
 @endsection
 
 @push('scripts')

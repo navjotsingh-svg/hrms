@@ -75,6 +75,15 @@ Route::redirect('/register', '/');
 
     Route::middleware('company.member')->prefix('company-policies')->name('company-policies.')->group(function () {
         Route::get('/', [\App\Http\Controllers\CompanyPolicyController::class, 'index'])->name('index');
+        Route::middleware('company.permission:documents.manage')->group(function () {
+            Route::get('/create', [\App\Http\Controllers\CompanyPolicyController::class, 'create'])->name('create');
+            Route::get('/{policy}/edit', [\App\Http\Controllers\CompanyPolicyController::class, 'edit'])
+                ->whereNumber('policy')
+                ->name('edit');
+        });
+        Route::get('/{policy}', [\App\Http\Controllers\CompanyPolicyController::class, 'show'])
+            ->whereNumber('policy')
+            ->name('show');
     });
 
     Route::get('/profile', fn () => view('profile.edit'))->name('profile');

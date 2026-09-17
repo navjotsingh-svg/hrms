@@ -1,4 +1,3 @@
-import { Modal } from 'bootstrap';
 import api, { getErrorMessage } from './api';
 import { bindPagination, bindPerPageSelect, getSerialNumber, readPerPage, renderListPagination } from './pagination';
 
@@ -13,20 +12,6 @@ document.addEventListener('DOMContentLoaded', async () => {
     const filterCategory = document.getElementById('filterCategory');
     const filterStatus = document.getElementById('filterStatus');
     const filterReset = document.getElementById('filterReset');
-    const uploadBtn = document.getElementById('companyPolicyUploadBtn');
-    const form = document.getElementById('companyPolicyForm');
-    const modalEl = document.getElementById('companyPolicyModal');
-    const modal = modalEl ? Modal.getOrCreateInstance(modalEl) : null;
-    const modalTitle = document.getElementById('companyPolicyModalTitle');
-    const policyIdInput = document.getElementById('companyPolicyId');
-    const titleInput = document.getElementById('companyPolicyTitle');
-    const categoryInput = document.getElementById('companyPolicyCategory');
-    const descriptionInput = document.getElementById('companyPolicyDescription');
-    const statusInput = document.getElementById('companyPolicyStatus');
-    const fileInput = document.getElementById('companyPolicyFile');
-    const fileRequiredMark = document.getElementById('companyPolicyFileRequired');
-    const fileHelp = document.getElementById('companyPolicyFileHelp');
-    const saveBtn = document.getElementById('companyPolicySaveBtn');
 
     if (!root || !tableBody) {
         return;
@@ -39,7 +24,6 @@ document.addEventListener('DOMContentLoaded', async () => {
     let currentPerPage = readPerPage(perPageSelect);
     let searchTimeout = null;
     let categories = [];
-    let policiesById = new Map();
 
     const escapeHtml = (value) => String(value ?? '')
         .replace(/&/g, '&amp;')
@@ -63,84 +47,51 @@ document.addEventListener('DOMContentLoaded', async () => {
         return `<span class="company-status-pill ${isPublished ? 'company-status-pill--active' : 'company-status-pill--inactive'}">${isPublished ? 'Published' : 'Draft'}</span>`;
     };
 
-    const fillCategoryOptions = (selectEl, includeAll = false) => {
+    const consentLabel = (policy) => {
+        if (!policy.requires_consent) {
+            return 'Not required';
+        }
+
+        if (policy.has_consented) {
+            return '<span class="text-success">Consented</span>';
+        }
+
+        return canManage ? 'Required' : '<span class="text-warning">Pending</span>';
+    };
+
+    const fillCategoryOptions = (selectEl) => {
         if (!selectEl) {
             return;
         }
 
-        const options = categories.map((item) => (
-            `<option value="${escapeHtml(item.value)}">${escapeHtml(item.label)}</option>`
-        )).join('');
-
-        selectEl.innerHTML = includeAll
-            ? `<option value="">All categories</option>${options}`
-            : options;
-    };
-
-    const downloadPolicy = async (policy) => {
-        const response = await api.get(`/company-policies/${policy.id}/download`, { responseType: 'blob' });
-        const mime = policy.mime_type || response.data?.type || 'application/octet-stream';
-        const blob = new Blob([response.data], { type: mime });
-        const url = URL.createObjectURL(blob);
-        const link = document.createElement('a');
-        const disposition = response.headers['content-disposition'] || '';
-        const match = disposition.match(/filename="?([^"]+)"?/i);
-        link.href = url;
-        link.download = match?.[1] || policy.original_name || `policy-${policy.id}`;
-        document.body.appendChild(link);
-        link.click();
-        link.remove();
-        URL.revokeObjectURL(url);
-    };
-
-    const openCreateModal = () => {
-        if (policyIdInput) policyIdInput.value = '';
-        if (titleInput) titleInput.value = '';
-        if (descriptionInput) descriptionInput.value = '';
-        if (statusInput) statusInput.value = 'published';
-        if (fileInput) fileInput.value = '';
-        fillCategoryOptions(categoryInput, false);
-        if (modalTitle) modalTitle.textContent = 'Upload Policy';
-        if (fileRequiredMark) fileRequiredMark.classList.remove('d-none');
-        if (fileHelp) fileHelp.textContent = 'PDF, Word, Excel, or image up to 10 MB.';
-        modal?.show();
-    };
-
-    const openEditModal = (policy) => {
-        if (policyIdInput) policyIdInput.value = String(policy.id);
-        if (titleInput) titleInput.value = policy.title || '';
-        if (descriptionInput) descriptionInput.value = policy.description || '';
-        if (statusInput) statusInput.value = policy.status || 'published';
-        if (fileInput) fileInput.value = '';
-        fillCategoryOptions(categoryInput, false);
-        if (categoryInput) categoryInput.value = policy.category || '';
-        if (modalTitle) modalTitle.textContent = 'Edit Policy';
-        if (fileRequiredMark) fileRequiredMark.classList.add('d-none');
-        if (fileHelp) {
-            fileHelp.textContent = `Current file: ${policy.original_name || '—'}. Upload a new file only if you want to replace it.`;
-        }
-        modal?.show();
+        selectEl.innerHTML = [
+            '<option value="">All categories</option>',
+            ...categories.map((item) => `<option value="${escapeHtml(item.value)}">${escapeHtml(item.label)}</option>`),
+        ].join('');
     };
 
     const renderRows = (policies, pagination) => {
-        policiesById = new Map(policies.map((policy) => [String(policy.id), policy]));
-
         if (!policies.length) {
-            tableBody.innerHTML = `<tr><td colspan="${columnCount}" class="text-center text-muted py-5">No policies found.</td></tr>`;
+            const emptyMessage = canManage
+                ? 'No policies found.'
+                : 'No published policies yet. Check back after HR publishes a policy page.';
+            tableBody.innerHTML = `<tr><td colspan="${columnCount}" class="text-center text-muted py-5">${emptyMessage}</td></tr>`;
             return;
         }
 
         tableBody.innerHTML = policies.map((policy, index) => {
             const serial = getSerialNumber(index, pagination);
+            const viewUrl = `/company-policies/${policy.id}`;
+            const editUrl = `/company-policies/${policy.id}/edit`;
             const actions = canManage
                 ? `
                     <div class="d-flex flex-wrap gap-2">
-                        <button type="button" class="btn btn-sm btn-outline-secondary" data-download-policy="${policy.id}">View</button>
-                        <button type="button" class="btn btn-sm btn-outline-primary" data-edit-policy="${policy.id}">Edit</button>
+                        <a class="btn btn-sm btn-outline-secondary" href="${viewUrl}">View</a>
+                        <a class="btn btn-sm btn-outline-primary" href="${editUrl}">Edit</a>
                         <button type="button" class="btn btn-sm btn-outline-danger" data-delete-policy="${policy.id}">Delete</button>
                     </div>
                 `
-                : `<button type="button" class="btn btn-sm btn-outline-primary" data-download-policy="${policy.id}">View / Download</button>`;
+                : `<a class="btn btn-sm btn-outline-primary" href="${viewUrl}">${policy.needs_consent ? 'View & Consent' : 'View'}</a>`;
 
             return `
                 <tr>
@@ -148,12 +99,10 @@ document.addEventListener('DOMContentLoaded', async () => {
                     <td>
                         <div class="fw-semibold">${escapeHtml(policy.title)}</div>
                         ${policy.description ? `<div class="small text-muted">${escapeHtml(policy.description)}</div>` : ''}
+                        <div class="small text-muted">Version ${escapeHtml(policy.version)}</div>
                     </td>
                     <td>${escapeHtml(policy.category_label || policy.category)}</td>
-                    <td>
-                        <div>${escapeHtml(policy.original_name || '—')}</div>
-                        <div class="small text-muted">${escapeHtml(policy.file_size_label || '')}</div>
-                    </td>
+                    <td>${consentLabel(policy)}</td>
                     <td>${escapeHtml(policy.updated_at_label || '—')}</td>
                     ${canManage ? `<td>${renderStatusPill(policy.status)}</td>` : ''}
                     <td>${actions}</td>
@@ -165,14 +114,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     const loadMeta = async () => {
         const { data } = await api.get('/company-policies/meta');
         categories = data.data?.categories || [];
-        fillCategoryOptions(filterCategory, true);
-        fillCategoryOptions(categoryInput, false);
-
-        const maxKb = Number(data.data?.max_file_kb) || 10240;
-        const mimes = (data.data?.allowed_mimes || []).join(', ').toUpperCase();
-        if (fileHelp) {
-            fileHelp.textContent = `${mimes || 'PDF, Word, Excel, or image'} up to ${Math.round(maxKb / 1024)} MB.`;
-        }
+        fillCategoryOptions(filterCategory);
     };
 
     const loadPolicies = async () => {
@@ -206,102 +148,22 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
     };
 
-    uploadBtn?.addEventListener('click', openCreateModal);
-
-    form?.addEventListener('submit', async (event) => {
-        event.preventDefault();
-
-        if (!titleInput?.value.trim() || !categoryInput?.value) {
-            showAlert('Title and category are required.', 'warning');
+    tableBody.addEventListener('click', async (event) => {
+        const deleteBtn = event.target.closest('[data-delete-policy]');
+        if (!deleteBtn) {
             return;
         }
 
-        const isEdit = Boolean(policyIdInput?.value);
-        if (!isEdit && !fileInput?.files?.[0]) {
-            showAlert('Please select a file to upload.', 'warning');
+        if (!window.confirm('Delete this policy page? Existing consents for it will also be removed.')) {
             return;
         }
-
-        const payload = new FormData();
-        payload.append('title', titleInput.value.trim());
-        payload.append('category', categoryInput.value);
-        payload.append('description', descriptionInput?.value?.trim() || '');
-        payload.append('status', statusInput?.value || 'published');
-        if (fileInput?.files?.[0]) {
-            payload.append('file', fileInput.files[0]);
-        }
-        if (isEdit) {
-            payload.append('_method', 'PUT');
-        }
-
-        saveBtn.disabled = true;
-        const originalText = saveBtn.textContent;
-        saveBtn.textContent = 'Saving...';
 
         try {
-            if (isEdit) {
-                await api.post(`/company-policies/${policyIdInput.value}`, payload, {
-                    headers: { 'Content-Type': 'multipart/form-data' },
-                });
-                showAlert('Policy updated successfully.');
-            } else {
-                await api.post('/company-policies', payload, {
-                    headers: { 'Content-Type': 'multipart/form-data' },
-                });
-                showAlert('Policy uploaded successfully.');
-            }
-
-            modal?.hide();
-            currentPage = 1;
+            await api.delete(`/company-policies/${deleteBtn.dataset.deletePolicy}`);
+            showAlert('Policy deleted successfully.');
             await loadPolicies();
         } catch (error) {
             showAlert(getErrorMessage(error), 'danger');
-        } finally {
-            saveBtn.disabled = false;
-            saveBtn.textContent = originalText;
-        }
-    });
-
-    tableBody.addEventListener('click', async (event) => {
-        const downloadBtn = event.target.closest('[data-download-policy]');
-        const editBtn = event.target.closest('[data-edit-policy]');
-        const deleteBtn = event.target.closest('[data-delete-policy]');
-
-        if (downloadBtn) {
-            const policy = policiesById.get(String(downloadBtn.dataset.downloadPolicy));
-            if (!policy) {
-                return;
-            }
-
-            try {
-                await downloadPolicy(policy);
-            } catch (error) {
-                showAlert(getErrorMessage(error), 'danger');
-            }
-            return;
-        }
-
-        if (editBtn) {
-            const policy = policiesById.get(String(editBtn.dataset.editPolicy));
-            if (policy) {
-                openEditModal(policy);
-            }
-            return;
-        }
-
-        if (deleteBtn) {
-            const id = deleteBtn.dataset.deletePolicy;
-            if (!window.confirm('Delete this policy? Employees will no longer be able to view it.')) {
-                return;
-            }
-
-            try {
-                await api.delete(`/company-policies/${id}`);
-                showAlert('Policy deleted successfully.');
-                await loadPolicies();
-            } catch (error) {
-                showAlert(getErrorMessage(error), 'danger');
-            }
         }
     });
 

@@ -691,9 +691,6 @@ Route::prefix('v1')->name('api.')->group(function () {
                 Route::put('company-policies/{company_policy}', [\App\Http\Controllers\Api\V1\CompanyPolicyController::class, 'update'])
                     ->name('company-policies.update')
                     ->whereNumber('company_policy');
-                Route::post('company-policies/{company_policy}', [\App\Http\Controllers\Api\V1\CompanyPolicyController::class, 'update'])
-                    ->name('company-policies.update-multipart')
-                    ->whereNumber('company_policy');
                 Route::delete('company-policies/{company_policy}', [\App\Http\Controllers\Api\V1\CompanyPolicyController::class, 'destroy'])
                     ->name('company-policies.destroy')
                     ->whereNumber('company_policy');
@@ -704,8 +701,11 @@ Route::prefix('v1')->name('api.')->group(function () {
                     ->name('company-policies.meta');
                 Route::get('company-policies', [\App\Http\Controllers\Api\V1\CompanyPolicyController::class, 'index'])
                     ->name('company-policies.index');
-                Route::get('company-policies/{company_policy}/download', [\App\Http\Controllers\Api\V1\CompanyPolicyController::class, 'download'])
-                    ->name('company-policies.download')
+                Route::get('company-policies/{company_policy}', [\App\Http\Controllers\Api\V1\CompanyPolicyController::class, 'show'])
+                    ->name('company-policies.show')
+                    ->whereNumber('company_policy');
+                Route::post('company-policies/{company_policy}/consent', [\App\Http\Controllers\Api\V1\CompanyPolicyController::class, 'sign'])
+                    ->name('company-policies.consent')
                     ->whereNumber('company_policy');
             });
 

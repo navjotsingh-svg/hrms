@@ -3,9 +3,12 @@
 namespace App\Services;
 
 use App\Models\CompanyPolicy;
+use App\Models\CompanyPolicyConsent;
+use App\Models\Employee;
 use App\Models\User;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
 use Symfony\Component\HttpKernel\Exception\AccessDeniedHttpException;
@@ -15,11 +18,13 @@ class CompanyPolicyService
 {
     public function __construct(
         private PublicUploadDirectoryService $uploadDirectories,
+        private EmployeeAccessService $employeeAccessService,
     ) {}
 
     public function listForCompany(User $user, array $filters = []): LengthAwarePaginator
     {
         $canManage = $user->canManageDocuments();
+        $employee = $this->employeeAccessService->linkedEmployee($user);
 
         $query = CompanyPolicy::query()
             ->with('uploadedBy')
@@ -37,59 +42,79 @@ class CompanyPolicyService
                 $search = trim((string) $filters['search']);
                 $q->where(function ($inner) use ($search) {
                     $inner->where('title', 'like', "%{$search}%")
-                        ->orWhere('description', 'like', "%{$search}%")
-                        ->orWhere('original_name', 'like', "%{$search}%");
+                        ->orWhere('description', 'like', "%{$search}%");
                 });
             })
             ->orderByDesc('updated_at');
 
         $perPage = (int) ($filters['per_page'] ?? 10);
+        $policies = $query->paginate($perPage);
 
-        return $query->paginate($perPage);
+        if ($employee) {
+            $consentMap = CompanyPolicyConsent::query()
+                ->where('employee_id', $employee->id)
+                ->whereIn('company_policy_id', $policies->getCollection()->pluck('id'))
+                ->get()
+                ->keyBy('company_policy_id');
+
+            $policies->getCollection()->transform(function (CompanyPolicy $policy) use ($consentMap) {
+                $policy->setRelation('myConsent', $consentMap->get($policy->id));
+
+                return $policy;
+            });
+        }
+
+        return $policies;
     }
 
-    public function create(User $user, array $data, UploadedFile $file): CompanyPolicy
+    public function create(User $user, array $data): CompanyPolicy
     {
         $this->assertCanManage($user);
-
-        $stored = $this->storeFile($user, $file);
+        $this->assertPublishable($data);
 
         return CompanyPolicy::query()->create([
             'company_id' => $user->company_id,
             'title' => $data['title'],
             'category' => $data['category'],
             'description' => $data['description'] ?? null,
-            'original_name' => $file->getClientOriginalName(),
-            'file_path' => $stored['path'],
-            'mime_type' => $stored['mime_type'],
-            'file_size' => $stored['file_size'],
+            'body_html' => $data['body_html'] ?? null,
             'status' => $data['status'] ?? CompanyPolicy::STATUS_PUBLISHED,
+            'requires_consent' => (bool) ($data['requires_consent'] ?? true),
             'version' => 1,
             'uploaded_by_user_id' => $user->id,
+            'original_name' => null,
+            'file_path' => null,
+            'mime_type' => null,
+            'file_size' => 0,
         ])->load('uploadedBy');
     }
 
-    public function update(User $user, CompanyPolicy $policy, array $data, ?UploadedFile $file = null): CompanyPolicy
+    public function update(User $user, CompanyPolicy $policy, array $data): CompanyPolicy
     {
         $this->assertCanManage($user);
         $this->assertSameCompany($user, $policy);
 
-        $payload = [
+        $merged = [
             'title' => $data['title'] ?? $policy->title,
             'category' => $data['category'] ?? $policy->category,
             'description' => array_key_exists('description', $data) ? $data['description'] : $policy->description,
+            'body_html' => array_key_exists('body_html', $data) ? $data['body_html'] : $policy->body_html,
             'status' => $data['status'] ?? $policy->status,
+            'requires_consent' => array_key_exists('requires_consent', $data)
+                ? (bool) $data['requires_consent']
+                : (bool) $policy->requires_consent,
         ];
 
-        if ($file) {
-            $policy->deleteFile();
-            $stored = $this->storeFile($user, $file);
-            $payload['original_name'] = $file->getClientOriginalName();
-            $payload['file_path'] = $stored['path'];
-            $payload['mime_type'] = $stored['mime_type'];
-            $payload['file_size'] = $stored['file_size'];
+        $this->assertPublishable($merged);
+
+        $bodyChanged = array_key_exists('body_html', $data)
+            && trim(strip_tags((string) $data['body_html'])) !== trim(strip_tags((string) $policy->body_html));
+
+        $payload = $merged;
+        $payload['uploaded_by_user_id'] = $user->id;
+
+        if ($bodyChanged) {
             $payload['version'] = $policy->version + 1;
-            $payload['uploaded_by_user_id'] = $user->id;
         }
 
         $policy->update($payload);
@@ -103,6 +128,7 @@ class CompanyPolicyService
         $this->assertSameCompany($user, $policy);
 
         $policy->deleteFile();
+        $policy->consents()->delete();
         $policy->delete();
     }
 
@@ -114,34 +140,192 @@ class CompanyPolicyService
             throw new NotFoundHttpException('Policy not found.');
         }
 
-        return $policy->loadMissing('uploadedBy');
+        $policy->loadMissing('uploadedBy');
+        $employee = $this->employeeAccessService->linkedEmployee($user);
+
+        if ($employee) {
+            $consent = CompanyPolicyConsent::query()
+                ->where('company_policy_id', $policy->id)
+                ->where('employee_id', $employee->id)
+                ->first();
+
+            $policy->setRelation('myConsent', $consent);
+        }
+
+        return $policy;
     }
 
-    /** @return array{path: string, mime_type: ?string, file_size: int} */
-    private function storeFile(User $user, UploadedFile $file): array
+    public function signConsent(User $user, CompanyPolicy $policy, array $data, ?UploadedFile $signatureImage = null): CompanyPolicyConsent
     {
-        $allowed = config('company_policies.allowed_mimes', []);
-        $extension = strtolower((string) $file->getClientOriginalExtension());
+        $this->assertSameCompany($user, $policy);
 
-        if ($allowed !== [] && ! in_array($extension, $allowed, true)) {
+        if (! $policy->isPublished()) {
             throw ValidationException::withMessages([
-                'file' => ['Unsupported file type. Allowed: '.implode(', ', $allowed).'.'],
+                'policy' => ['Only published policies can be consented to.'],
             ]);
         }
 
-        $relativeDirectory = CompanyPolicy::PUBLIC_UPLOAD_DIR.'/'.$user->company_id;
-        $absoluteDirectory = $this->uploadDirectories->ensure($relativeDirectory);
-        $filename = time().'_'.Str::lower(Str::random(13)).($extension ? '.'.$extension : '');
-        $mimeType = $file->getClientMimeType() ?: $file->getMimeType();
-        $fileSize = (int) $file->getSize();
+        if (! $policy->requires_consent) {
+            throw ValidationException::withMessages([
+                'policy' => ['This policy does not require employee consent.'],
+            ]);
+        }
 
-        $file->move($absoluteDirectory, $filename);
+        $employee = $this->employeeAccessService->linkedEmployee($user);
+
+        if (! $employee) {
+            throw new AccessDeniedHttpException('No employee profile is linked to your account.');
+        }
+
+        $personalEmail = trim((string) $employee->personal_email);
+
+        if ($personalEmail === '') {
+            throw ValidationException::withMessages([
+                'consent_email' => ['Add your personal email in your profile before giving consent.'],
+            ]);
+        }
+
+        $consentEmail = strtolower(trim((string) ($data['consent_email'] ?? '')));
+
+        if ($consentEmail === '' || strtolower($personalEmail) !== $consentEmail) {
+            throw ValidationException::withMessages([
+                'consent_email' => ['Consent email must match your personal email ('.$personalEmail.').'],
+            ]);
+        }
+
+        $existing = CompanyPolicyConsent::query()
+            ->where('company_policy_id', $policy->id)
+            ->where('employee_id', $employee->id)
+            ->first();
+
+        if ($existing && (int) $existing->policy_version === (int) $policy->version) {
+            throw ValidationException::withMessages([
+                'policy' => ['You have already consented to this version of the policy.'],
+            ]);
+        }
+
+        $signaturePath = null;
+        if ($signatureImage) {
+            $signaturePath = $this->storeSignatureImage($policy, $signatureImage);
+        } elseif (! empty($data['signature_data_url'])) {
+            $signaturePath = $this->storeSignatureFromDataUrl($policy, (string) $data['signature_data_url']);
+        }
+
+        if (! $signaturePath) {
+            throw ValidationException::withMessages([
+                'signature' => ['Please draw your signature to give consent.'],
+            ]);
+        }
+
+        return DB::transaction(function () use ($user, $policy, $employee, $consentEmail, $data, $signaturePath, $existing) {
+            if ($existing) {
+                if ($existing->signature_image_path) {
+                    $old = public_path(ltrim($existing->signature_image_path, '/'));
+                    if (is_file($old)) {
+                        @unlink($old);
+                    }
+                }
+
+                $existing->update([
+                    'user_id' => $user->id,
+                    'policy_version' => $policy->version,
+                    'consent_email' => $consentEmail,
+                    'signature_name' => trim((string) $data['signature_name']),
+                    'signature_image_path' => $signaturePath,
+                    'signed_at' => now(),
+                    'signature_ip' => request()?->ip(),
+                    'signature_meta' => [
+                        'user_agent' => request()?->userAgent(),
+                    ],
+                ]);
+
+                return $existing->fresh();
+            }
+
+            return CompanyPolicyConsent::query()->create([
+                'company_id' => $policy->company_id,
+                'company_policy_id' => $policy->id,
+                'employee_id' => $employee->id,
+                'user_id' => $user->id,
+                'policy_version' => $policy->version,
+                'consent_email' => $consentEmail,
+                'signature_name' => trim((string) $data['signature_name']),
+                'signature_image_path' => $signaturePath,
+                'signed_at' => now(),
+                'signature_ip' => request()?->ip(),
+                'signature_meta' => [
+                    'user_agent' => request()?->userAgent(),
+                ],
+            ]);
+        });
+    }
+
+    public function consentSummaryForPolicy(User $user, CompanyPolicy $policy): array
+    {
+        $this->assertCanManage($user);
+        $this->assertSameCompany($user, $policy);
+
+        $employee = $this->employeeAccessService->linkedEmployee($user);
+        $consent = null;
+
+        if ($employee) {
+            $consent = CompanyPolicyConsent::query()
+                ->where('company_policy_id', $policy->id)
+                ->where('employee_id', $employee->id)
+                ->first();
+        }
+
+        $totalConsents = CompanyPolicyConsent::query()
+            ->where('company_policy_id', $policy->id)
+            ->where('policy_version', $policy->version)
+            ->count();
 
         return [
-            'path' => $relativeDirectory.'/'.$filename,
-            'mime_type' => $mimeType,
-            'file_size' => $fileSize > 0 ? $fileSize : (int) (filesize($absoluteDirectory.'/'.$filename) ?: 0),
+            'consent_count' => $totalConsents,
+            'my_consent' => $consent,
         ];
+    }
+
+    /** @param  array<string, mixed>  $data */
+    private function assertPublishable(array $data): void
+    {
+        $status = $data['status'] ?? CompanyPolicy::STATUS_DRAFT;
+        $body = trim(strip_tags((string) ($data['body_html'] ?? '')));
+
+        if ($status === CompanyPolicy::STATUS_PUBLISHED && $body === '') {
+            throw ValidationException::withMessages([
+                'body_html' => ['Add policy page content before publishing.'],
+            ]);
+        }
+    }
+
+    private function storeSignatureImage(CompanyPolicy $policy, UploadedFile $file): string
+    {
+        $relativeDirectory = CompanyPolicyConsent::PUBLIC_UPLOAD_DIR.'/'.$policy->company_id;
+        $dir = $this->uploadDirectories->ensure($relativeDirectory);
+        $filename = 'policy-'.$policy->id.'-'.time().'.png';
+        $file->move($dir, $filename);
+
+        return $relativeDirectory.'/'.$filename;
+    }
+
+    private function storeSignatureFromDataUrl(CompanyPolicy $policy, string $dataUrl): ?string
+    {
+        if (! preg_match('#^data:image/(png|jpeg|jpg);base64,#i', $dataUrl)) {
+            return null;
+        }
+
+        $binary = base64_decode(preg_replace('#^data:image/\w+;base64,#i', '', $dataUrl), true);
+        if ($binary === false) {
+            return null;
+        }
+
+        $relativeDirectory = CompanyPolicyConsent::PUBLIC_UPLOAD_DIR.'/'.$policy->company_id;
+        $dir = $this->uploadDirectories->ensure($relativeDirectory);
+        $filename = 'policy-'.$policy->id.'-'.time().'_'.Str::lower(Str::random(8)).'.png';
+        file_put_contents($dir.'/'.$filename, $binary);
+
+        return $relativeDirectory.'/'.$filename;
     }
 
     private function assertCanManage(User $user): void

@@ -4,6 +4,7 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class CompanyPolicy extends Model
 {
@@ -18,11 +19,13 @@ class CompanyPolicy extends Model
         'title',
         'category',
         'description',
+        'body_html',
         'original_name',
         'file_path',
         'mime_type',
         'file_size',
         'status',
+        'requires_consent',
         'version',
         'uploaded_by_user_id',
     ];
@@ -32,6 +35,7 @@ class CompanyPolicy extends Model
         return [
             'file_size' => 'integer',
             'version' => 'integer',
+            'requires_consent' => 'boolean',
         ];
     }
 
@@ -43,6 +47,11 @@ class CompanyPolicy extends Model
     public function uploadedBy(): BelongsTo
     {
         return $this->belongsTo(User::class, 'uploaded_by_user_id');
+    }
+
+    public function consents(): HasMany
+    {
+        return $this->hasMany(CompanyPolicyConsent::class);
     }
 
     public function categoryLabel(): string

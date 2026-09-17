@@ -8,6 +8,7 @@ class PublicUploadDirectoryService
         'images/companies/logos',
         'images/employee-documents',
         'images/company-policies',
+        'images/company-policy-signatures',
         'images/bank-payment-proofs',
         'images/attendance/selfies',
         'images/employee-profile-photos',

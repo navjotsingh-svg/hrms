@@ -10014,3 +10014,51 @@ label.regularize-eligible-card:hover {
 .hrms-theme-blue .companies-list-card .content-card-body.border-bottom .h5::before {
     background: #3b82f6;
 }
+
+.company-policy-editor {
+    position: relative;
+    z-index: 1;
+    margin-bottom: 0.5rem;
+    background: #fff;
+}
+
+.company-policy-editor .ql-toolbar {
+    border-radius: 0.375rem 0.375rem 0 0;
+    border-color: var(--bs-border-color);
+    background: #f8fafc;
+}
+
+.company-policy-editor .ql-container {
+    min-height: 280px;
+    border-radius: 0 0 0.375rem 0.375rem;
+    border-color: var(--bs-border-color);
+    font-family: var(--bs-body-font-family);
+    font-size: 1rem;
+}
+
+.company-policy-page {
+    user-select: none;
+    -webkit-user-select: none;
+    -moz-user-select: none;
+    -ms-user-select: none;
+    line-height: 1.65;
+}
+
+.company-policy-page * {
+    user-select: none !important;
+    -webkit-user-select: none !important;
+}
+
+.company-policy-signature-preview {
+    max-width: 320px;
+    max-height: 120px;
+    border: 1px solid #dee2e6;
+    border-radius: 0.375rem;
+    background: #fff;
+    padding: 0.5rem;
+}
+
+.company-policy-signature-pad {
+    min-height: 180px;
+    overflow: hidden;
+}

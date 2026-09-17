@@ -7,19 +7,24 @@ use App\Http\Controllers\Controller;
 use App\Http\Resources\CompanyPolicyResource;
 use App\Models\CompanyPolicy;
 use App\Services\CompanyPolicyService;
+use App\Services\EmployeeAccessService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
-use Symfony\Component\HttpFoundation\BinaryFileResponse;
 
 class CompanyPolicyController extends Controller
 {
     use ApiResponse;
 
-    public function __construct(private CompanyPolicyService $companyPolicyService) {}
+    public function __construct(
+        private CompanyPolicyService $companyPolicyService,
+        private EmployeeAccessService $employeeAccessService,
+    ) {}
 
-    public function meta(): JsonResponse
+    public function meta(Request $request): JsonResponse
     {
+        $employee = $this->employeeAccessService->linkedEmployee($request->user());
+
         return $this->success([
             'categories' => collect(config('company_policies.categories', []))->map(fn ($label, $value) => [
                 'value' => $value,
@@ -29,9 +34,9 @@ class CompanyPolicyController extends Controller
                 'value' => $value,
                 'label' => $label,
             ])->values(),
-            'allowed_mimes' => config('company_policies.allowed_mimes', []),
-            'max_file_kb' => (int) config('company_policies.max_file_kb', 10240),
-            'can_manage' => request()->user()?->canManageDocuments() ?? false,
+            'can_manage' => $request->user()->canManageDocuments(),
+            'personal_email' => $employee?->personal_email,
+            'employee_name' => $employee?->full_name,
         ]);
     }
 
@@ -61,18 +66,23 @@ class CompanyPolicyController extends Controller
         ]);
     }
 
+    public function show(Request $request, CompanyPolicy $company_policy): JsonResponse
+    {
+        $policy = $this->companyPolicyService->resolveForUser($request->user(), $company_policy);
+
+        return $this->success([
+            'policy' => new CompanyPolicyResource($policy),
+        ]);
+    }
+
     public function store(Request $request): JsonResponse
     {
         $validated = $this->validatedPayload($request, true);
-        $policy = $this->companyPolicyService->create(
-            $request->user(),
-            $validated,
-            $request->file('file'),
-        );
+        $policy = $this->companyPolicyService->create($request->user(), $validated);
 
         return $this->success(
             ['policy' => new CompanyPolicyResource($policy)],
-            'Policy uploaded successfully.',
+            'Policy created successfully.',
             201,
         );
     }
@@ -80,12 +90,7 @@ class CompanyPolicyController extends Controller
     public function update(Request $request, CompanyPolicy $company_policy): JsonResponse
     {
         $validated = $this->validatedPayload($request, false);
-        $policy = $this->companyPolicyService->update(
-            $request->user(),
-            $company_policy,
-            $validated,
-            $request->file('file'),
-        );
+        $policy = $this->companyPolicyService->update($request->user(), $company_policy, $validated);
 
         return $this->success(
             ['policy' => new CompanyPolicyResource($policy)],
@@ -100,35 +105,50 @@ class CompanyPolicyController extends Controller
         return $this->success(null, 'Policy deleted successfully.');
     }
 
-    public function download(Request $request, CompanyPolicy $company_policy): BinaryFileResponse
+    public function sign(Request $request, CompanyPolicy $company_policy): JsonResponse
     {
-        $policy = $this->companyPolicyService->resolveForUser($request->user(), $company_policy);
-        $path = $policy->absoluteFilePath();
+        $validated = $request->validate([
+            'consent_email' => ['required', 'email', 'max:255'],
+            'signature_name' => ['required', 'string', 'max:255'],
+            'signature_data_url' => ['nullable', 'string'],
+            'signature_file' => ['nullable', 'file', 'mimes:jpg,jpeg,png', 'max:2048'],
+        ]);
 
-        if (! $path || ! is_file($path)) {
-            abort(404, 'Policy file not found.');
+        if (empty($validated['signature_data_url']) && ! $request->hasFile('signature_file')) {
+            return $this->error('Please draw your signature to give consent.', [
+                'signature' => ['Please draw your signature to give consent.'],
+            ], 422);
         }
 
-        return response()->download($path, $policy->original_name);
+        $consent = $this->companyPolicyService->signConsent(
+            $request->user(),
+            $company_policy,
+            $validated,
+            $request->file('signature_file'),
+        );
+
+        $policy = $this->companyPolicyService->resolveForUser($request->user(), $company_policy);
+
+        return $this->success([
+            'policy' => new CompanyPolicyResource($policy),
+            'consent' => [
+                'consent_email' => $consent->consent_email,
+                'signature_name' => $consent->signature_name,
+                'signed_at_label' => $consent->signed_at?->format('d M Y, h:i A'),
+            ],
+        ], 'Consent recorded successfully.');
     }
 
     /** @return array<string, mixed> */
-    private function validatedPayload(Request $request, bool $requireFile): array
+    private function validatedPayload(Request $request, bool $creating): array
     {
-        $maxKb = (int) config('company_policies.max_file_kb', 10240);
-        $mimes = implode(',', config('company_policies.allowed_mimes', []));
-
         return $request->validate([
-            'title' => [$requireFile ? 'required' : 'sometimes', 'string', 'max:255'],
-            'category' => [$requireFile ? 'required' : 'sometimes', 'string', Rule::in(array_keys(config('company_policies.categories', [])))],
+            'title' => [$creating ? 'required' : 'sometimes', 'string', 'max:255'],
+            'category' => [$creating ? 'required' : 'sometimes', 'string', Rule::in(array_keys(config('company_policies.categories', [])))],
             'description' => ['nullable', 'string', 'max:2000'],
+            'body_html' => ['nullable', 'string'],
             'status' => ['nullable', 'string', Rule::in(array_keys(config('company_policies.statuses', [])))],
-            'file' => [
-                $requireFile ? 'required' : 'nullable',
-                'file',
-                'max:'.$maxKb,
-                $mimes !== '' ? 'mimes:'.$mimes : 'file',
-            ],
+            'requires_consent' => ['nullable', 'boolean'],
         ]);
     }
 }

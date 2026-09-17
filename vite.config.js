@@ -72,6 +72,8 @@ export default defineConfig({
                 'resources/js/documents-letters-index.js',
                 'resources/js/documents-letters-show.js',
                 'resources/js/company-policies-index.js',
+                'resources/js/company-policies-form.js',
+                'resources/js/company-policies-show.js',
                 'resources/js/careers-public.js',
                 'resources/js/offer-review.js',
                 'resources/js/hiring.js',
