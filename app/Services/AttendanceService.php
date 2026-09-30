@@ -177,13 +177,15 @@ class AttendanceService
             'awaiting_punch_out' => (bool) ($dayMeta['awaiting_punch_out'] ?? false),
             'expected_clock_out_at' => $dayMeta['expected_clock_out_at'] ?? null,
             'expected_clock_out_label' => $dayMeta['expected_clock_out_label'] ?? null,
-            'profile_photo_url' => $employee->profilePhotoUrl(),
+            'profile_photo_url' => $this->faceVerificationService->readableProfilePhotoPath($employee)
+                ? $employee->profilePhotoUrl()
+                : null,
             'face_match_threshold' => $this->faceVerificationService->thresholdPercent((int) $employee->company_id),
             'require_face_match' => $this->faceVerificationService->requiresFaceMatch((int) $employee->company_id),
             'require_punch_photo' => $this->attendanceSettingsService->requiresPunchPhoto((int) $employee->company_id),
             'requires_profile_photo' => $this->faceVerificationService->requiresFaceMatch((int) $employee->company_id)
                 && $this->attendanceSettingsService->requiresPunchPhoto((int) $employee->company_id),
-            'has_profile_photo' => filled($employee->profile_photo_path),
+            'has_profile_photo' => $this->faceVerificationService->readableProfilePhotoPath($employee) !== null,
             'has_face_reference' => filled($employee->profile_face_descriptor),
             'profile_face_descriptor' => is_array($employee->profile_face_descriptor)
                 ? array_map('floatval', $employee->profile_face_descriptor)

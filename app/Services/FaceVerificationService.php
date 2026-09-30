@@ -7,6 +7,7 @@ use App\Models\Employee;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Validation\ValidationException;
 
 class FaceVerificationService
@@ -79,9 +80,11 @@ class FaceVerificationService
             return null;
         }
 
-        if (! $employee->profile_photo_path) {
+        $profilePath = $this->readableProfilePhotoPath($employee);
+
+        if ($profilePath === null) {
             throw ValidationException::withMessages([
-                'selfie' => ['An approved profile photo is required before marking attendance. Upload one from your profile.'],
+                'selfie' => ['Your approved profile photo file is missing. Upload it again from your profile, then punch.'],
             ]);
         }
 
@@ -91,27 +94,37 @@ class FaceVerificationService
             ]);
         }
 
-        $profilePath = public_path(ltrim((string) $employee->profile_photo_path, '/'));
+        $selfiePath = $selfie->getRealPath() ?: $selfie->getPathname();
+        $profileBytes = is_file($profilePath) ? file_get_contents($profilePath) : false;
+        $selfieBytes = is_string($selfiePath) && is_file($selfiePath) ? file_get_contents($selfiePath) : false;
 
-        if (! is_file($profilePath)) {
+        if ($profileBytes === false || $selfieBytes === false) {
             throw ValidationException::withMessages([
-                'selfie' => ['The approved profile photo could not be read. Upload it again from your profile.'],
+                'selfie' => ['Your approved profile photo file is missing. Upload it again from your profile, then punch.'],
             ]);
         }
 
         $minSimilarity = (float) config('hrms.attendance.insightface_min_similarity', 0.40);
         $requiredPercent = round($minSimilarity * 100, 2);
+        $compareUrl = rtrim((string) config('hrms.attendance.insightface_url'), '/').'/compare';
 
         try {
-            $response = Http::timeout((int) config('hrms.attendance.insightface_timeout', 30))
-                ->attach('profile', fopen($profilePath, 'r'), basename($profilePath))
-                ->attach('selfie', fopen($selfie->getRealPath(), 'r'), 'selfie.jpg')
-                ->post(rtrim((string) config('hrms.attendance.insightface_url'), '/').'/compare', [
+            $response = Http::connectTimeout(5)
+                ->timeout((int) config('hrms.attendance.insightface_timeout', 30))
+                ->withOptions(['expect' => false])
+                ->attach('profile', $profileBytes, basename($profilePath))
+                ->attach('selfie', $selfieBytes, 'selfie.jpg')
+                ->post($compareUrl, [
                     'threshold' => $minSimilarity,
                 ]);
-        } catch (ConnectionException) {
+        } catch (ConnectionException $exception) {
+            Log::warning('InsightFace compare failed.', [
+                'url' => $compareUrl,
+                'message' => $exception->getMessage(),
+            ]);
+
             throw ValidationException::withMessages([
-                'selfie' => ['Face verification is unavailable. Start the InsightFace service and try again.'],
+                'selfie' => [$this->unavailableMessage($exception)],
             ]);
         }
 
@@ -133,6 +146,34 @@ class FaceVerificationService
         }
 
         return $percent;
+    }
+
+    public function readableProfilePhotoPath(Employee $employee): ?string
+    {
+        $relativePath = ltrim((string) $employee->profile_photo_path, '/');
+
+        if ($relativePath === '' || str_contains($relativePath, '..')) {
+            return null;
+        }
+
+        $absolutePath = public_path($relativePath);
+
+        return is_file($absolutePath) ? $absolutePath : null;
+    }
+
+    private function unavailableMessage(ConnectionException $exception): string
+    {
+        $detail = $exception->getMessage();
+        $serviceDown = str_contains($detail, 'cURL error 7')
+            || str_contains($detail, 'Connection refused')
+            || str_contains($detail, 'Failed to connect')
+            || str_contains($detail, 'Could not resolve');
+
+        if ($serviceDown) {
+            return 'Face verification is unavailable. Start the InsightFace service and try again.';
+        }
+
+        return 'Face verification could not compare the photos. Try the punch again.';
     }
 
     /** @param  array<int, float|int|string>  $descriptor */
