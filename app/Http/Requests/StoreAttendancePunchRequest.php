@@ -3,7 +3,6 @@
 namespace App\Http\Requests;
 
 use App\Services\AttendanceSettingsService;
-use App\Services\FaceVerificationService;
 use Illuminate\Foundation\Http\FormRequest;
 
 class StoreAttendancePunchRequest extends FormRequest
@@ -17,8 +16,6 @@ class StoreAttendancePunchRequest extends FormRequest
     {
         $companyId = (int) ($this->user()?->company_id ?? 0);
         $requiresPhoto = app(AttendanceSettingsService::class)->requiresPunchPhoto($companyId);
-        $requiresFaceMatch = app(FaceVerificationService::class)->requiresFaceMatch($companyId);
-        $requiresFacePayload = $requiresPhoto && $requiresFaceMatch;
 
         return [
             'selfie' => [
@@ -32,7 +29,7 @@ class StoreAttendancePunchRequest extends FormRequest
             'location_name' => ['nullable', 'string', 'max:500'],
             'face_match_score' => ['nullable', 'numeric', 'min:0', 'max:100'],
             'selfie_face_descriptor' => [
-                $requiresFacePayload ? 'required' : 'nullable',
+                'nullable',
                 'array',
                 'min:64',
                 'max:2048',
