@@ -51,6 +51,13 @@ class ExitCaseResource extends JsonResource
             'can_manage' => $request->user()?->canManageOffboarding() ?? false,
             'can_review_clearance' => $request->user()?->canReviewClearance() ?? false,
             'can_manage_fnf' => $request->user()?->canManageFnfSettlement() ?? false,
+            'reporting_reassignment' => $this->when(
+                (($request->user()?->canManageOffboarding() ?? false) || ($request->user()?->canManageFnfSettlement() ?? false))
+                    && $this->status !== \App\Models\ExitCase::STATUS_COMPLETED
+                    && $this->relationLoaded('employee')
+                    && $this->employee,
+                fn () => app(\App\Services\ExitCaseService::class)->reportingReassignmentContext($this->resource),
+            ),
             'is_owner' => $request->user()?->isExitCaseOwner($this->resource) ?? false,
         ];
     }

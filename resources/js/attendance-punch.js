@@ -522,23 +522,11 @@ export function initAttendancePunch({
 
         loadClientNetwork();
 
-        if (requirePunchPhoto && requireFaceMatch) {
-            try {
-                const { ensureFaceModelsLoaded } = await loadFaceVerification();
-                await ensureFaceModelsLoaded();
-                await syncFaceReference();
-            } catch (error) {
-                showAlert(getErrorMessage(error, 'Face verification unavailable.'), 'danger');
-                captureBtn.disabled = true;
-            }
-        } else {
-            liveMatchOverlay?.classList.add('d-none');
-        }
+        liveMatchOverlay?.classList.add('d-none');
 
         if (requirePunchPhoto) {
             try {
                 await startCamera();
-                startLivePreview();
             } catch (error) {
                 showCameraMessage(getErrorMessage(error, 'Unable to access the camera. Please allow camera permission and try again.'));
                 captureBtn.disabled = true;
@@ -597,25 +585,6 @@ export function initAttendancePunch({
             if (requirePunchPhoto) {
                 const selfieBlob = await captureSelfieBlob();
                 formData.append('selfie', selfieBlob, 'selfie.jpg');
-
-                if (requireFaceMatch) {
-                    const { verifySelfieAgainstProfile, descriptorToArray } = await loadFaceVerification();
-                    const faceResult = await verifySelfieAgainstProfile({
-                        profilePhotoUrl,
-                        videoElement: cameraVideo,
-                        threshold: faceMatchThreshold,
-                    });
-
-                    if (!faceResult.matched) {
-                        throw new Error(`Face match ${faceResult.similarity}% — need ${faceMatchThreshold}%.`);
-                    }
-
-                    formData.append('face_match_score', String(faceResult.similarity));
-
-                    descriptorToArray(faceResult.selfieDescriptor).forEach((value, index) => {
-                        formData.append(`selfie_face_descriptor[${index}]`, String(value));
-                    });
-                }
             }
 
             const macAddress = clientMacAddress || await getDeviceMacAddress();
@@ -657,7 +626,7 @@ export function initAttendancePunch({
                 punchBtn.disabled = false;
                 captureBtn.disabled = false;
                 if (requirePunchPhoto && punchModalEl.classList.contains('show') && cameraStream) {
-                    startLivePreview();
+                    captureBtn.disabled = false;
                 }
             }
 
@@ -668,10 +637,6 @@ export function initAttendancePunch({
     const refreshStatus = async () => {
         const { data } = await api.get('/attendance/status');
         updatePanel(data.data);
-
-        if (requirePunchPhoto && requireFaceMatch) {
-            await syncFaceReference();
-        }
 
         return data.data;
     };

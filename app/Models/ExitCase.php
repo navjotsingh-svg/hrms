@@ -28,6 +28,8 @@ class ExitCase extends Model
     protected $fillable = [
         'company_id',
         'employee_id',
+        'successor_manager_employee_id',
+        'direct_report_employee_ids',
         'exit_type',
         'resignation_request_id',
         'last_working_date',
@@ -41,6 +43,7 @@ class ExitCase extends Model
         return [
             'last_working_date' => 'date',
             'completed_at' => 'datetime',
+            'direct_report_employee_ids' => 'array',
         ];
     }
 

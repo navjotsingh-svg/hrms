@@ -257,8 +257,7 @@ class AttendanceService
         if ($requiresPhoto && $selfie) {
             $verifiedMatchScore = $this->faceVerificationService->assertPunchAllowed(
                 $employee,
-                $faceMatchScore,
-                $selfieFaceDescriptor,
+                $selfie,
             );
         }
 

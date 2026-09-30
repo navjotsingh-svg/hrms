@@ -4,6 +4,9 @@ namespace App\Services;
 
 use App\Models\Company;
 use App\Models\Employee;
+use Illuminate\Http\Client\ConnectionException;
+use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Facades\Http;
 use Illuminate\Validation\ValidationException;
 
 class FaceVerificationService
@@ -68,8 +71,7 @@ class FaceVerificationService
         return $this->similarityPercent($descriptorA, $descriptorB) >= $this->thresholdPercent($companyId);
     }
 
-    /** @param  array<int, float|int|string>|null  $selfieDescriptor */
-    public function assertPunchAllowed(Employee $employee, ?float $clientMatchScore, ?array $selfieDescriptor): ?float
+    public function assertPunchAllowed(Employee $employee, ?UploadedFile $selfie): ?float
     {
         $companyId = (int) $employee->company_id;
 
@@ -83,36 +85,54 @@ class FaceVerificationService
             ]);
         }
 
-        $threshold = $this->thresholdPercent($companyId);
-        $storedDescriptor = $employee->profile_face_descriptor;
-
-        if (! is_array($storedDescriptor) || count($storedDescriptor) < 64) {
+        if (! $selfie) {
             throw ValidationException::withMessages([
-                'selfie' => ['Your face reference is not synced yet. Open attendance once while online, then try again.'],
+                'selfie' => ['A punch photo is required for face verification.'],
             ]);
         }
 
-        if (! is_array($selfieDescriptor) || count($selfieDescriptor) < 64) {
+        $profilePath = public_path(ltrim((string) $employee->profile_photo_path, '/'));
+
+        if (! is_file($profilePath)) {
             throw ValidationException::withMessages([
-                'selfie' => ['Face verification is required to mark attendance.'],
+                'selfie' => ['The approved profile photo could not be read. Upload it again from your profile.'],
             ]);
         }
 
-        if (count($storedDescriptor) !== count($selfieDescriptor)) {
+        $minSimilarity = (float) config('hrms.attendance.insightface_min_similarity', 0.40);
+        $requiredPercent = round($minSimilarity * 100, 2);
+
+        try {
+            $response = Http::timeout((int) config('hrms.attendance.insightface_timeout', 30))
+                ->attach('profile', fopen($profilePath, 'r'), basename($profilePath))
+                ->attach('selfie', fopen($selfie->getRealPath(), 'r'), 'selfie.jpg')
+                ->post(rtrim((string) config('hrms.attendance.insightface_url'), '/').'/compare', [
+                    'threshold' => $minSimilarity,
+                ]);
+        } catch (ConnectionException) {
             throw ValidationException::withMessages([
-                'selfie' => ['Face verification data is invalid. Please retry with your camera.'],
+                'selfie' => ['Face verification is unavailable. Start the InsightFace service and try again.'],
             ]);
         }
 
-        $verifiedScore = $this->similarityPercent($storedDescriptor, $selfieDescriptor);
-
-        if ($verifiedScore < $threshold) {
+        if (! $response->successful()) {
             throw ValidationException::withMessages([
-                'selfie' => ["Face verification failed ({$verifiedScore}% match). The photo must match your approved profile photo."],
+                'selfie' => [$response->json('message') ?: 'Face verification could not compare the photos.'],
             ]);
         }
 
-        return $verifiedScore;
+        $percent = round((float) $response->json('percent', 0), 2);
+
+        if (! $response->json('matched')) {
+            $message = $response->json('message')
+                ?: "Face verification failed ({$percent}% similar). It must be at least {$requiredPercent}% similar to your approved profile photo.";
+
+            throw ValidationException::withMessages([
+                'selfie' => [$message],
+            ]);
+        }
+
+        return $percent;
     }
 
     /** @param  array<int, float|int|string>  $descriptor */

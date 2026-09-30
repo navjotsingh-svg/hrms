@@ -368,6 +368,14 @@ document.addEventListener('DOMContentLoaded', async () => {
 
                 await loadExitCases(1);
             } catch (error) {
+                const existingId = error.response?.data?.errors?.existing_exit_case_id?.[0];
+
+                if (existingId) {
+                    const showUrl = routes().offboardingShow || '/offboarding/cases';
+                    window.location.href = `${showUrl}/${existingId}`;
+                    return;
+                }
+
                 showAlert(getErrorMessage(error), 'danger');
             } finally {
                 submitBtn?.removeAttribute('disabled');

@@ -431,7 +431,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             showAlert(data.message || 'Offboarding started successfully.');
 
             const exitCaseId = data.data?.exit_case?.id;
-            const showUrl = routes().offboardingShow || '/offboarding/cases';
+            const showUrl = routes.offboardingShow || '/offboarding/cases';
 
             if (exitCaseId) {
                 window.location.href = `${showUrl}/${exitCaseId}`;
@@ -440,6 +440,14 @@ document.addEventListener('DOMContentLoaded', async () => {
 
             await loadEmployees(currentPage);
         } catch (error) {
+            const existingId = error.response?.data?.errors?.existing_exit_case_id?.[0];
+
+            if (existingId) {
+                const showUrl = routes.offboardingShow || '/offboarding/cases';
+                window.location.href = `${showUrl}/${existingId}`;
+                return;
+            }
+
             showAlert(getErrorMessage(error), 'danger');
         } finally {
             submitBtn?.removeAttribute('disabled');

@@ -130,7 +130,10 @@ return [
 
     'attendance' => [
         'face_match_threshold' => (int) env('ATTENDANCE_FACE_MATCH_THRESHOLD', 90),
-        'face_embedding_model' => env('ATTENDANCE_FACE_EMBEDDING_MODEL', 'insightface-mobilenet-emore'),
+        'face_embedding_model' => env('ATTENDANCE_FACE_EMBEDDING_MODEL', 'insightface-buffalo_s'),
+        'insightface_url' => env('INSIGHTFACE_URL', 'http://127.0.0.1:8011'),
+        'insightface_min_similarity' => (float) env('INSIGHTFACE_MIN_SIMILARITY', 0.40),
+        'insightface_timeout' => (int) env('INSIGHTFACE_TIMEOUT', 30),
         'require_face_match' => filter_var(
             env('ATTENDANCE_REQUIRE_FACE_MATCH', env('APP_ENV', 'production') === 'local' ? false : true),
             FILTER_VALIDATE_BOOL

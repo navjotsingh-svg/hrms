@@ -6,6 +6,8 @@
 /storage/*.key
 /storage/pail
 /vendor
+/services/insightface/.venv
+/services/insightface/.cache
 .env
 .env.backup
 .env.production

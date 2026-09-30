@@ -132,14 +132,15 @@ class ExitCaseService
 
         $this->companyOrganizationService->assertActorMayOffboardEmployee($user, $employee);
 
-        $hasActiveCase = ExitCase::query()
+        $activeCase = ExitCase::query()
             ->where('employee_id', $employee->id)
             ->where('status', ExitCase::STATUS_IN_PROGRESS)
-            ->exists();
+            ->first();
 
-        if ($hasActiveCase) {
+        if ($activeCase) {
             throw ValidationException::withMessages([
-                'employee_id' => ['This employee already has an active offboarding case.'],
+                'employee_id' => ['This employee already has an active offboarding case. Open that case to choose where the direct reports will go.'],
+                'existing_exit_case_id' => [(string) $activeCase->id],
             ]);
         }
 
@@ -446,13 +447,157 @@ class ExitCaseService
         return $this->showForUser($user, $this->findExitCaseOrFail((int) $exitCase->id));
     }
 
-    public function markSettlementPaid(User $user, ExitCase $exitCase): ExitCase
+    /**
+     * Active people who report to the departing employee, plus who they should report to next.
+     *
+     * @return array{
+     *     required: bool,
+     *     direct_reports: array<int, array{id: int, full_name: string, employee_code: string|null, designation: string|null}>,
+     *     suggested_manager_id: int|null,
+     *     suggested_manager_name: string|null,
+     *     selected_manager_id: int|null,
+     *     managers: array<int, array{id: int, full_name: string, employee_code: string|null, designation: string|null}>
+     * }
+     */
+    public function reportingReassignmentContext(ExitCase $exitCase): array
+    {
+        $exitCase->loadMissing('employee.manager');
+        $departing = $exitCase->employee;
+
+        if (! $departing) {
+            return [
+                'required' => false,
+                'direct_reports' => [],
+                'suggested_manager_id' => null,
+                'suggested_manager_name' => null,
+                'selected_manager_id' => null,
+                'managers' => [],
+            ];
+        }
+
+        $reports = $this->reportsForReassignment($exitCase, $departing);
+        $suggested = $this->activeUpperManager($departing);
+        $excludedIds = $reports->pluck('id')->push($departing->id)->all();
+
+        $managers = Employee::query()
+            ->where('company_id', $departing->company_id)
+            ->where('status', 'active')
+            ->whereNotIn('id', $excludedIds)
+            ->orderBy('first_name')
+            ->orderBy('last_name')
+            ->get(['id', 'first_name', 'last_name', 'employee_code', 'designation']);
+
+        return [
+            'required' => $reports->isNotEmpty(),
+            'direct_reports' => $reports->map(fn (Employee $employee) => $this->reassignmentPerson($employee))->values()->all(),
+            'suggested_manager_id' => $suggested?->id,
+            'suggested_manager_name' => $suggested?->full_name,
+            'selected_manager_id' => $exitCase->successor_manager_employee_id ?: $suggested?->id,
+            'moved' => (bool) $exitCase->successor_manager_employee_id,
+            'managers' => $managers->map(fn (Employee $employee) => $this->reassignmentPerson($employee))->values()->all(),
+        ];
+    }
+
+    public function reassignDirectReports(User $actor, Employee $departing, ?int $successorId): int
+    {
+        $reports = $this->activeDirectReports($departing);
+
+        if ($reports->isEmpty()) {
+            return 0;
+        }
+
+        $successor = $this->resolveSuccessorManager($departing, $reports, $successorId);
+        $this->moveReportsToManager($actor, $departing, $reports, $successor);
+
+        return $reports->count();
+    }
+
+    /** @param  Collection<int, Employee>  $reports */
+    private function moveReportsToManager(User $actor, Employee $departing, Collection $reports, Employee $successor): void
+    {
+        Employee::query()
+            ->whereIn('id', $reports->pluck('id'))
+            ->update(['manager_id' => $successor->id]);
+
+        $this->activityLogService->logChange(
+            $actor,
+            'employees',
+            'manager.reassigned',
+            $departing,
+            (int) $departing->id,
+            'Direct reports now report to '.$successor->full_name.'.',
+            ['manager_id' => $departing->id, 'direct_report_ids' => $reports->pluck('id')->all()],
+            ['manager_id' => $successor->id],
+            request(),
+        );
+    }
+
+    /** @return Collection<int, Employee> */
+    private function reportsForReassignment(ExitCase $exitCase, Employee $departing): Collection
+    {
+        $ids = array_values(array_filter(array_map('intval', $exitCase->direct_report_employee_ids ?? [])));
+
+        if ($ids === []) {
+            return $this->activeDirectReports($departing);
+        }
+
+        return Employee::query()
+            ->where('company_id', $departing->company_id)
+            ->whereIn('id', $ids)
+            ->where('status', 'active')
+            ->orderBy('first_name')
+            ->orderBy('last_name')
+            ->get(['id', 'company_id', 'first_name', 'last_name', 'employee_code', 'designation', 'manager_id', 'status']);
+    }
+
+    public function assignSuccessorManager(User $user, ExitCase $exitCase, int $successorManagerId): ExitCase
+    {
+        if (! $user->canManageOffboarding() && ! $user->canManageFnfSettlement()) {
+            throw new AccessDeniedHttpException('You are not allowed to assign a reporting manager.');
+        }
+
+        if ($exitCase->status !== ExitCase::STATUS_IN_PROGRESS) {
+            throw ValidationException::withMessages([
+                'successor_manager_id' => ['Reporting changes can only be saved while offboarding is in progress.'],
+            ]);
+        }
+
+        $exitCase->loadMissing('employee');
+        $departing = $exitCase->employee;
+
+        if (! $departing) {
+            throw new NotFoundHttpException('Employee not found.');
+        }
+
+        $reports = $this->reportsForReassignment($exitCase, $departing);
+
+        if ($reports->isEmpty()) {
+            throw ValidationException::withMessages([
+                'successor_manager_id' => ['This employee has no active direct reports to move.'],
+            ]);
+        }
+
+        $successor = $this->resolveSuccessorManager($departing, $reports, $successorManagerId);
+
+        DB::transaction(function () use ($user, $departing, $reports, $successor, $exitCase) {
+            $this->moveReportsToManager($user, $departing, $reports, $successor);
+
+            $exitCase->update([
+                'successor_manager_employee_id' => $successor->id,
+                'direct_report_employee_ids' => $reports->pluck('id')->map(fn ($id) => (int) $id)->values()->all(),
+            ]);
+        });
+
+        return $this->showForUser($user, $exitCase->fresh());
+    }
+
+    public function markSettlementPaid(User $user, ExitCase $exitCase, ?int $successorManagerId = null): ExitCase
     {
         if (! $user->canManageFnfSettlement()) {
             throw new AccessDeniedHttpException('You are not allowed to manage F&F settlements.');
         }
 
-        $exitCase->loadMissing(['employee', 'fullAndFinalSettlement', 'clearanceItems', 'assetReturnItems', 'surveyResponse']);
+        $exitCase->loadMissing(['employee.manager', 'fullAndFinalSettlement', 'clearanceItems', 'assetReturnItems', 'surveyResponse']);
         $settlement = $exitCase->fullAndFinalSettlement;
 
         if (! $settlement || $settlement->status !== FullAndFinalSettlement::STATUS_APPROVED) {
@@ -463,8 +608,13 @@ class ExitCaseService
 
         $exitCaseId = (int) $exitCase->id;
         $employee = $exitCase->employee;
+        $successorManagerId = $successorManagerId ?: ($exitCase->successor_manager_employee_id ? (int) $exitCase->successor_manager_employee_id : null);
 
-        DB::transaction(function () use ($user, $exitCase, $settlement) {
+        DB::transaction(function () use ($user, $exitCase, $settlement, $employee, $successorManagerId) {
+            if ($employee) {
+                $this->reassignDirectReports($user, $employee, $successorManagerId);
+            }
+
             $settlement->update([
                 'status' => FullAndFinalSettlement::STATUS_PAID,
                 'processed_by_user_id' => $user->id,
@@ -535,6 +685,82 @@ class ExitCaseService
         }
 
         $exitCase->update(['stage' => $stage]);
+    }
+
+    /** @return Collection<int, Employee> */
+    private function activeDirectReports(Employee $departing): Collection
+    {
+        return Employee::query()
+            ->where('company_id', $departing->company_id)
+            ->where('manager_id', $departing->id)
+            ->where('status', 'active')
+            ->orderBy('first_name')
+            ->orderBy('last_name')
+            ->get(['id', 'company_id', 'first_name', 'last_name', 'employee_code', 'designation', 'manager_id', 'status']);
+    }
+
+    private function activeUpperManager(Employee $departing): ?Employee
+    {
+        $departing->loadMissing('manager');
+        $manager = $departing->manager;
+
+        if (! $manager || $manager->status !== 'active' || (int) $manager->company_id !== (int) $departing->company_id) {
+            return null;
+        }
+
+        return $manager;
+    }
+
+    /**
+     * @param  Collection<int, Employee>  $reports
+     */
+    private function resolveSuccessorManager(Employee $departing, Collection $reports, ?int $successorId): Employee
+    {
+        $successorId = $successorId ?: $this->activeUpperManager($departing)?->id;
+
+        if (! $successorId) {
+            throw ValidationException::withMessages([
+                'successor_manager_id' => ['This employee has direct reports. Choose the manager above them, or another active manager, before completing offboarding.'],
+            ]);
+        }
+
+        $successor = Employee::query()
+            ->where('company_id', $departing->company_id)
+            ->where('id', $successorId)
+            ->first();
+
+        if (! $successor || $successor->status !== 'active' || (int) $successor->id === (int) $departing->id) {
+            throw ValidationException::withMessages([
+                'successor_manager_id' => ['Choose an active employee to take these direct reports.'],
+            ]);
+        }
+
+        if ($reports->contains(fn (Employee $report) => (int) $report->id === (int) $successor->id)) {
+            throw ValidationException::withMessages([
+                'successor_manager_id' => ['A direct report cannot become their own manager. Choose the manager above this employee, or another active manager.'],
+            ]);
+        }
+
+        foreach ($reports as $report) {
+            if ($this->employeeAccessService->wouldCreateCycle((int) $report->id, (int) $successor->id, (int) $departing->company_id)) {
+                throw ValidationException::withMessages([
+                    'successor_manager_id' => ['That manager would create a reporting loop. Choose the manager above this employee, or another active manager.'],
+                ]);
+            }
+        }
+
+        return $successor;
+    }
+
+    /** @return array{id: int, full_name: string, employee_code: string|null, designation: string|null} */
+    private function reassignmentPerson(Employee $employee): array
+    {
+        return [
+            'id' => (int) $employee->id,
+            'full_name' => $employee->full_name,
+            'employee_code' => $employee->employee_code,
+            'designation' => $employee->designation,
+        ];
     }
 
     private function assertReadyForCompletion(ExitCase $exitCase): void

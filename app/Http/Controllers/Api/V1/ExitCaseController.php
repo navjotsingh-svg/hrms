@@ -205,9 +205,34 @@ class ExitCaseController extends Controller
     {
         $this->ensureCompanyCase($request, $exitCase);
 
-        $exitCase = $this->exitCaseService->markSettlementPaid($request->user(), $exitCase);
+        $validated = $request->validate([
+            'successor_manager_id' => ['nullable', 'integer', 'exists:employees,id'],
+        ]);
+
+        $exitCase = $this->exitCaseService->markSettlementPaid(
+            $request->user(),
+            $exitCase,
+            isset($validated['successor_manager_id']) ? (int) $validated['successor_manager_id'] : null,
+        );
 
         return $this->success(['exit_case' => new ExitCaseResource($exitCase)], 'Offboarding completed. Employee marked inactive.');
+    }
+
+    public function assignSuccessor(Request $request, ExitCase $exitCase): JsonResponse
+    {
+        $this->ensureCompanyCase($request, $exitCase);
+
+        $validated = $request->validate([
+            'successor_manager_id' => ['required', 'integer', 'exists:employees,id'],
+        ]);
+
+        $exitCase = $this->exitCaseService->assignSuccessorManager(
+            $request->user(),
+            $exitCase,
+            (int) $validated['successor_manager_id'],
+        );
+
+        return $this->success(['exit_case' => new ExitCaseResource($exitCase)], 'Direct reports now report to the selected manager. Their profiles are updated.');
     }
 
     private function ensureCompanyCase(Request $request, ExitCase $exitCase): void

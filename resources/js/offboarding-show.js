@@ -184,6 +184,53 @@ document.addEventListener('DOMContentLoaded', async () => {
         </div>`;
     };
 
+    const escapeHtml = (value) => String(value ?? '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;');
+
+    const renderReportingReassignment = (item) => {
+        const reassignment = item.reporting_reassignment;
+
+        if (!reassignment?.required || item.full_and_final_settlement?.status === 'paid') {
+            return '';
+        }
+
+        const reports = (reassignment.direct_reports || [])
+            .map((person) => `<li>${escapeHtml(person.full_name)}${person.employee_code ? ` (${escapeHtml(person.employee_code)})` : ''}</li>`)
+            .join('');
+        const selectedId = Number(reassignment.selected_manager_id || reassignment.suggested_manager_id);
+        const options = (reassignment.managers || []).map((person) => {
+            const selected = Number(person.id) === selectedId ? 'selected' : '';
+            const label = `${person.full_name}${person.employee_code ? ` (${person.employee_code})` : ''}${person.designation ? ` · ${person.designation}` : ''}`;
+
+            return `<option value="${escapeHtml(person.id)}" ${selected}>${escapeHtml(label)}</option>`;
+        }).join('');
+        const hint = reassignment.moved
+            ? `These people now report to ${escapeHtml((reassignment.managers || []).find((person) => Number(person.id) === selectedId)?.full_name || reassignment.suggested_manager_name || 'the selected manager')}. Their employee profile shows that manager.`
+            : (reassignment.suggested_manager_name
+                ? `Save to update their profile now. The manager above this employee, ${escapeHtml(reassignment.suggested_manager_name)}, is selected.`
+                : 'Save to update their profile now. Choose an active manager.');
+
+        return `<div class="content-card mb-4">
+            <div class="content-card-header border-bottom">
+                <h2 class="content-card-title mb-0">Where direct reports will go</h2>
+            </div>
+            <div class="content-card-body">
+                <p class="small text-muted mb-2">${hint}</p>
+                <div class="small mb-2">Direct reports:</div>
+                <ul class="small mb-3">${reports}</ul>
+                <label for="successor_manager_id" class="form-label">New reporting manager <span class="text-danger">*</span></label>
+                <select class="form-select" id="successor_manager_id" ${options ? '' : 'disabled'}>
+                    <option value="">Select a manager</option>
+                    ${options}
+                </select>
+                ${options ? '<button type="button" class="btn btn-outline-primary mt-3" id="successorSaveBtn">Save reporting manager</button>' : '<div class="form-text text-danger">No other active manager is available.</div>'}
+            </div>
+        </div>`;
+    };
+
     const renderFnfSection = (item) => {
         const fnf = item.full_and_final_settlement;
 
@@ -247,6 +294,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                     </div>
                 </div>
             </div>
+            ${renderReportingReassignment(item)}
             ${renderClearanceTable(item)}
             ${renderAssetTable(item)}
             ${renderSurveySection(item)}
@@ -255,6 +303,24 @@ document.addEventListener('DOMContentLoaded', async () => {
 
         bindFnfForm(item);
         bindSurveyForm(item);
+        document.getElementById('successorSaveBtn')?.addEventListener('click', async () => {
+            const successorId = document.getElementById('successor_manager_id')?.value || '';
+
+            if (!successorId) {
+                showAlert('Choose the manager above this employee, or another active manager.', 'warning');
+                return;
+            }
+
+            try {
+                const { data } = await api.patch(`/exit-cases/${exitCaseId}/reporting-successor`, {
+                    successor_manager_id: Number(successorId),
+                });
+                showAlert(data.message);
+                render(data.data.exit_case);
+            } catch (error) {
+                showAlert(getErrorMessage(error), 'danger');
+            }
+        });
     };
 
     const bindFnfForm = (item) => {
@@ -300,8 +366,18 @@ document.addEventListener('DOMContentLoaded', async () => {
         });
 
         document.getElementById('fnfPaidBtn')?.addEventListener('click', async () => {
+            const reassignment = item.reporting_reassignment;
+            const successorId = document.getElementById('successor_manager_id')?.value || '';
+
+            if (reassignment?.required && !successorId) {
+                showAlert('Choose the manager above this employee, or another active manager, before completing offboarding.', 'warning');
+                return;
+            }
+
             try {
-                const { data } = await api.patch(`/exit-cases/${exitCaseId}/settlement/paid`);
+                const { data } = await api.patch(`/exit-cases/${exitCaseId}/settlement/paid`, {
+                    successor_manager_id: successorId ? Number(successorId) : null,
+                });
                 showAlert(data.message);
                 render(data.data.exit_case);
             } catch (error) {

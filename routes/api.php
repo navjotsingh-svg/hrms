@@ -803,6 +803,9 @@ Route::prefix('v1')->name('api.')->group(function () {
                 Route::patch('exit-cases/{exit_case}/asset-items/{item}', [\App\Http\Controllers\Api\V1\ExitCaseController::class, 'reviewAssetItem'])
                     ->name('exit-cases.asset-items.review')
                     ->whereNumber(['exit_case', 'item']);
+                Route::patch('exit-cases/{exit_case}/reporting-successor', [\App\Http\Controllers\Api\V1\ExitCaseController::class, 'assignSuccessor'])
+                    ->name('exit-cases.reporting-successor')
+                    ->whereNumber('exit_case');
                 Route::patch('exit-cases/{exit_case}/settlement', [\App\Http\Controllers\Api\V1\ExitCaseController::class, 'saveSettlement'])
                     ->name('exit-cases.settlement.save')
                     ->whereNumber('exit_case');

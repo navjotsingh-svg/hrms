@@ -26,6 +26,7 @@ class PayrollService
         private EmployeeService $employeeService,
         private WorkflowNotificationService $workflowNotificationService,
         private IncomeTaxService $incomeTaxService,
+        private ExitCaseService $exitCaseService,
     ) {}
 
     public function listPeriods(int $companyId): Collection
@@ -429,6 +430,17 @@ class PayrollService
 
         if ($period->payslips()->count() === 0) {
             throw new UnprocessableEntityHttpException('Cannot mark an empty payroll period as paid.');
+        }
+
+        if ($period->type === PayrollPeriod::TYPE_OFFBOARD && $period->employee) {
+            $period->loadMissing('exitCase');
+            $storedSuccessor = $period->exitCase?->successor_manager_employee_id;
+
+            $this->exitCaseService->reassignDirectReports(
+                $user,
+                $period->employee,
+                $storedSuccessor ? (int) $storedSuccessor : null,
+            );
         }
 
         $period->update([
