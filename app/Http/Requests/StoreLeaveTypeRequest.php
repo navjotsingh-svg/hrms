@@ -27,6 +27,7 @@ class StoreLeaveTypeRequest extends FormRequest
             'annual_quota' => ['nullable', 'numeric', 'min:0', Rule::when($this->boolean('is_hourly_leave'), 'max:8760', 'max:365')],
             'max_days_per_request' => ['nullable', 'numeric', 'min:0.5', 'max:365'],
             'max_days_per_month' => ['nullable', 'numeric', 'min:0.5', 'max:365'],
+            'lapses_monthly' => ['required', 'boolean'],
             'is_hourly_leave' => ['required', 'boolean'],
             'max_hours_per_month' => [
                 'nullable',

@@ -17,6 +17,7 @@ class LeaveType extends Model
         'annual_quota',
         'max_days_per_request',
         'max_days_per_month',
+        'lapses_monthly',
         'is_hourly_leave',
         'max_hours_per_month',
         'allowed_hourly_durations',
@@ -34,6 +35,7 @@ class LeaveType extends Model
             'annual_quota' => 'float',
             'max_days_per_request' => 'float',
             'max_days_per_month' => 'float',
+            'lapses_monthly' => 'boolean',
             'is_hourly_leave' => 'boolean',
             'max_hours_per_month' => 'integer',
             'allowed_hourly_durations' => 'array',
@@ -104,6 +106,28 @@ class LeaveType extends Model
         return $this->annual_quota === null && ! $this->isCompOff();
     }
 
+    public function lapsesMonthly(): bool
+    {
+        return (bool) $this->lapses_monthly && ! $this->isHourlyLeave();
+    }
+
+    public function monthlyGrant(): ?float
+    {
+        if (! $this->lapsesMonthly()) {
+            return $this->max_days_per_month !== null ? (float) $this->max_days_per_month : null;
+        }
+
+        if ($this->max_days_per_month !== null) {
+            return (float) $this->max_days_per_month;
+        }
+
+        if ($this->annual_quota === null) {
+            return null;
+        }
+
+        return round(((float) $this->annual_quota) / 12, 1);
+    }
+
     public function applicationPolicyLabel(): string
     {
         if ($this->isHourlyLeave()) {
@@ -137,7 +161,10 @@ class LeaveType extends Model
             $parts[] = 'Can apply full balance in one request';
         }
 
-        if ($this->max_days_per_month !== null) {
+        if ($this->lapsesMonthly()) {
+            $grant = $this->monthlyGrant();
+            $parts[] = 'Unused '.($grant !== null ? $this->formatLimitDays($grant).' day(s)' : 'days').' expire at the end of each month';
+        } elseif ($this->max_days_per_month !== null) {
             $parts[] = 'Max '.$this->formatLimitDays($this->max_days_per_month).' per month';
         }
 

@@ -20,7 +20,7 @@ const renderBalances = (container, balances) => {
             <div class="small text-muted mt-1">
                 ${item.is_comp_off || item.leave_type?.is_comp_off
         ? `Comp off credited: <strong>${item.adjusted}</strong> · Available: <strong>${item.available ?? 0}</strong>`
-        : `Quota: <strong>${item.leave_type.annual_quota ?? 'Unlimited'}</strong> ${quotaUnit} · Allocated: <strong>${item.allocated}</strong> ${unit} · Available: <strong>${item.available ?? 'Unlimited'}</strong> ${item.available != null ? unit : ''}`}
+        : `Quota: <strong>${item.leave_type.annual_quota ?? 'Unlimited'}</strong> ${quotaUnit} · Allocated: <strong>${item.allocated}</strong> ${unit} · ${item.leave_type?.lapses_monthly ? 'Available this month' : 'Available'}: <strong>${item.available ?? 'Unlimited'}</strong> ${item.available != null ? unit : ''}${item.leave_type?.lapses_monthly ? ' · Unused days expire at month end' : ''}`}
                 · Used: <strong>${item.used}</strong> ${unit} · Pending: <strong>${item.pending}</strong> ${unit}
             </div>
         </div>

@@ -23,8 +23,16 @@
     <div class="col-md-4">
         <label for="max_days_per_month" class="form-label">Max Days Per Month</label>
         <input type="number" class="form-control" id="max_days_per_month" name="max_days_per_month" min="0.5" max="365" step="0.5" placeholder="Empty = no monthly cap">
-        <div class="form-text">Example: Casual Leave = 2 means max 2 days per calendar month.</div>
+        <div class="form-text">Casual leave is 1 day. Sick leave has no monthly cap.</div>
         <div class="invalid-feedback"></div>
+    </div>
+    <div class="col-md-4">
+        <label for="lapses_monthly" class="form-label">Monthly expiry</label>
+        <select class="form-select" id="lapses_monthly" name="lapses_monthly">
+            <option value="0">No — unused days stay in the yearly balance</option>
+            <option value="1">Yes — unused days expire at month end</option>
+        </select>
+        <div class="form-text">Casual leave expires if it is not taken that month. Sick leave does not.</div>
     </div>
     <div class="col-md-4">
         <label for="sort_order" class="form-label">Sort Order</label>

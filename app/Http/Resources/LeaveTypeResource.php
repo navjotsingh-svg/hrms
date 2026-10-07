@@ -16,6 +16,7 @@ class LeaveTypeResource extends JsonResource
             'annual_quota' => $this->annual_quota,
             'max_days_per_request' => $this->max_days_per_request,
             'max_days_per_month' => $this->max_days_per_month,
+            'lapses_monthly' => $this->lapsesMonthly(),
             'is_hourly_leave' => $this->is_hourly_leave,
             'max_hours_per_month' => $this->isHourlyLeave() ? $this->max_hours_per_month : null,
             'allowed_hourly_durations' => $this->isHourlyLeave()

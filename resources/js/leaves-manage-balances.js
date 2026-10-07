@@ -83,7 +83,9 @@ document.addEventListener('DOMContentLoaded', async () => {
 
         const unit = cell.unit === 'hours' ? 'h' : 'd';
         const availableLabel = cell.available ?? '∞';
-        const title = `Allocated: ${cell.allocated} · Used: ${cell.used} · Pending: ${cell.pending}`;
+        const title = cell.lapses_monthly
+            ? `Available this month. Unused days expire at month end. Annual allocated: ${cell.allocated} · Used: ${cell.used} · Pending: ${cell.pending}`
+            : `Allocated: ${cell.allocated} · Used: ${cell.used} · Pending: ${cell.pending}`;
 
         return `<span class="leave-balance-cell" title="${escapeHtml(title)}">${availableLabel}<span class="leave-balance-cell-unit">${unit}</span></span>`;
     };

@@ -29,6 +29,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             annual_quota: form.querySelector('#annual_quota').value === '' ? null : Number(form.querySelector('#annual_quota').value),
             max_days_per_request: form.querySelector('#max_days_per_request').value === '' ? null : Number(form.querySelector('#max_days_per_request').value),
             max_days_per_month: form.querySelector('#max_days_per_month').value === '' ? null : Number(form.querySelector('#max_days_per_month').value),
+            lapses_monthly: form.querySelector('#lapses_monthly').value === '1',
             is_hourly_leave: false,
             max_hours_per_month: null,
             allowed_hourly_durations: null,
@@ -65,6 +66,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             form.querySelector('#annual_quota').value = type.annual_quota ?? '';
             form.querySelector('#max_days_per_request').value = type.is_hourly_leave ? '' : (type.max_days_per_request ?? '');
             form.querySelector('#max_days_per_month').value = type.max_days_per_month ?? '';
+            form.querySelector('#lapses_monthly').value = type.lapses_monthly ? '1' : '0';
             form.querySelector('#is_paid').value = type.is_paid ? '1' : '0';
             if (form.querySelector('#allows_attendance_punch')) {
                 form.querySelector('#allows_attendance_punch').value = type.allows_attendance_punch ? '1' : '0';

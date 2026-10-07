@@ -48,7 +48,8 @@ document.addEventListener('DOMContentLoaded', async () => {
                         ${item.is_comp_off ? `<div class="small">Comp off credited: <strong>${item.adjusted}</strong></div>` : `<div class="small">Adjusted: <strong>${item.adjusted}</strong></div>`}
                         <div class="small">Used: <strong>${item.used}</strong> ${unit}</div>
                         <div class="small">Pending: <strong>${item.pending}</strong> ${unit}</div>
-                        <div class="small mt-2">Available: <strong class="text-primary">${item.available ?? 'Unlimited'}</strong>${item.available != null ? ` ${unit}` : ''}</div>
+                        <div class="small mt-2">${item.leave_type?.lapses_monthly ? 'Available this month' : 'Available'}: <strong class="text-primary">${item.available ?? 'Unlimited'}</strong>${item.available != null ? ` ${unit}` : ''}</div>
+                        ${item.leave_type?.lapses_monthly ? '<div class="small text-muted">Unused days expire at the end of the month.</div>' : ''}
                     </div>
                 </div>
             `;

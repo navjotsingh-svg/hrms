@@ -71,7 +71,11 @@ class LeaveBalanceService
             return true;
         }
 
-        return $balance->available() >= $days;
+        $remaining = $balance->leaveType?->lapsesMonthly()
+            ? $balance->yearlyRemaining()
+            : $balance->available();
+
+        return $remaining >= $days;
     }
 
     public function reserve(EmployeeLeaveBalance $balance, float $days): void
@@ -280,6 +284,7 @@ class LeaveBalanceService
             'used' => (float) $balance->used,
             'pending' => (float) $balance->pending,
             'adjusted' => (float) $balance->adjusted,
+            'lapses_monthly' => $type->lapsesMonthly(),
             'unit' => $type->quotaUnit(),
             'is_comp_off' => $type->isCompOff(),
         ];

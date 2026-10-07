@@ -13,8 +13,8 @@ class LeaveTypeService
     public function defaultTypes(): array
     {
         return [
-            ['name' => 'Casual Leave', 'code' => 'CL', 'annual_quota' => 12, 'max_days_per_request' => 2, 'max_days_per_month' => 2, 'requires_proof' => false, 'color' => '#3b82f6', 'sort_order' => 1],
-            ['name' => 'Sick Leave', 'code' => 'SL', 'annual_quota' => 6, 'requires_proof' => true, 'color' => '#ef4444', 'sort_order' => 2],
+            ['name' => 'Casual Leave', 'code' => 'CL', 'annual_quota' => 12, 'max_days_per_request' => 1, 'max_days_per_month' => 1, 'lapses_monthly' => true, 'requires_proof' => false, 'color' => '#3b82f6', 'sort_order' => 1],
+            ['name' => 'Sick Leave', 'code' => 'SL', 'annual_quota' => 6, 'lapses_monthly' => false, 'requires_proof' => true, 'color' => '#ef4444', 'sort_order' => 2],
             ['name' => 'Earned Leave', 'code' => 'EL', 'annual_quota' => 15, 'requires_proof' => false, 'color' => '#22c55e', 'sort_order' => 3],
             ['name' => 'Maternity Leave', 'code' => 'MAT', 'annual_quota' => 182, 'requires_proof' => true, 'color' => '#ec4899', 'sort_order' => 4],
             ['name' => 'Paternity Leave', 'code' => 'PAT', 'annual_quota' => 15, 'requires_proof' => true, 'color' => '#6366f1', 'sort_order' => 5],
@@ -140,6 +140,7 @@ class LeaveTypeService
             'annual_quota' => $item['annual_quota'],
             'max_days_per_request' => $item['max_days_per_request'] ?? null,
             'max_days_per_month' => $item['max_days_per_month'] ?? null,
+            'lapses_monthly' => $item['lapses_monthly'] ?? false,
             'is_hourly_leave' => $item['is_hourly_leave'] ?? false,
             'max_hours_per_month' => $item['max_hours_per_month'] ?? null,
             'allowed_hourly_durations' => $item['allowed_hourly_durations'] ?? null,
@@ -175,20 +176,21 @@ class LeaveTypeService
             return;
         }
 
-        if ($type->code === 'CL') {
-            $updates = [];
+        if ($type->code === 'CL' && ! $type->lapses_monthly) {
+            $type->update([
+                'annual_quota' => $defaults['annual_quota'],
+                'max_days_per_request' => $defaults['max_days_per_request'],
+                'max_days_per_month' => $defaults['max_days_per_month'],
+                'lapses_monthly' => true,
+                'is_paid' => true,
+            ]);
+        }
 
-            if ($type->max_days_per_request === null && isset($defaults['max_days_per_request'])) {
-                $updates['max_days_per_request'] = $defaults['max_days_per_request'];
-            }
-
-            if ($type->max_days_per_month === null && isset($defaults['max_days_per_month'])) {
-                $updates['max_days_per_month'] = $defaults['max_days_per_month'];
-            }
-
-            if ($updates !== []) {
-                $type->update($updates);
-            }
+        if ($type->code === 'SL' && ($type->lapses_monthly || $type->max_days_per_month !== null)) {
+            $type->update([
+                'max_days_per_month' => null,
+                'lapses_monthly' => false,
+            ]);
         }
     }
 
@@ -217,6 +219,7 @@ class LeaveTypeService
             $data['allowed_hourly_durations'] = null;
         } else {
             $data['max_days_per_month'] = null;
+            $data['lapses_monthly'] = false;
         }
 
         return $data;

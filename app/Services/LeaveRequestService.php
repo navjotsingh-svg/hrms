@@ -755,7 +755,11 @@ class LeaveRequestService
             ]);
         }
 
-        if ($leaveType->max_days_per_month === null) {
+        $monthlyLimit = $leaveType->lapsesMonthly()
+            ? $leaveType->monthlyGrant()
+            : ($leaveType->max_days_per_month !== null ? (float) $leaveType->max_days_per_month : null);
+
+        if ($monthlyLimit === null) {
             return;
         }
 
@@ -765,23 +769,30 @@ class LeaveRequestService
             [$year, $month] = array_map('intval', explode('-', (string) $monthKey));
             $requested = round((float) $rows->sum('day_value'), 2);
             $used = $this->daysUsedInMonth($employee, $leaveType->id, $year, $month);
-            $limit = (float) $leaveType->max_days_per_month;
+            $limit = (float) $monthlyLimit;
             $monthLabel = Carbon::create($year, $month, 1)->format('M Y');
 
             if ($requested > $limit) {
+                $lapseNote = $leaveType->lapsesMonthly()
+                    ? ' Unused days from other months are not available.'
+                    : '';
+
                 throw ValidationException::withMessages([
                     'from_date' => [
-                        "This request uses {$requested} working day(s) in {$monthLabel}, but {$leaveType->name} allows maximum {$limit} day(s) per month.",
+                        "This request uses {$requested} working day(s) in {$monthLabel}, but {$leaveType->name} allows maximum {$limit} day(s) per month.{$lapseNote}",
                     ],
                 ]);
             }
 
             if (round($used + $requested, 2) > $limit) {
                 $remaining = max(0, round($limit - $used, 1));
+                $lapseNote = $leaveType->lapsesMonthly()
+                    ? ' Unused days from other months are not available.'
+                    : '';
 
                 throw ValidationException::withMessages([
                     'from_date' => [
-                        "Only {$remaining} day(s) of {$leaveType->name} can be applied for {$monthLabel} (monthly limit: {$limit}, already used: {$used}).",
+                        "Only {$remaining} day(s) of {$leaveType->name} can be applied for {$monthLabel} (monthly limit: {$limit}, already used: {$used}).{$lapseNote}",
                     ],
                 ]);
             }
