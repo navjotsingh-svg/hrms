@@ -5,7 +5,7 @@
 @section('header')
     <div class="d-flex flex-wrap align-items-center justify-content-between gap-2">
         <div>
-            <h1 class="page-title mb-1">My Leave Balances</h1>
+            <h1 class="page-title mb-1">{{ auth()->user()?->canSeeMenu('masters.leave_balances') ? 'Leave Balances' : 'My Leave Balances' }}</h1>
             <p class="page-subtitle mb-0">Allocated, used, pending, and available leave counts.</p>
         </div>
         <a href="{{ route('web.leave.apply') }}" class="btn btn-primary">Apply Leave</a>
@@ -13,6 +13,8 @@
 @endsection
 
 @section('content')
+    @include('leaves.partials.balance-tabs', ['active' => 'mine'])
+
     <div id="paidLeaveRestrictionNotice" class="alert alert-warning d-none mb-3"></div>
 
     <div class="content-card">

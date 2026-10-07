@@ -99,7 +99,6 @@ document.addEventListener('DOMContentLoaded', async () => {
 
         matrixHead.innerHTML = `
             <tr>
-                <th class="leave-balance-matrix-sticky leave-balance-matrix-sticky--code">Code</th>
                 <th class="leave-balance-matrix-sticky leave-balance-matrix-sticky--name">Employee</th>
                 <th class="leave-balance-matrix-sticky leave-balance-matrix-sticky--dept">Department</th>
                 ${leaveTypes.map((type) => `
@@ -121,18 +120,16 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
 
         if (!employees.length) {
-            matrixBody.innerHTML = `<tr><td colspan="${leaveTypes.length + 4}" class="text-center text-muted py-5">No employees found for the selected filters.</td></tr>`;
+            matrixBody.innerHTML = `<tr><td colspan="${leaveTypes.length + 3}" class="text-center text-muted py-5">No employees found for the selected filters.</td></tr>`;
 
             return;
         }
 
         matrixBody.innerHTML = employees.map((employee) => `
             <tr class="companies-data-row">
-                <td class="leave-balance-matrix-sticky leave-balance-matrix-sticky--code">
-                    <span class="fw-semibold">${escapeHtml(employee.employee_code)}</span>
-                </td>
                 <td class="leave-balance-matrix-sticky leave-balance-matrix-sticky--name">
                     <span class="fw-semibold">${escapeHtml(employee.full_name)}</span>
+                    ${employee.employee_code ? `<div class="small text-muted">${escapeHtml(employee.employee_code)}</div>` : ''}
                     ${employee.designation ? `<div class="small text-muted">${escapeHtml(employee.designation)}</div>` : ''}
                 </td>
                 <td class="leave-balance-matrix-sticky leave-balance-matrix-sticky--dept">${escapeHtml(employee.department || '—')}</td>

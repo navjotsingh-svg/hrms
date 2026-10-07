@@ -252,12 +252,14 @@
                                 'active' => request()->routeIs('web.leave.calendar'),
                             ])
                         @endif
-                        @if ($user->canSeeMenu('leave.balances'))
+                        @if ($user->canSeeMenu('leave.balances') || $user->canSeeMenu('masters.leave_balances'))
                             @include('layouts.partials.sidebar-link', [
-                                'href' => route('web.leave.balances'),
+                                'href' => $user->canSeeMenu('leave.balances')
+                                    ? route('web.leave.balances')
+                                    : route('web.leave.manage-balances'),
                                 'label' => 'Balances',
                                 'icon' => 'balance',
-                                'active' => request()->routeIs('web.leave.balances'),
+                                'active' => request()->routeIs('web.leave.balances', 'web.leave.manage-balances'),
                             ])
                         @endif
                         @if ($user->canSeeMenu('masters.leave_types'))
@@ -266,14 +268,6 @@
                                 'label' => 'Leave Types',
                                 'icon' => 'documents',
                                 'active' => request()->routeIs('web.masters.leave-types.*'),
-                            ])
-                        @endif
-                        @if ($user->canSeeMenu('masters.leave_balances'))
-                            @include('layouts.partials.sidebar-link', [
-                                'href' => route('web.leave.manage-balances'),
-                                'label' => 'Manage Balances',
-                                'icon' => 'balance',
-                                'active' => request()->routeIs('web.leave.manage-balances'),
                             ])
                         @endif
                     @endcomponent

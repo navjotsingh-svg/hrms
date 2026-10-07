@@ -6,13 +6,14 @@
     <div class="d-flex flex-wrap align-items-center justify-content-between gap-2">
         <div>
             <h1 class="page-title mb-1">Leave Balances</h1>
-            <p class="page-subtitle mb-0">View available leave for all employees at a glance. Open an employee to adjust balances or grant comp off.</p>
+            <p class="page-subtitle mb-0">View available leave for the team. Open an employee to adjust balances or grant comp off.</p>
         </div>
-        <a href="{{ route('web.leave.index') }}" class="btn btn-outline-secondary">Back</a>
     </div>
 @endsection
 
 @section('content')
+    @include('leaves.partials.balance-tabs', ['active' => 'team'])
+
     <div id="manageBalancesAlert" class="alert alert-success alert-dismissible fade show d-none" role="alert"></div>
 
     <div class="content-card mb-4">
@@ -47,13 +48,14 @@
     <div class="content-card">
         <div class="content-card-header border-bottom d-flex flex-wrap justify-content-between align-items-center gap-2">
             <h2 class="content-card-title mb-0" id="balancesOverviewTitle">Leave balance overview</h2>
+            @include('partials.list-pagination-top', [
+                'infoId' => 'balancesPaginationInfo',
+                'listId' => 'balancesPaginationList',
+                'perPageId' => 'balancesPerPage',
+                'ariaLabel' => 'Leave balances pagination',
+                'wrapClassTop' => 'ms-auto bg-transparent border-0 p-0',
+            ])
         </div>
-        @include('partials.list-pagination-top', [
-    'infoId' => 'balancesPaginationInfo',
-    'listId' => 'balancesPaginationList',
-    'perPageId' => 'balancesPerPage',
-    'ariaLabel' => 'Leave balances pagination',
-])
         <div class="companies-table-wrap leave-balance-matrix-wrap">
             <table class="companies-table leave-balance-matrix mb-0">
                 <thead id="leaveBalanceMatrixHead">
