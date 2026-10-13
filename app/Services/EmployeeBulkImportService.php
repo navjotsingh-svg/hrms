@@ -396,8 +396,14 @@ class EmployeeBulkImportService
             'last_name' => ['nullable', 'string', 'max:100'],
             'email' => [
                 'required', 'email', 'max:255',
-                Rule::unique('employees', 'email')->where(fn ($query) => $query->where('company_id', $companyId)),
-                Rule::unique('users', 'email'),
+                Rule::unique('employees', 'email')->where(fn ($query) => $query->where('company_id', $companyId)->where('status', 'active')),
+                function (string $attribute, mixed $value, \Closure $fail) use ($companyId) {
+                    if (\App\Models\Employee::inactiveHolderAllowsEmailReuse((int) $companyId, (string) $value)) {
+                        return;
+                    }
+
+                    $fail('This email is already registered for login.');
+                },
             ],
             'phone' => [
                 'required', 'digits:10',

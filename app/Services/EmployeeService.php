@@ -111,6 +111,8 @@ class EmployeeService
         $employee = DB::transaction(function () use ($companyId, $data, $givePortalAccess, $salaryData, $departmentIds, $weeklyOffData, $leaveTypeIds, &$plainPassword, &$reusedPortalUser, $employeeCode) {
             $userId = null;
 
+            $this->releaseLoginEmailHeldByInactiveEmployee($companyId, (string) $data['email']);
+
             if ($givePortalAccess) {
                 $plainPassword = Str::password(12, symbols: false);
                 $fullName = trim("{$data['first_name']} ".($data['last_name'] ?? ''));
@@ -255,6 +257,14 @@ class EmployeeService
         }
 
         DB::transaction(function () use ($employee, $data, $givePortalAccess, $newlyGrantingPortal, $salaryData, $salaryRevisionNotes, $departmentIds, $weeklyOffData, $leaveTypeIds, $actor, &$plainPassword, &$isFirstPortalIssue, &$salaryWasInitialSync) {
+            if (isset($data['email']) && strcasecmp((string) $data['email'], (string) $employee->email) !== 0) {
+                $this->releaseLoginEmailHeldByInactiveEmployee(
+                    (int) $employee->company_id,
+                    (string) $data['email'],
+                    $employee->user_id ? (int) $employee->user_id : null,
+                );
+            }
+
             $employee->update($data);
 
             if ($salaryData !== null) {
@@ -723,6 +733,12 @@ class EmployeeService
         if ($employee->user_id && $employee->user) {
             $user = $employee->user;
         } else {
+            $this->releaseLoginEmailHeldByInactiveEmployee(
+                (int) $employee->company_id,
+                (string) $employee->email,
+                $employee->user_id ? (int) $employee->user_id : null,
+            );
+
             $user = User::query()
                 ->where('company_id', $employee->company_id)
                 ->where('email', $employee->email)
@@ -776,6 +792,30 @@ class EmployeeService
         ];
     }
 
+    private function releaseLoginEmailHeldByInactiveEmployee(int $companyId, string $email, ?int $ignoreUserId = null): void
+    {
+        if (! Employee::inactiveHolderAllowsEmailReuse($companyId, $email, $ignoreUserId)) {
+            return;
+        }
+
+        $user = User::query()
+            ->whereRaw('LOWER(email) = ?', [strtolower(trim($email))])
+            ->first();
+
+        if (! $user || ($ignoreUserId && (int) $user->id === $ignoreUserId)) {
+            return;
+        }
+
+        $archived = 'inactive-'.$user->id.'-'.$user->email;
+
+        if (strlen($archived) > 255) {
+            $archived = 'inactive-'.$user->id.'-'.substr(sha1((string) $user->email), 0, 24).'@archived.local';
+        }
+
+        $user->update(['email' => $archived]);
+        $this->invalidatePortalSessions($user);
+    }
+
     private function invalidatePortalSessions(User $user): void
     {
         $user->tokens()->delete();
@@ -825,6 +865,21 @@ class EmployeeService
     {
         if ($status === 'inactive' && $actor) {
             $this->companyOrganizationService->assertActorMayOffboardEmployee($actor, $employee);
+        }
+
+        if ($status === 'active') {
+            $emailTaken = Employee::query()
+                ->where('company_id', $employee->company_id)
+                ->whereRaw('LOWER(email) = ?', [strtolower((string) $employee->email)])
+                ->where('status', 'active')
+                ->where('id', '!=', $employee->id)
+                ->exists();
+
+            if ($emailTaken) {
+                throw ValidationException::withMessages([
+                    'status' => ['This email is used by an active employee. The disabled record stays in history, but it cannot be reactivated until the email is changed.'],
+                ]);
+            }
         }
 
         $previousStatus = $employee->status;

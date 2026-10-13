@@ -90,6 +90,56 @@ class Employee extends Model
         ];
     }
 
+    protected static function booted(): void
+    {
+        static::saving(function (Employee $employee) {
+            $employee->active_email_key = $employee->status === 'active' && filled($employee->email)
+                ? static::activeEmailKey((int) $employee->company_id, (string) $employee->email)
+                : null;
+        });
+    }
+
+    public static function activeEmailKey(int $companyId, string $email): string
+    {
+        return $companyId.'#'.strtolower(trim($email));
+    }
+
+    public static function inactiveHolderAllowsEmailReuse(int $companyId, string $email, ?int $ignoreUserId = null, ?int $ignoreEmployeeId = null): bool
+    {
+        $normalized = strtolower(trim($email));
+
+        $activeQuery = static::query()
+            ->where('company_id', $companyId)
+            ->whereRaw('LOWER(email) = ?', [$normalized])
+            ->where('status', 'active');
+
+        if ($ignoreEmployeeId) {
+            $activeQuery->where('id', '!=', $ignoreEmployeeId);
+        }
+
+        if ($activeQuery->exists()) {
+            return false;
+        }
+
+        $user = User::query()->whereRaw('LOWER(email) = ?', [$normalized])->first();
+
+        if (! $user || ($ignoreUserId && (int) $user->id === $ignoreUserId)) {
+            return true;
+        }
+
+        if ((int) $user->company_id !== $companyId) {
+            return false;
+        }
+
+        $linked = static::query()->where('user_id', $user->id)->get(['status']);
+
+        if ($linked->isEmpty()) {
+            return false;
+        }
+
+        return $linked->every(fn (Employee $employee) => $employee->status !== 'active');
+    }
+
     public function company(): BelongsTo
     {
         return $this->belongsTo(Company::class);

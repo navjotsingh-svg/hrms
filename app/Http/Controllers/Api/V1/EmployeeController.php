@@ -285,6 +285,10 @@ class EmployeeController extends Controller
             ->where('company_id', $companyId)
             ->where($field, $value);
 
+        if ($field === 'email') {
+            $employeeQuery->where('status', 'active');
+        }
+
         if ($employeeId) {
             $employeeQuery->where('id', '!=', $employeeId);
         }
@@ -303,6 +307,7 @@ class EmployeeController extends Controller
         }
 
         if ($field === 'email') {
+            $userId = null;
             $userQuery = \App\Models\User::query()->where('email', $value);
 
             if ($employeeId) {
@@ -310,7 +315,7 @@ class EmployeeController extends Controller
                 $userQuery->when($userId, fn ($query) => $query->where('id', '!=', $userId));
             }
 
-            if ($userQuery->exists()) {
+            if ($userQuery->exists() && ! \App\Models\Employee::inactiveHolderAllowsEmailReuse((int) $companyId, $value, $userId ? (int) $userId : null, $employeeId ? (int) $employeeId : null)) {
                 return $this->success([
                     'valid' => false,
                     'message' => 'This email is already registered for login.',

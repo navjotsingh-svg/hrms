@@ -21,12 +21,18 @@ trait ValidatesEmployeeFields
             'email',
             'max:255',
             Rule::unique('employees', 'email')
-                ->where(fn ($query) => $query->where('company_id', $companyId))
+                ->where(fn ($query) => $query->where('company_id', $companyId)->where('status', 'active'))
                 ->ignore($employeeId),
         ];
 
         if ($checkUserEmailUnique) {
-            $emailRules[] = Rule::unique('users', 'email')->ignore($userId);
+            $emailRules[] = function (string $attribute, mixed $value, \Closure $fail) use ($companyId, $userId, $employeeId) {
+                if (Employee::inactiveHolderAllowsEmailReuse((int) $companyId, (string) $value, $userId, $employeeId)) {
+                    return;
+                }
+
+                $fail('This email is already registered for login.');
+            };
         }
 
         return [
@@ -133,6 +139,7 @@ trait ValidatesEmployeeFields
     {
         return [
             'phone.digits' => 'Mobile number must be exactly 10 digits.',
+            'email.unique' => 'This email is already used by an active employee.',
         ];
     }
 }
