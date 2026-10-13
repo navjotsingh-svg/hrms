@@ -133,11 +133,15 @@ class Employee extends Model
 
         $linked = static::query()->where('user_id', $user->id)->get(['status']);
 
-        if ($linked->isEmpty()) {
-            return false;
+        if ($linked->isNotEmpty()) {
+            return $linked->every(fn (Employee $employee) => $employee->status !== 'active');
         }
 
-        return $linked->every(fn (Employee $employee) => $employee->status !== 'active');
+        return static::query()
+            ->where('company_id', $companyId)
+            ->whereRaw('LOWER(email) = ?', [$normalized])
+            ->where('status', '!=', 'active')
+            ->exists();
     }
 
     public function company(): BelongsTo
