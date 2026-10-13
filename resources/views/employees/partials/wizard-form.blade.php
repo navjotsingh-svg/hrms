@@ -205,6 +205,7 @@
                 <div class="col-md-4">
                     <label for="joining_date" class="form-label">Joining Date <span class="text-danger">*</span></label>
                     <input type="date" class="form-control" id="joining_date" name="joining_date" required>
+                    <div class="form-text">Set a future date if they join later. HR can complete onboarding today.</div>
                     <div class="invalid-feedback d-block" data-error="joining_date"></div>
                 </div>
                 <div class="col-md-4">

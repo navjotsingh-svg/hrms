@@ -109,7 +109,7 @@ trait ValidatesEmployeeFields
                 Rule::exists('leave_types', 'id')->where(fn ($query) => $query->where('company_id', $companyId)->where('status', 'active')),
             ],
             'designation' => ['nullable', 'string', 'max:100'],
-            'joining_date' => ['required', 'date', 'before_or_equal:today'],
+            'joining_date' => ['required', 'date'],
             'gender' => ['required', Rule::in(['male', 'female', 'other'])],
             'date_of_birth' => [
                 'required',

@@ -120,7 +120,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     };
 
     const today = new Date();
-    const maxJoiningDate = toDateInputValue(today);
+    const todayDate = toDateInputValue(today);
     const maxDobDate = toDateInputValue(addYears(today, -18));
     const minDobDate = toDateInputValue(addYears(today, -100));
 
@@ -458,7 +458,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             return;
         }
 
-        if (endDate < maxJoiningDate && statusSelect.value === 'on_probation' && !statusSelect.dataset.manualStatus) {
+        if (endDate < todayDate && statusSelect.value === 'on_probation' && !statusSelect.dataset.manualStatus) {
             statusSelect.value = 'confirmed';
         }
     };
@@ -478,20 +478,10 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     const setupDateConstraints = () => {
         const dobInput = form.querySelector('#date_of_birth');
-        const joiningInput = form.querySelector('#joining_date');
-        const salaryEffectiveInput = form.querySelector('#salary_effective_from');
 
         if (dobInput) {
             dobInput.max = maxDobDate;
             dobInput.min = minDobDate;
-        }
-
-        if (joiningInput) {
-            joiningInput.max = maxJoiningDate;
-        }
-
-        if (salaryEffectiveInput) {
-            salaryEffectiveInput.max = maxJoiningDate;
         }
     };
 
@@ -515,16 +505,6 @@ document.addEventListener('DOMContentLoaded', async () => {
                 setFieldError(form, field, 'Please enter a valid date of birth.');
                 return false;
             }
-        }
-
-        if (field === 'joining_date' && value > maxJoiningDate) {
-            setFieldError(form, field, 'Joining date cannot be in the future.');
-            return false;
-        }
-
-        if (field === 'salary_effective_from' && value > maxJoiningDate) {
-            setFieldError(form, field, 'Effective date cannot be in the future.');
-            return false;
         }
 
         if (field === 'probation_end_date') {
@@ -1518,7 +1498,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
             await loadDepartments();
             await loadManagers();
-            form.querySelector('#joining_date').value = maxJoiningDate;
+            form.querySelector('#joining_date').value = todayDate;
             syncSalaryEffectiveFrom(true);
             toggleProbationFields();
             calculateProbationEndDate(true);
