@@ -231,7 +231,7 @@ Route::redirect('/register', '/');
             ->name('holidays.edit');
         Route::get('/weekly-off', [\App\Http\Controllers\WeeklyOffController::class, 'index'])->name('weekly-off.index');
         Route::get('/portal-start', [\App\Http\Controllers\PortalStartController::class, 'index'])->name('portal-start.index');
-    });
+    })
 
     Route::middleware('company.member')->prefix('analytics')->name('analytics.')->group(function () {
         Route::get('/', [\App\Http\Controllers\AnalyticsController::class, 'index'])->name('index');
