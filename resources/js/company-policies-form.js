@@ -1,4 +1,5 @@
 import api, { getErrorMessage } from './api';
+import { hasCustomStyle, unwrapEscapedPolicyHtml } from './company-policy-html';
 import { initRichTextEditor, isEmptyEditorContent } from './rich-text-editor';
 
 document.addEventListener('DOMContentLoaded', async () => {
@@ -47,21 +48,19 @@ document.addEventListener('DOMContentLoaded', async () => {
         )).join('');
     };
 
-    const hasCustomHtml = (html) => /<style[\s>]/i.test(String(html || ''));
-
-    const setSourceMode = (nextMode) => {
+    const setSourceMode = (nextMode, { syncFromVisual = true } = {}) => {
         if (nextMode === sourceMode) {
             return;
         }
 
-        if (nextMode === 'visual' && hasCustomHtml(bodyTextarea.value)) {
+        if (nextMode === 'visual' && hasCustomStyle(bodyTextarea.value)) {
             const proceed = window.confirm('The visual editor removes custom CSS. Switch anyway?');
             if (!proceed) {
                 return;
             }
         }
 
-        if (nextMode === 'html' && sourceMode === 'visual' && editor?.sync && !hasCustomHtml(bodyTextarea.value)) {
+        if (nextMode === 'html' && syncFromVisual && sourceMode === 'visual' && editor?.sync && !hasCustomStyle(bodyTextarea.value)) {
             editor.sync();
         }
 
@@ -109,11 +108,13 @@ document.addEventListener('DOMContentLoaded', async () => {
             requiresConsentInput.checked = policy.requires_consent !== false;
 
             if (policy.body_html) {
-                bodyTextarea.value = policy.body_html;
-                if (hasCustomHtml(policy.body_html)) {
-                    setSourceMode('html');
+                const prepared = unwrapEscapedPolicyHtml(policy.body_html);
+                bodyTextarea.value = prepared;
+
+                if (hasCustomStyle(prepared) || prepared !== String(policy.body_html).trim()) {
+                    setSourceMode('html', { syncFromVisual: false });
                 } else if (editor?.quill) {
-                    editor.quill.root.innerHTML = policy.body_html;
+                    editor.quill.root.innerHTML = prepared;
                 }
             }
         }

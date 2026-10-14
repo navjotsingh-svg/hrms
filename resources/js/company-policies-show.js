@@ -1,4 +1,5 @@
 import api, { getErrorMessage } from './api';
+import { unwrapEscapedPolicyHtml } from './company-policy-html';
 
 document.addEventListener('DOMContentLoaded', async () => {
     const root = document.getElementById('companyPolicyShowRoot');
@@ -235,7 +236,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             ${policy.description ? `<p class="mb-0 mt-3 text-muted">${escapeHtml(policy.description)}</p>` : ''}
         `;
 
-        renderPolicyPreview(policy.body_html);
+        renderPolicyPreview(unwrapEscapedPolicyHtml(policy.body_html));
 
         const showConsentForm = !canManage && policy.needs_consent;
         consentCard?.classList.toggle('d-none', !showConsentForm);
