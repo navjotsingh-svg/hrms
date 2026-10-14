@@ -3,12 +3,12 @@
 @section('title', 'Company Policy - ' . config('app.name', 'HRMS'))
 
 @section('header')
-    <div class="d-flex flex-wrap align-items-center justify-content-between gap-2">
-        <div>
+    <div class="hrms-page-banner__heading">
+        <div class="hrms-page-banner__copy">
             <h1 class="page-title mb-1" id="companyPolicyShowTitle">Company Policy</h1>
             <p class="page-subtitle mb-0" id="companyPolicyShowSubtitle">Read the policy page carefully.</p>
         </div>
-        <div class="d-flex flex-wrap gap-2">
+        <div class="hrms-page-banner__actions">
             @if ($canManage)
                 <a href="{{ route('web.company-policies.edit', $policyId) }}" class="btn btn-outline-primary" id="companyPolicyEditLink">Edit</a>
             @endif

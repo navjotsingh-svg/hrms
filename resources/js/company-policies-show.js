@@ -184,6 +184,24 @@ document.addEventListener('DOMContentLoaded', async () => {
         contentEl.addEventListener('dragstart', (event) => event.preventDefault());
     };
 
+    const sanitizePolicyHtml = (html) => {
+        const template = document.createElement('template');
+        template.innerHTML = String(html || '');
+        template.content.querySelectorAll('script, style, link, iframe, object, embed, meta, base').forEach((node) => node.remove());
+        template.content.querySelectorAll('*').forEach((node) => {
+            [...node.attributes].forEach((attr) => {
+                if (attr.name.toLowerCase().startsWith('on')) {
+                    node.removeAttribute(attr.name);
+                }
+            });
+            ['page-header', 'hrms-page-banner', 'page-title', 'page-subtitle', 'topbar'].forEach((className) => {
+                node.classList?.remove(className);
+            });
+        });
+
+        return template.innerHTML.trim();
+    };
+
     const render = () => {
         if (!policy) {
             return;
@@ -202,7 +220,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             ${policy.description ? `<p class="mb-0 mt-3 text-muted">${escapeHtml(policy.description)}</p>` : ''}
         `;
 
-        contentEl.innerHTML = policy.body_html || '<p class="text-muted mb-0">No policy content yet.</p>';
+        contentEl.innerHTML = sanitizePolicyHtml(policy.body_html) || '<p class="text-muted mb-0">No policy content yet.</p>';
 
         const showConsentForm = !canManage && policy.needs_consent;
         consentCard?.classList.toggle('d-none', !showConsentForm);

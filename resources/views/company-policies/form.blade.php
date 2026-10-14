@@ -8,12 +8,14 @@
 @section('title', ($isEdit ? 'Edit Policy' : 'Add Policy') . ' - ' . config('app.name', 'HRMS'))
 
 @section('header')
-    <div class="d-flex flex-wrap align-items-center justify-content-between gap-2">
-        <div>
+    <div class="hrms-page-banner__heading">
+        <div class="hrms-page-banner__copy">
             <h1 class="page-title mb-1">{{ $isEdit ? 'Edit Policy Page' : 'Add Policy Page' }}</h1>
             <p class="page-subtitle mb-0">Write the policy in the editor. Employees will read it as a page and can give consent.</p>
         </div>
-        <a href="{{ route('web.company-policies.index') }}" class="btn btn-outline-secondary">Back</a>
+        <div class="hrms-page-banner__actions">
+            <a href="{{ route('web.company-policies.index') }}" class="btn btn-outline-secondary">Back</a>
+        </div>
     </div>
 @endsection
 

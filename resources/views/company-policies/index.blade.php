@@ -5,8 +5,8 @@
 @section('title', 'Company Policies - ' . config('app.name', 'HRMS'))
 
 @section('header')
-    <div class="d-flex flex-wrap align-items-center justify-content-between gap-2">
-        <div>
+    <div class="hrms-page-banner__heading">
+        <div class="hrms-page-banner__copy">
             <h1 class="page-title mb-1">Company Policies</h1>
             <p class="page-subtitle mb-0">
                 {{ $canManage
@@ -15,7 +15,9 @@
             </p>
         </div>
         @if ($canManage)
-            <a href="{{ route('web.company-policies.create') }}" class="btn btn-primary">+ Add Policy Page</a>
+            <div class="hrms-page-banner__actions">
+                <a href="{{ route('web.company-policies.create') }}" class="btn btn-primary">+ Add Policy Page</a>
+            </div>
         @endif
     </div>
 @endsection

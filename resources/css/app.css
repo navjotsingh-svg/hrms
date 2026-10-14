@@ -343,7 +343,13 @@ html.sidebar-collapsed .topbar-sidebar-toggle .topbar-toggle-icon {
     box-shadow: var(--hrms-shadow-sm);
     position: sticky;
     top: 0;
-    z-index: 1020;
+    z-index: 1030;
+}
+
+.hrms-module-policies .content-area > .page-header.hrms-page-banner {
+    position: sticky;
+    top: 4.35rem;
+    z-index: 1025;
 }
 
 .topbar-toggle {
@@ -9771,6 +9777,28 @@ label.regularize-eligible-card:hover {
     flex: 1;
 }
 
+.hrms-page-banner__heading {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem 1rem;
+    min-width: 0;
+}
+
+.hrms-page-banner__copy {
+    min-width: 0;
+    flex: 1 1 16rem;
+}
+
+.hrms-page-banner__actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.5rem;
+    flex-shrink: 0;
+}
+
 .hrms-page-banner__eyebrow {
     font-size: 0.72rem;
     font-weight: 700;
@@ -9784,6 +9812,7 @@ label.regularize-eligible-card:hover {
     color: #fff;
     font-size: clamp(1.45rem, 2.5vw, 1.85rem);
     margin-bottom: 0.35rem;
+    overflow-wrap: anywhere;
 }
 
 .hrms-page-banner .page-subtitle {
@@ -10037,6 +10066,23 @@ label.regularize-eligible-card:hover {
     -moz-user-select: none;
     -ms-user-select: none;
     line-height: 1.65;
+    color: var(--hrms-text);
+    background: #fff;
+}
+
+.company-policy-page header,
+.company-policy-page .page-header,
+.company-policy-page .hrms-page-banner {
+    position: static;
+    top: auto;
+    z-index: auto;
+    display: block;
+    margin: 0 0 1rem;
+    padding: 0;
+    background: transparent;
+    border: 0;
+    box-shadow: none;
+    color: inherit;
 }
 
 .company-policy-page * {

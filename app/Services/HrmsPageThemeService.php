@@ -12,6 +12,7 @@ class HrmsPageThemeService
 
         $map = [
             'home' => ['module' => 'home', 'theme' => 'brand', 'icon' => 'home', 'label' => 'Home'],
+            'company-policies' => ['module' => 'policies', 'theme' => 'sky', 'icon' => 'file', 'label' => 'Company Policies'],
             'dashboard' => ['module' => 'home', 'theme' => 'brand', 'icon' => 'home', 'label' => 'Dashboard'],
             'employees' => ['module' => 'people', 'theme' => 'blue', 'icon' => 'people', 'label' => 'People'],
             'people' => ['module' => 'people', 'theme' => 'blue', 'icon' => 'people', 'label' => 'People'],
