@@ -57,12 +57,18 @@
                         </div>
                     </div>
                     <div class="col-12">
-                        <label class="form-label">Policy page content <span class="text-danger">*</span></label>
-                        <div class="company-policy-editor">
+                        <div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-2">
+                            <label class="form-label mb-0">Policy page content <span class="text-danger">*</span></label>
+                            <div class="btn-group btn-group-sm" role="group" aria-label="Policy editor mode">
+                                <button type="button" class="btn btn-outline-secondary active" id="companyPolicyVisualTab">Visual</button>
+                                <button type="button" class="btn btn-outline-secondary" id="companyPolicyHtmlTab">HTML &amp; CSS</button>
+                            </div>
+                        </div>
+                        <div class="company-policy-editor" id="companyPolicyVisualPane">
                             <div id="companyPolicyBodyEditor"></div>
                         </div>
-                        <textarea id="companyPolicyBodyHtml" class="d-none"></textarea>
-                        <div class="form-text">Employees can view this as a page. Download and copy are disabled on the employee view.</div>
+                        <textarea id="companyPolicyBodyHtml" class="form-control company-policy-html-source d-none" rows="18" spellcheck="false" placeholder="Write HTML and CSS. Example:&#10;&lt;style&gt;&#10;h1 { color: #1e3a5f; }&#10;p { line-height: 1.7; }&#10;&lt;/style&gt;&#10;&lt;h1&gt;Code of Conduct&lt;/h1&gt;&#10;&lt;p&gt;Policy text&lt;/p&gt;"></textarea>
+                        <div class="form-text">Use HTML &amp; CSS for the layout employees see on the policy page. Styles stay inside that preview.</div>
                     </div>
                 </div>
             </div>

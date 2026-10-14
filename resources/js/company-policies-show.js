@@ -187,19 +187,34 @@ document.addEventListener('DOMContentLoaded', async () => {
     const sanitizePolicyHtml = (html) => {
         const template = document.createElement('template');
         template.innerHTML = String(html || '');
-        template.content.querySelectorAll('script, style, link, iframe, object, embed, meta, base').forEach((node) => node.remove());
+        template.content.querySelectorAll('script, iframe, object, embed, meta, base, link').forEach((node) => node.remove());
         template.content.querySelectorAll('*').forEach((node) => {
             [...node.attributes].forEach((attr) => {
                 if (attr.name.toLowerCase().startsWith('on')) {
                     node.removeAttribute(attr.name);
                 }
             });
-            ['page-header', 'hrms-page-banner', 'page-title', 'page-subtitle', 'topbar'].forEach((className) => {
-                node.classList?.remove(className);
-            });
         });
 
         return template.innerHTML.trim();
+    };
+
+    const renderPolicyPreview = (html) => {
+        const safe = sanitizePolicyHtml(html);
+        contentEl.replaceChildren();
+
+        const host = document.createElement('div');
+        host.className = 'company-policy-render';
+        contentEl.appendChild(host);
+
+        const shadow = host.attachShadow({ mode: 'open' });
+        const markup = safe || '<p style="color:#64748b;margin:0">No policy content yet.</p>';
+        shadow.innerHTML = `<style>:host{display:block}.policy-root{line-height:1.65;color:#0f172a}.policy-root img{max-width:100%;height:auto}</style><div class="policy-root">${markup}</div>`;
+        const root = shadow.querySelector('.policy-root');
+
+        ['copy', 'cut', 'contextmenu', 'dragstart'].forEach((type) => {
+            root?.addEventListener(type, (event) => event.preventDefault());
+        });
     };
 
     const render = () => {
@@ -220,7 +235,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             ${policy.description ? `<p class="mb-0 mt-3 text-muted">${escapeHtml(policy.description)}</p>` : ''}
         `;
 
-        contentEl.innerHTML = sanitizePolicyHtml(policy.body_html) || '<p class="text-muted mb-0">No policy content yet.</p>';
+        renderPolicyPreview(policy.body_html);
 
         const showConsentForm = !canManage && policy.needs_consent;
         consentCard?.classList.toggle('d-none', !showConsentForm);

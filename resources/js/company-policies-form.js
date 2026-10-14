@@ -19,7 +19,11 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     const mode = root.dataset.mode || 'create';
     const policyId = root.dataset.policyId || '';
+    const visualTab = document.getElementById('companyPolicyVisualTab');
+    const htmlTab = document.getElementById('companyPolicyHtmlTab');
+    const visualPane = document.getElementById('companyPolicyVisualPane');
     let editor = null;
+    let sourceMode = 'visual';
 
     const escapeHtml = (value) => String(value ?? '')
         .replace(/&/g, '&amp;')
@@ -41,6 +45,36 @@ document.addEventListener('DOMContentLoaded', async () => {
         categoryInput.innerHTML = categories.map((item) => (
             `<option value="${escapeHtml(item.value)}">${escapeHtml(item.label)}</option>`
         )).join('');
+    };
+
+    const hasCustomHtml = (html) => /<style[\s>]/i.test(String(html || ''));
+
+    const setSourceMode = (nextMode) => {
+        if (nextMode === sourceMode) {
+            return;
+        }
+
+        if (nextMode === 'visual' && hasCustomHtml(bodyTextarea.value)) {
+            const proceed = window.confirm('The visual editor removes custom CSS. Switch anyway?');
+            if (!proceed) {
+                return;
+            }
+        }
+
+        if (nextMode === 'html' && sourceMode === 'visual' && editor?.sync && !hasCustomHtml(bodyTextarea.value)) {
+            editor.sync();
+        }
+
+        sourceMode = nextMode;
+        const visual = nextMode === 'visual';
+        visualPane?.classList.toggle('d-none', !visual);
+        bodyTextarea.classList.toggle('d-none', visual);
+        visualTab?.classList.toggle('active', visual);
+        htmlTab?.classList.toggle('active', !visual);
+
+        if (visual && editor?.quill) {
+            editor.quill.root.innerHTML = bodyTextarea.value || '<p><br></p>';
+        }
     };
 
     editor = initRichTextEditor({
@@ -74,19 +108,28 @@ document.addEventListener('DOMContentLoaded', async () => {
             statusInput.value = policy.status || 'draft';
             requiresConsentInput.checked = policy.requires_consent !== false;
 
-            if (editor?.quill && policy.body_html) {
-                editor.quill.root.innerHTML = policy.body_html;
+            if (policy.body_html) {
                 bodyTextarea.value = policy.body_html;
+                if (hasCustomHtml(policy.body_html)) {
+                    setSourceMode('html');
+                } else if (editor?.quill) {
+                    editor.quill.root.innerHTML = policy.body_html;
+                }
             }
         }
     } catch (error) {
         showAlert(getErrorMessage(error), 'danger');
     }
 
+    visualTab?.addEventListener('click', () => setSourceMode('visual'));
+    htmlTab?.addEventListener('click', () => setSourceMode('html'));
+
     form.addEventListener('submit', async (event) => {
         event.preventDefault();
 
-        const bodyHtml = editor?.sync?.() || bodyTextarea.value || '';
+        const bodyHtml = sourceMode === 'html'
+            ? (bodyTextarea.value || '')
+            : (editor?.sync?.() || bodyTextarea.value || '');
 
         if (!titleInput.value.trim() || !categoryInput.value) {
             showAlert('Title and category are required.', 'warning');

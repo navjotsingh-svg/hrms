@@ -10060,6 +10060,18 @@ label.regularize-eligible-card:hover {
     font-size: 1rem;
 }
 
+.company-policy-html-source {
+    min-height: 320px;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 0.875rem;
+    line-height: 1.5;
+}
+
+.company-policy-render {
+    display: block;
+    min-height: 4rem;
+}
+
 .company-policy-page {
     user-select: none;
     -webkit-user-select: none;
