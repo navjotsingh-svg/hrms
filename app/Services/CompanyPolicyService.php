@@ -213,7 +213,7 @@ class CompanyPolicyService
 
         if (! $signaturePath) {
             throw ValidationException::withMessages([
-                'signature' => ['Please draw your signature to give consent.'],
+                'signature' => ['Please draw, write, or upload your signature.'],
             ]);
         }
 
@@ -234,9 +234,7 @@ class CompanyPolicyService
                     'signature_image_path' => $signaturePath,
                     'signed_at' => now(),
                     'signature_ip' => request()?->ip(),
-                    'signature_meta' => [
-                        'user_agent' => request()?->userAgent(),
-                    ],
+                    'signature_meta' => $this->signatureMeta($data),
                 ]);
 
                 return $existing->fresh();
@@ -253,11 +251,19 @@ class CompanyPolicyService
                 'signature_image_path' => $signaturePath,
                 'signed_at' => now(),
                 'signature_ip' => request()?->ip(),
-                'signature_meta' => [
-                    'user_agent' => request()?->userAgent(),
-                ],
+                'signature_meta' => $this->signatureMeta($data),
             ]);
         });
+    }
+
+    /** @param  array<string, mixed>  $data */
+    private function signatureMeta(array $data): array
+    {
+        return [
+            'user_agent' => request()?->userAgent(),
+            'method' => $data['signature_method'] ?? null,
+            'font' => $data['signature_font'] ?? null,
+        ];
     }
 
     public function consentSummaryForPolicy(User $user, CompanyPolicy $policy): array
@@ -303,7 +309,12 @@ class CompanyPolicyService
     {
         $relativeDirectory = CompanyPolicyConsent::PUBLIC_UPLOAD_DIR.'/'.$policy->company_id;
         $dir = $this->uploadDirectories->ensure($relativeDirectory);
-        $filename = 'policy-'.$policy->id.'-'.time().'.png';
+        $extension = strtolower($file->getClientOriginalExtension() ?: 'png');
+        if (! in_array($extension, ['jpg', 'jpeg', 'png'], true)) {
+            $extension = 'png';
+        }
+
+        $filename = 'policy-'.$policy->id.'-'.time().'.'.$extension;
         $file->move($dir, $filename);
 
         return $relativeDirectory.'/'.$filename;

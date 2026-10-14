@@ -112,11 +112,13 @@ class CompanyPolicyController extends Controller
             'signature_name' => ['required', 'string', 'max:255'],
             'signature_data_url' => ['nullable', 'string'],
             'signature_file' => ['nullable', 'file', 'mimes:jpg,jpeg,png', 'max:2048'],
+            'signature_method' => ['nullable', 'string', Rule::in(['draw', 'write', 'upload'])],
+            'signature_font' => ['nullable', 'string', 'max:80'],
         ]);
 
         if (empty($validated['signature_data_url']) && ! $request->hasFile('signature_file')) {
-            return $this->error('Please draw your signature to give consent.', [
-                'signature' => ['Please draw your signature to give consent.'],
+            return $this->error('Please draw, write, or upload your signature.', [
+                'signature' => ['Please draw, write, or upload your signature.'],
             ], 422);
         }
 

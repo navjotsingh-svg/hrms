@@ -22,6 +22,22 @@ document.addEventListener('DOMContentLoaded', async () => {
     const canvas = document.getElementById('consentSignatureCanvas');
     const clearBtn = document.getElementById('consentSignatureClearBtn');
     const submitBtn = document.getElementById('consentSubmitBtn');
+    const typedSignature = document.getElementById('consentTypedSignature');
+    const fontSelect = document.getElementById('consentSignatureFont');
+    const typedPreview = document.getElementById('consentTypedSignaturePreview');
+    const signatureFile = document.getElementById('consentSignatureFile');
+    const signatureFilePreview = document.getElementById('consentSignatureFilePreview');
+    const signatureModes = document.querySelectorAll('[data-signature-mode]');
+    const signaturePanels = document.querySelectorAll('[data-signature-panel]');
+    const signatureFonts = [
+        { id: 'Great Vibes', label: 'Great Vibes' },
+        { id: 'Allura', label: 'Allura' },
+        { id: 'Dancing Script', label: 'Dancing Script' },
+        { id: 'Sacramento', label: 'Sacramento' },
+        { id: 'Caveat', label: 'Caveat' },
+        { id: 'Pacifico', label: 'Pacifico' },
+    ];
+    let signatureMode = 'draw';
 
     let policy = null;
     let personalEmail = '';
@@ -174,6 +190,81 @@ document.addEventListener('DOMContentLoaded', async () => {
         return false;
     };
 
+    const setSignatureMode = (mode) => {
+        signatureMode = mode;
+        signatureModes.forEach((button) => {
+            button.classList.toggle('active', button.dataset.signatureMode === mode);
+        });
+        signaturePanels.forEach((panel) => {
+            panel.classList.toggle('d-none', panel.dataset.signaturePanel !== mode);
+        });
+
+        if (mode === 'draw') {
+            requestAnimationFrame(() => {
+                setupCanvas();
+                resizeCanvas();
+            });
+        }
+
+        if (mode === 'write') {
+            if (typedSignature && !typedSignature.value.trim() && signatureName?.value) {
+                typedSignature.value = signatureName.value;
+            }
+            updateTypedPreview();
+        }
+    };
+
+    const selectedFont = () => fontSelect?.value || signatureFonts[0].id;
+
+    const updateTypedPreview = () => {
+        if (!typedPreview) {
+            return;
+        }
+
+        const text = typedSignature?.value.trim() || 'Your signature';
+        const font = selectedFont();
+        typedPreview.textContent = text;
+        typedPreview.style.fontFamily = `"${font}", cursive`;
+        typedPreview.style.fontSize = font === 'Pacifico' || font === 'Caveat' ? '2.4rem' : '3rem';
+        if (fontSelect) {
+            fontSelect.style.fontFamily = `"${font}", cursive`;
+        }
+    };
+
+    const renderTypedSignature = async () => {
+        const text = typedSignature?.value.trim() || '';
+        const font = selectedFont();
+
+        if (!text) {
+            return '';
+        }
+
+        if (document.fonts?.load) {
+            await document.fonts.load(`72px "${font}"`);
+        }
+
+        const exportCanvas = document.createElement('canvas');
+        exportCanvas.width = 900;
+        exportCanvas.height = 280;
+        const exportCtx = exportCanvas.getContext('2d');
+        exportCtx.fillStyle = '#ffffff';
+        exportCtx.fillRect(0, 0, exportCanvas.width, exportCanvas.height);
+        exportCtx.fillStyle = '#111827';
+        exportCtx.textAlign = 'center';
+        exportCtx.textBaseline = 'middle';
+
+        let size = 96;
+        exportCtx.font = `${size}px "${font}", cursive`;
+        while (exportCtx.measureText(text).width > exportCanvas.width - 80 && size > 36) {
+            size -= 4;
+            exportCtx.font = `${size}px "${font}", cursive`;
+        }
+
+        exportCtx.fillText(text, exportCanvas.width / 2, exportCanvas.height / 2);
+
+        return exportCanvas.toDataURL('image/png');
+    };
+
     const protectContent = () => {
         if (!contentEl) {
             return;
@@ -265,6 +356,11 @@ document.addEventListener('DOMContentLoaded', async () => {
                 signatureName.value = employeeName;
             }
 
+            if (typedSignature && !typedSignature.value.trim() && signatureName.value) {
+                typedSignature.value = signatureName.value;
+                updateTypedPreview();
+            }
+
             // Consent card starts hidden; size the pad only after it is visible.
             requestAnimationFrame(() => {
                 setupCanvas();
@@ -273,8 +369,42 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
     };
 
+    if (fontSelect) {
+        fontSelect.innerHTML = signatureFonts.map((font) => (
+            `<option value="${escapeHtml(font.id)}" style="font-family: '${escapeHtml(font.id)}', cursive">${escapeHtml(font.label)}</option>`
+        )).join('');
+    }
+
     protectContent();
     clearBtn?.addEventListener('click', clearCanvas);
+    signatureModes.forEach((button) => {
+        button.addEventListener('click', () => setSignatureMode(button.dataset.signatureMode));
+    });
+    typedSignature?.addEventListener('input', updateTypedPreview);
+    fontSelect?.addEventListener('change', updateTypedPreview);
+    signatureName?.addEventListener('input', () => {
+        if (signatureMode === 'write' && typedSignature && !typedSignature.dataset.edited) {
+            typedSignature.value = signatureName.value;
+            updateTypedPreview();
+        }
+    });
+    typedSignature?.addEventListener('input', () => {
+        typedSignature.dataset.edited = typedSignature.value.trim() ? '1' : '';
+    });
+    signatureFile?.addEventListener('change', () => {
+        const file = signatureFile.files?.[0];
+        if (!file || !signatureFilePreview) {
+            signatureFilePreview?.classList.add('d-none');
+            return;
+        }
+
+        const reader = new FileReader();
+        reader.onload = () => {
+            signatureFilePreview.src = String(reader.result || '');
+            signatureFilePreview.classList.remove('d-none');
+        };
+        reader.readAsDataURL(file);
+    });
 
     form?.addEventListener('submit', async (event) => {
         event.preventDefault();
@@ -284,9 +414,36 @@ document.addEventListener('DOMContentLoaded', async () => {
             return;
         }
 
-        if (!canvasHasInk()) {
-            showAlert('Please draw your signature.', 'warning');
-            return;
+        let signatureDataUrl = '';
+        const payload = new FormData();
+        payload.append('consent_email', consentEmail.value.trim());
+        payload.append('signature_name', signatureName.value.trim());
+        payload.append('signature_method', signatureMode);
+
+        if (signatureMode === 'draw') {
+            if (!canvasHasInk()) {
+                showAlert('Please draw your signature.', 'warning');
+                return;
+            }
+            signatureDataUrl = canvas.toDataURL('image/png');
+        } else if (signatureMode === 'write') {
+            if (!typedSignature?.value.trim()) {
+                showAlert('Please type your signature.', 'warning');
+                return;
+            }
+            signatureDataUrl = await renderTypedSignature();
+            payload.append('signature_font', selectedFont());
+        } else {
+            const file = signatureFile?.files?.[0];
+            if (!file) {
+                showAlert('Please upload a signature photo.', 'warning');
+                return;
+            }
+            payload.append('signature_file', file);
+        }
+
+        if (signatureDataUrl) {
+            payload.append('signature_data_url', signatureDataUrl);
         }
 
         submitBtn.disabled = true;
@@ -294,11 +451,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         submitBtn.textContent = 'Submitting...';
 
         try {
-            const { data } = await api.post(`/company-policies/${policyId}/consent`, {
-                consent_email: consentEmail.value.trim(),
-                signature_name: signatureName.value.trim(),
-                signature_data_url: canvas.toDataURL('image/png'),
-            });
+            const { data } = await api.post(`/company-policies/${policyId}/consent`, payload);
 
             policy = data.data?.policy || policy;
             showAlert(data.message || 'Consent recorded successfully.');
