@@ -307,6 +307,34 @@ document.addEventListener('DOMContentLoaded', async () => {
         ['copy', 'cut', 'contextmenu', 'dragstart'].forEach((type) => {
             root?.addEventListener(type, (event) => event.preventDefault());
         });
+
+        root?.addEventListener('click', (event) => {
+            const link = event.target instanceof Element ? event.target.closest('a[href]') : null;
+            const href = link?.getAttribute('href') || '';
+
+            if (!href.startsWith('#')) {
+                return;
+            }
+
+            const id = decodeURIComponent(href.slice(1));
+            const target = id ? shadow.getElementById(id) : root;
+
+            if (!target) {
+                return;
+            }
+
+            event.preventDefault();
+
+            const topbar = document.querySelector('.topbar');
+            const banner = document.querySelector('.content-area > .page-header');
+            const offset = (topbar?.offsetHeight || 0) + (banner?.offsetHeight || 0) + 16;
+            const top = target.getBoundingClientRect().top + window.scrollY - offset;
+
+            window.scrollTo({
+                top: Math.max(top, 0),
+                behavior: 'smooth',
+            });
+        });
     };
 
     const render = () => {
