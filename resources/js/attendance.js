@@ -216,6 +216,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     const requiredHours = document.getElementById('attendanceRequiredHours');
     const filterEmployeeInput = document.getElementById('filterEmployeeInput');
     const filterEmployeeId = document.getElementById('filterEmployeeId');
+    const filterEmploymentStatus = document.getElementById('filterEmploymentStatus');
     const filterStatus = document.getElementById('filterStatus');
     const filterReset = document.getElementById('filterReset');
     const dayModalElement = document.getElementById('attendanceDayModal');
@@ -254,14 +255,37 @@ document.addEventListener('DOMContentLoaded', async () => {
         return employeeAutocomplete?.getSelectedId?.() || null;
     };
 
-    const employeeOption = (employee) => {
-        const inactive = employee.status === 'inactive' ? ' · Inactive' : '';
+    const employeeStatusTag = (employee) => {
+        if (employee.last_working_date) {
+            return ' · Offboarded';
+        }
 
-        return {
-            id: employee.id,
-            label: `${formatEmployeeLabel(employee)}${inactive}`,
-            employee,
+        if (employee.status === 'inactive') {
+            return ' · Inactive';
+        }
+
+        return '';
+    };
+
+    const employeeOption = (employee) => ({
+        id: employee.id,
+        label: `${formatEmployeeLabel(employee)}${employeeStatusTag(employee)}`,
+        employee,
+    });
+
+    const employeeListParams = (perPage) => {
+        const params = {
+            status: 'all',
+            per_page: perPage,
         };
+
+        if (filterEmploymentStatus) {
+            params.employment_status = filterEmploymentStatus.value || 'active';
+        } else {
+            params.employed_month = currentMonth;
+        }
+
+        return params;
     };
 
     const findEmployeeById = (employeeId) => {
@@ -396,11 +420,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                     return filterLocalEmployees(term);
                 }
 
-                const items = await searchEmployees(term, {
-                    employed_month: currentMonth,
-                    status: 'all',
-                    per_page: 50,
-                });
+                const items = await searchEmployees(term, employeeListParams(50));
 
                 return items.map((item) => employeeOption(item.employee || item));
             },
@@ -439,11 +459,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
         try {
             const { data } = await api.get('/employees', {
-                params: {
-                    per_page: 500,
-                    status: 'all',
-                    employed_month: currentMonth,
-                },
+                params: employeeListParams(500),
             });
             employees = data.data.employees || [];
         } catch (error) {
@@ -907,11 +923,21 @@ document.addEventListener('DOMContentLoaded', async () => {
     });
 
     filterStatus?.addEventListener('change', loadCalendar);
+    filterEmploymentStatus?.addEventListener('change', () => {
+        employeeAutocomplete?.clearSelection();
+        loadCalendar();
+    });
     filterReset?.addEventListener('click', () => {
-        ensureEmployeeSelection();
+        if (filterEmploymentStatus) {
+            filterEmploymentStatus.value = 'active';
+        }
+
+        employeeAutocomplete?.clearSelection();
+
         if (filterStatus) {
             filterStatus.value = '';
         }
+
         loadCalendar();
     });
 

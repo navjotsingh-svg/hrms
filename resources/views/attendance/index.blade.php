@@ -26,15 +26,26 @@
         <div class="content-card attendance-calendar-card">
             <div class="content-card-body border-bottom attendance-filter-bar">
                 <div class="row g-3 align-items-end">
+                    @if (Auth::user()->canViewAllAttendance())
+                    <div class="col-md-3">
+                        <label for="filterEmploymentStatus" class="form-label">Employees</label>
+                        <select class="form-select" id="filterEmploymentStatus">
+                            <option value="active">Active</option>
+                            <option value="inactive">Inactive</option>
+                            <option value="offboarded">Offboarded</option>
+                            <option value="all">All</option>
+                        </select>
+                    </div>
+                    @endif
                     @if (Auth::user()->canViewAllAttendance() || Auth::user()->canViewTeamAttendance())
-                    <div class="col-md-5">
+                    <div class="col-md-4">
                         @include('partials.employee-search-select', [
                             'inputId' => 'filterEmployeeInput',
                             'hiddenId' => 'filterEmployeeId',
                         ])
                     </div>
                     @endif
-                    <div class="col-md-4">
+                    <div class="col-md-3">
                         <label for="filterStatus" class="form-label">Day Status</label>
                         <select class="form-select" id="filterStatus">
                             <option value="">All days</option>

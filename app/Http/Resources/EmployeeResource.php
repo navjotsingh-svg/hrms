@@ -26,6 +26,7 @@ class EmployeeResource extends JsonResource
             'designation' => $this->designation,
             'profile_photo_url' => $this->profilePhotoUrl(),
             'joining_date' => $this->joining_date?->format('Y-m-d'),
+            'last_working_date' => $this->last_working_date?->format('Y-m-d'),
             'gender' => $this->gender,
             'date_of_birth' => $this->date_of_birth?->format('Y-m-d'),
             'employment_type' => $this->employment_type,

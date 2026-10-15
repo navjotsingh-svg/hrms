@@ -68,11 +68,26 @@ class EmployeeService
             });
         }
 
-        if (! empty($filters['status']) && $filters['status'] !== 'all') {
+        $employmentStatus = (string) ($filters['employment_status'] ?? '');
+        $filtersByEmploymentStatus = in_array($employmentStatus, ['active', 'inactive', 'offboarded', 'all'], true);
+
+        if ($filtersByEmploymentStatus) {
+            if ($employmentStatus === 'active') {
+                $query->where('status', 'active');
+            } elseif ($employmentStatus === 'inactive') {
+                $query->where('status', 'inactive')->whereNull('last_working_date');
+            } elseif ($employmentStatus === 'offboarded') {
+                $query->whereNotNull('last_working_date');
+            }
+        } elseif (! empty($filters['status']) && $filters['status'] !== 'all') {
             $query->where('status', $filters['status']);
         }
 
-        if (! empty($filters['employed_month']) && preg_match('/^\d{4}-\d{2}$/', (string) $filters['employed_month'])) {
+        if (
+            ! $filtersByEmploymentStatus
+            && ! empty($filters['employed_month'])
+            && preg_match('/^\d{4}-\d{2}$/', (string) $filters['employed_month'])
+        ) {
             $monthStart = Carbon::createFromFormat('Y-m', $filters['employed_month'])->startOfMonth();
             $query->employedDuring($monthStart->toDateString(), $monthStart->copy()->endOfMonth()->toDateString());
         }
