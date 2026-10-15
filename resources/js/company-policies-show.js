@@ -15,6 +15,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     const consentCard = document.getElementById('companyPolicyConsentCard');
     const consentedCard = document.getElementById('companyPolicyConsentedCard');
     const consentedDetails = document.getElementById('companyPolicyConsentedDetails');
+    const signaturesCard = document.getElementById('companyPolicySignaturesCard');
+    const signaturesList = document.getElementById('companyPolicySignaturesList');
     const form = document.getElementById('companyPolicyConsentForm');
     const consentEmail = document.getElementById('consentEmail');
     const consentEmailHint = document.getElementById('consentEmailHint');
@@ -40,6 +42,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     let signatureMode = 'draw';
 
     let policy = null;
+    let consents = [];
     let personalEmail = '';
     let employeeName = '';
     let drawing = false;
@@ -337,6 +340,29 @@ document.addEventListener('DOMContentLoaded', async () => {
         });
     };
 
+    const renderSignatures = () => {
+        if (!canManage || !signaturesCard || !signaturesList) {
+            return;
+        }
+
+        signaturesCard.classList.remove('d-none');
+
+        if (!consents.length) {
+            signaturesList.innerHTML = '<p class="text-muted mb-0">No employee has signed this policy yet.</p>';
+            return;
+        }
+
+        signaturesList.innerHTML = consents.map((consent) => `
+            <article class="border rounded p-3 mb-3">
+                <div class="fw-semibold">${escapeHtml(consent.employee_name)}</div>
+                <div class="small text-muted">${escapeHtml([consent.employee_code, consent.consent_email].filter(Boolean).join(' · '))}</div>
+                <div class="small mt-1">Signed as ${escapeHtml(consent.signature_name || '—')} on ${escapeHtml(consent.signed_at_label || '—')}</div>
+                ${consent.is_current_version ? '' : `<div class="small text-warning">Signed version ${escapeHtml(consent.policy_version)}. The current policy version is newer.</div>`}
+                ${consent.signature_image_url ? `<img src="${escapeHtml(consent.signature_image_url)}" alt="Signature of ${escapeHtml(consent.employee_name)}" class="company-policy-signature-preview mt-2">` : '<div class="small text-muted mt-2">Signature image is not available.</div>'}
+            </article>
+        `).join('');
+    };
+
     const render = () => {
         if (!policy) {
             return;
@@ -356,6 +382,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         `;
 
         renderPolicyPreview(unwrapEscapedPolicyHtml(policy.body_html));
+        renderSignatures();
 
         const showConsentForm = !canManage && policy.needs_consent;
         consentCard?.classList.toggle('d-none', !showConsentForm);
@@ -501,6 +528,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         personalEmail = metaResponse.data.data?.personal_email || '';
         employeeName = metaResponse.data.data?.employee_name || '';
         policy = policyResponse.data.data?.policy;
+        consents = policyResponse.data.data?.consents || [];
 
         if (!policy) {
             throw new Error('Policy not found.');

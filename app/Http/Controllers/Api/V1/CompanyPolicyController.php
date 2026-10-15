@@ -69,10 +69,15 @@ class CompanyPolicyController extends Controller
     public function show(Request $request, CompanyPolicy $company_policy): JsonResponse
     {
         $policy = $this->companyPolicyService->resolveForUser($request->user(), $company_policy);
-
-        return $this->success([
+        $payload = [
             'policy' => new CompanyPolicyResource($policy),
-        ]);
+        ];
+
+        if ($request->user()->canManageDocuments()) {
+            $payload['consents'] = $this->companyPolicyService->consentsForManager($request->user(), $policy);
+        }
+
+        return $this->success($payload);
     }
 
     public function store(Request $request): JsonResponse

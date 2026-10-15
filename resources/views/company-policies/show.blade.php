@@ -88,6 +88,14 @@
             </div>
         </div>
 
+        <div class="content-card mb-4 d-none" id="companyPolicySignaturesCard">
+            <div class="content-card-body border-bottom">
+                <h2 class="h6 mb-0">Employee Signatures</h2>
+                <p class="small text-muted mb-0">Signatures from employees who have consented to this policy.</p>
+            </div>
+            <div class="content-card-body" id="companyPolicySignaturesList"></div>
+        </div>
+
         <div class="content-card d-none" id="companyPolicyConsentedCard">
             <div class="content-card-body border-bottom">
                 <h2 class="h6 mb-0">Your Consent Record</h2>

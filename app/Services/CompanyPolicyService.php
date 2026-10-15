@@ -155,6 +155,33 @@ class CompanyPolicyService
         return $policy;
     }
 
+    /** @return list<array<string, mixed>> */
+    public function consentsForManager(User $user, CompanyPolicy $policy): array
+    {
+        $this->assertCanManage($user);
+        $this->assertSameCompany($user, $policy);
+
+        return CompanyPolicyConsent::query()
+            ->with(['employee:id,first_name,last_name,employee_code'])
+            ->where('company_policy_id', $policy->id)
+            ->orderByDesc('signed_at')
+            ->get()
+            ->map(function (CompanyPolicyConsent $consent) use ($policy) {
+                return [
+                    'employee_name' => $consent->employee?->full_name ?: 'Employee',
+                    'employee_code' => $consent->employee?->employee_code,
+                    'consent_email' => $consent->consent_email,
+                    'signature_name' => $consent->signature_name,
+                    'signature_image_url' => $consent->signatureImageUrl(),
+                    'signed_at_label' => $consent->signed_at?->timezone(config('app.timezone'))->format('d M Y, h:i A'),
+                    'policy_version' => (int) $consent->policy_version,
+                    'is_current_version' => (int) $consent->policy_version === (int) $policy->version,
+                ];
+            })
+            ->values()
+            ->all();
+    }
+
     public function signConsent(User $user, CompanyPolicy $policy, array $data, ?UploadedFile $signatureImage = null): CompanyPolicyConsent
     {
         $this->assertSameCompany($user, $policy);
