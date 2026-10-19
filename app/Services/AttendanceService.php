@@ -394,6 +394,8 @@ class AttendanceService
                 'status_label' => $statusLabel,
                 'holiday_name' => $dayMeta['holiday_name'],
                 'is_half_holiday' => (bool) ($dayMeta['is_half_holiday'] ?? false),
+                'holiday_half_session' => $dayMeta['holiday_half_session'] ?? null,
+                'holiday_half_session_label' => $dayMeta['holiday_half_session_label'] ?? null,
                 'holiday_id' => $holidayForDay?->id,
                 'holiday_type' => $holidayForDay?->type,
                 'holiday_frequency' => $holidayForDay?->frequency,
@@ -732,6 +734,8 @@ class AttendanceService
                 'frequency' => $holiday->frequency,
                 'date_label' => $holiday->displayDateLabel(),
                 'is_half_day' => $holiday->isHalfDay(),
+                'half_session' => $holiday->isHalfDay() ? $holiday->half_session : null,
+                'half_session_label' => $holiday->isHalfDay() ? $holiday->halfSessionLabel() : null,
             ] : null,
             'punch_in_label' => $dayMeta['punch_in_label'],
             'current_punch_in_label' => $dayMeta['current_punch_in_label'] ?? null,
@@ -1398,6 +1402,19 @@ class AttendanceService
     {
         $requiredMinutes = $this->requiredMinutesForEmployee($employee);
         $leaveDay = $this->leaveRequestService->approvedLeaveDayOnDate($employee, $date);
+        $holiday = $this->attendancePolicyService->holidayOnDate($employee->company_id, $date);
+
+        if ($holiday?->isHalfDay()) {
+            $halfMinutes = (int) floor($requiredMinutes / 2);
+            $session = $leaveDay?->session;
+
+            if (in_array($session, [LeaveRequestDay::SESSION_FULL, LeaveRequestDay::SESSION_FIRST_HALF, LeaveRequestDay::SESSION_SECOND_HALF], true)
+                && $session !== $holiday->half_session) {
+                return 0;
+            }
+
+            return $halfMinutes;
+        }
 
         if ($leaveDay && $this->leaveSessionAllowsWorkingPunch($leaveDay)) {
             return $this->remainingWorkMinutesForLeaveDay($leaveDay, $requiredMinutes);
@@ -1453,14 +1470,17 @@ class AttendanceService
 
         $meta['holiday_name'] = $holiday->name;
         $meta['is_half_holiday'] = true;
+        $meta['holiday_half_session'] = $holiday->half_session;
+        $meta['holiday_half_session_label'] = $holiday->halfSessionLabel();
 
         if (($meta['status'] ?? '') === 'absent') {
             $meta['status'] = 'half_day';
-            $meta['status_label'] = $holiday->name;
+            $meta['status_label'] = trim($holiday->name.' · '.($holiday->halfSessionLabel() ?? 'Half day'), ' ·');
         }
 
         if (empty($meta['day_message'])) {
-            $meta['day_message'] = "Half-day holiday: {$holiday->name}. Work the remaining half.";
+            $offLabel = $holiday->halfSessionLabel() ?? 'Half day';
+            $meta['day_message'] = "{$offLabel} is a holiday ({$holiday->name}). Work the {$holiday->workingHalfLabel()}.";
         }
 
         return $meta;
@@ -2027,7 +2047,7 @@ class AttendanceService
                 'date_label' => ($clipFrom->equalTo($clipTo)
                     ? $clipFrom->format('d M Y')
                     : $clipFrom->format('d M Y').' – '.$clipTo->format('d M Y'))
-                    .($holiday->isHalfDay() ? ' · Half day' : ''),
+                    .($holiday->isHalfDay() ? ' · '.($holiday->halfSessionLabel() ?? 'Half day') : ''),
                 'pattern_label' => $holiday->displayDateLabel(),
                 'frequency' => $holiday->frequency,
                 'type' => $holiday->type,

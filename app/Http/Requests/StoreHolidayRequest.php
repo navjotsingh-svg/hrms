@@ -23,6 +23,10 @@ class StoreHolidayRequest extends FormRequest
             'description' => ['nullable', 'string', 'max:1000'],
         ];
 
+        if ($this->input('duration') === 'half') {
+            $rules['half_session'] = ['required', Rule::in(['first_half', 'second_half'])];
+        }
+
         if ($this->input('frequency') === 'fixed') {
             $rules['start_month'] = ['required', 'integer', 'min:1', 'max:12'];
             $rules['start_day'] = ['required', 'integer', 'min:1', 'max:31'];

@@ -18,6 +18,10 @@ class Holiday extends Model
 
     public const DURATION_HALF = 'half';
 
+    public const HALF_FIRST = 'first_half';
+
+    public const HALF_SECOND = 'second_half';
+
     public const FIXED_YEAR = 2000;
 
     protected $fillable = [
@@ -25,6 +29,7 @@ class Holiday extends Model
         'name',
         'frequency',
         'duration',
+        'half_session',
         'date',
         'from_date',
         'to_date',
@@ -69,6 +74,24 @@ class Holiday extends Model
     public function isHalfDay(): bool
     {
         return $this->duration === self::DURATION_HALF;
+    }
+
+    public function halfSessionLabel(): ?string
+    {
+        return match ($this->half_session) {
+            self::HALF_FIRST => 'First Half',
+            self::HALF_SECOND => 'Second Half',
+            default => $this->isHalfDay() ? 'Half day' : null,
+        };
+    }
+
+    public function workingHalfLabel(): string
+    {
+        return match ($this->half_session) {
+            self::HALF_FIRST => 'second half',
+            self::HALF_SECOND => 'first half',
+            default => 'remaining half',
+        };
     }
 
     /** @return array{0: Carbon, 1: Carbon} */
@@ -125,7 +148,7 @@ class Holiday extends Model
                 ? $this->from_date->format('d M').' (every year)'
                 : $this->from_date->format('d M Y');
 
-            return $label.' · Half day';
+            return $label.' · '.($this->halfSessionLabel() ?? 'Half day');
         }
 
         if ($this->isFixed()) {

@@ -131,6 +131,9 @@ class HolidayService
             'name' => trim((string) $input['name']),
             'frequency' => $frequency,
             'duration' => $duration,
+            'half_session' => $duration === Holiday::DURATION_HALF
+                ? (string) ($input['half_session'] ?? '')
+                : null,
             'from_date' => $fromDate,
             'to_date' => $toDate,
             'type' => $input['type'],

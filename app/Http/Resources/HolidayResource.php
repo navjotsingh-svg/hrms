@@ -22,10 +22,12 @@ class HolidayResource extends JsonResource
             'duration' => $duration,
             'duration_label' => match ($duration) {
                 Holiday::DURATION_RANGE => 'Multiple Days',
-                Holiday::DURATION_HALF => 'Half Day',
+                Holiday::DURATION_HALF => 'Half Day'.($this->halfSessionLabel() ? ' · '.$this->halfSessionLabel() : ''),
                 default => 'Single Day',
             },
             'is_half_day' => $duration === Holiday::DURATION_HALF,
+            'half_session' => $duration === Holiday::DURATION_HALF ? $this->half_session : null,
+            'half_session_label' => $duration === Holiday::DURATION_HALF ? $this->halfSessionLabel() : null,
             'date' => $from?->toDateString(),
             'from_date' => $from?->toDateString(),
             'to_date' => $to?->toDateString(),

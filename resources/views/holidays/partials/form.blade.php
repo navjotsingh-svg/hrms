@@ -22,7 +22,17 @@
             <option value="half">Half Day</option>
             <option value="range">Multiple Days</option>
         </select>
-        <div class="form-text">Half day is one date. Employees work the other half, and only that half counts if they are absent.</div>
+        <div class="form-text">Half day is one date. Choose whether the holiday is the first half or the second half.</div>
+        <div class="invalid-feedback"></div>
+    </div>
+
+    <div class="col-md-6 holiday-field holiday-field--half d-none">
+        <label for="half_session" class="form-label">Half <span class="text-danger">*</span></label>
+        <select class="form-select" id="half_session" name="half_session">
+            <option value="first_half">First Half</option>
+            <option value="second_half">Second Half</option>
+        </select>
+        <div class="form-text">First half holiday: employees work the second half. Second half holiday: employees work the first half.</div>
         <div class="invalid-feedback"></div>
     </div>
 

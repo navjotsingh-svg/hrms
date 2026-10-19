@@ -86,13 +86,14 @@ const statusBadgeLabel = (dayData) => {
 
     if (dayData.is_half_holiday) {
         const name = dayData.holiday_name || 'Half holiday';
+        const half = dayData.holiday_half_session_label ? ` · ${dayData.holiday_half_session_label}` : '';
 
         if (dayData.status === 'present' || dayData.status === 'complete') {
-            return `${name} · Present`;
+            return `${name}${half} · Present`;
         }
 
         if (dayData.status === 'half_day' || dayData.status === 'absent' || dayData.status === 'incomplete') {
-            return name;
+            return `${name}${half}`;
         }
     }
 

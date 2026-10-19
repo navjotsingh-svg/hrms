@@ -51,6 +51,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         fixedRange: form.querySelectorAll('.holiday-field--fixed-range'),
         variableSingle: form.querySelectorAll('.holiday-field--variable-single'),
         variableRange: form.querySelectorAll('.holiday-field--variable-range'),
+        half: form.querySelectorAll('.holiday-field--half'),
     };
 
     const startLabels = form.querySelectorAll('.holiday-start-label');
@@ -82,6 +83,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         setGroupVisible(fieldGroups.fixedRange, isFixed && isRange);
         setGroupVisible(fieldGroups.variableSingle, !isFixed && !isRange);
         setGroupVisible(fieldGroups.variableRange, !isFixed && isRange);
+        setGroupVisible(fieldGroups.half, duration === 'half');
 
         startLabels.forEach((label) => {
             label.textContent = isFixed && isRange ? 'Start Day' : 'Day';
@@ -141,6 +143,10 @@ document.addEventListener('DOMContentLoaded', async () => {
             status: getStatusValue(form),
             description: form.querySelector('#description')?.value.trim() || null,
         };
+
+        if (duration === 'half') {
+            payload.half_session = form.querySelector('#half_session')?.value || 'first_half';
+        }
 
         if (frequency === 'fixed') {
             payload.start_day = Number(form.querySelector('#start_day')?.value);
@@ -241,6 +247,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         form.querySelector('#name').value = holiday.name || '';
         form.querySelector('#frequency').value = holiday.frequency || 'fixed';
         form.querySelector('#duration').value = holiday.duration || 'single';
+        form.querySelector('#half_session').value = holiday.half_session || 'first_half';
         form.querySelector('#type').value = holiday.type || 'company';
         setStatusValue(form, holiday.status || 'active');
         form.querySelector('#description').value = holiday.description || '';
