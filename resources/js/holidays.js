@@ -150,7 +150,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                 payload.end_day = Number(form.querySelector('#end_day')?.value);
                 payload.end_month = Number(form.querySelector('#end_month')?.value);
             }
-        } else if (duration === 'single') {
+        } else if (duration !== 'range') {
             payload.holiday_date = form.querySelector('#holiday_date')?.value || '';
         } else {
             payload.from_date = form.querySelector('#from_date')?.value || '';
@@ -214,7 +214,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             return true;
         }
 
-        if (duration === 'single') {
+        if (duration !== 'range') {
             return validateFourDigitDate(form.querySelector('#holiday_date')?.value, 'holiday_date', 'Date');
         }
 
@@ -253,7 +253,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                 form.querySelector('#end_day').value = holiday.end_day || '';
                 form.querySelector('#end_month').value = holiday.end_month || '';
             }
-        } else if (holiday.duration === 'single') {
+        } else if (holiday.duration !== 'range') {
             form.querySelector('#holiday_date').value = holiday.holiday_date || holiday.from_date || '';
         } else {
             form.querySelector('#from_date').value = holiday.from_date || '';

@@ -19,8 +19,10 @@
         <label for="duration" class="form-label">Duration <span class="text-danger">*</span></label>
         <select class="form-select" id="duration" name="duration" required>
             <option value="single">Single Day</option>
+            <option value="half">Half Day</option>
             <option value="range">Multiple Days</option>
         </select>
+        <div class="form-text">Half day is one date. Employees work the other half, and only that half counts if they are absent.</div>
         <div class="invalid-feedback"></div>
     </div>
 

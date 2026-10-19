@@ -20,11 +20,16 @@ class HolidayResource extends JsonResource
             'frequency' => $this->frequency,
             'frequency_label' => ucfirst((string) $this->frequency),
             'duration' => $duration,
-            'duration_label' => $duration === Holiday::DURATION_SINGLE ? 'Single Day' : 'Multiple Days',
+            'duration_label' => match ($duration) {
+                Holiday::DURATION_RANGE => 'Multiple Days',
+                Holiday::DURATION_HALF => 'Half Day',
+                default => 'Single Day',
+            },
+            'is_half_day' => $duration === Holiday::DURATION_HALF,
             'date' => $from?->toDateString(),
             'from_date' => $from?->toDateString(),
             'to_date' => $to?->toDateString(),
-            'holiday_date' => $this->frequency === Holiday::FREQUENCY_VARIABLE && $duration === Holiday::DURATION_SINGLE
+            'holiday_date' => $this->frequency === Holiday::FREQUENCY_VARIABLE && $duration !== Holiday::DURATION_RANGE
                 ? $from?->toDateString()
                 : null,
             'start_month' => $from ? (int) $from->format('n') : null,

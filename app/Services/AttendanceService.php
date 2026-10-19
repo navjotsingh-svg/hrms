@@ -393,14 +393,15 @@ class AttendanceService
                 'status' => $status,
                 'status_label' => $statusLabel,
                 'holiday_name' => $dayMeta['holiday_name'],
+                'is_half_holiday' => (bool) ($dayMeta['is_half_holiday'] ?? false),
                 'holiday_id' => $holidayForDay?->id,
                 'holiday_type' => $holidayForDay?->type,
                 'holiday_frequency' => $holidayForDay?->frequency,
                 'holiday_date_label' => $holidayForDay?->displayDateLabel(),
                 'worked_minutes' => $dayMeta['worked_minutes'],
                 'worked_hours_label' => $this->formatMinutes($dayMeta['worked_minutes']),
-                'required_minutes' => $requiredMinutes,
-                'required_hours_label' => $this->formatMinutes($requiredMinutes),
+                'required_minutes' => (int) ($dayMeta['required_minutes'] ?? $requiredMinutes),
+                'required_hours_label' => $this->formatMinutes((int) ($dayMeta['required_minutes'] ?? $requiredMinutes)),
                 'punch_count' => $dayPunches->count(),
                 'punch_in_label' => $dayMeta['punch_in_label'],
                 'punch_out_label' => $dayMeta['punch_out_label'],
@@ -550,30 +551,37 @@ class AttendanceService
     private function payrollLopUnitsForDay(Employee $employee, array $day): float
     {
         $status = $day['status'];
+        $lop = 0.0;
 
         if ($status === 'regularization_pending') {
-            return 1.0;
+            $lop = 1.0;
+        } else {
+            $leaveDay = $this->leaveRequestService->approvedLeaveDayOnDate($employee, $day['date']);
+
+            if ($leaveDay) {
+                $lop = $this->leaveDayPayrollLop($leaveDay, $employee);
+            } else {
+                $legacyRequest = $this->leaveRequestService->approvedLeaveRequestOnDate($employee, $day['date']);
+
+                if ($legacyRequest) {
+                    $lop = ($legacyRequest->leaveType?->is_paid ?? true) ? 0.0 : 1.0;
+                } else {
+                    $lop = match ($status) {
+                        'absent' => 1.0,
+                        'half_day' => 0.5,
+                        'short_leave' => $this->shortLeaveAttendanceLop($employee, $day),
+                        'present', 'incomplete', 'on_leave' => 0.0,
+                        default => 0.0,
+                    };
+                }
+            }
         }
 
-        $leaveDay = $this->leaveRequestService->approvedLeaveDayOnDate($employee, $day['date']);
-
-        if ($leaveDay) {
-            return $this->leaveDayPayrollLop($leaveDay, $employee);
+        if (! empty($day['is_half_holiday'])) {
+            return min($lop, 0.5);
         }
 
-        $legacyRequest = $this->leaveRequestService->approvedLeaveRequestOnDate($employee, $day['date']);
-
-        if ($legacyRequest) {
-            return ($legacyRequest->leaveType?->is_paid ?? true) ? 0.0 : 1.0;
-        }
-
-        return match ($status) {
-            'absent' => 1.0,
-            'half_day' => 0.5,
-            'short_leave' => $this->shortLeaveAttendanceLop($employee, $day),
-            'present', 'incomplete', 'on_leave' => 0.0,
-            default => 0.0,
-        };
+        return $lop;
     }
 
     private function leaveDayPayrollLop(LeaveRequestDay $leaveDay, Employee $employee): float
@@ -703,19 +711,27 @@ class AttendanceService
             'date_label' => $day->format('l, d M Y'),
             'employee' => $this->formatEmployee($employee),
             'shift' => $this->formatShift($employee->shift),
-            'required_minutes' => $requiredMinutes,
-            'required_hours_label' => $this->formatMinutes($requiredMinutes),
+            'required_minutes' => ($dayMeta['is_half_holiday'] ?? false)
+                ? (int) $dayMeta['required_minutes']
+                : $requiredMinutes,
+            'required_hours_label' => $this->formatMinutes(
+                ($dayMeta['is_half_holiday'] ?? false)
+                    ? (int) $dayMeta['required_minutes']
+                    : $requiredMinutes
+            ),
             'worked_minutes' => $dayMeta['worked_minutes'],
             'worked_hours_label' => $this->formatMinutes($dayMeta['worked_minutes']),
             'status' => $pendingRequest ? 'regularization_pending' : $dayMeta['status'],
             'status_label' => $pendingRequest ? 'Regularization Pending' : $dayMeta['status_label'],
             'holiday_name' => $dayMeta['holiday_name'],
+            'is_half_holiday' => (bool) ($dayMeta['is_half_holiday'] ?? false),
             'holiday' => $holiday ? [
                 'id' => $holiday->id,
                 'name' => $holiday->name,
                 'type' => $holiday->type,
                 'frequency' => $holiday->frequency,
                 'date_label' => $holiday->displayDateLabel(),
+                'is_half_day' => $holiday->isHalfDay(),
             ] : null,
             'punch_in_label' => $dayMeta['punch_in_label'],
             'current_punch_in_label' => $dayMeta['current_punch_in_label'] ?? null,
@@ -1408,6 +1424,61 @@ class AttendanceService
         ?LeaveRequestDay $approvedLeaveDay = null,
         ?WfhRequest $approvedWfhRequest = null,
     ): array {
+        $holiday ??= $this->attendancePolicyService->holidayOnDate($employee->company_id, $dateString);
+
+        return $this->applyHalfDayHoliday($this->resolveDayMetaCore(
+            $employee,
+            $dateString,
+            $punches,
+            $workedMinutes,
+            $requiredMinutes,
+            $isFuture,
+            $holiday,
+            $weeklyOffWeekdays,
+            $isToday,
+            $approvedLeaveDay,
+            $approvedWfhRequest,
+        ), $holiday);
+    }
+
+    private function applyHalfDayHoliday(array $meta, ?Holiday $holiday): array
+    {
+        if (! $holiday?->isHalfDay()) {
+            return $meta;
+        }
+
+        if (in_array($meta['status'] ?? '', ['after_exit', 'before_portal', 'weekly_off', 'future'], true)) {
+            return $meta;
+        }
+
+        $meta['holiday_name'] = $holiday->name;
+        $meta['is_half_holiday'] = true;
+
+        if (($meta['status'] ?? '') === 'absent') {
+            $meta['status'] = 'half_day';
+            $meta['status_label'] = $holiday->name;
+        }
+
+        if (empty($meta['day_message'])) {
+            $meta['day_message'] = "Half-day holiday: {$holiday->name}. Work the remaining half.";
+        }
+
+        return $meta;
+    }
+
+    private function resolveDayMetaCore(
+        Employee $employee,
+        string $dateString,
+        Collection $punches,
+        int $workedMinutes,
+        int $requiredMinutes,
+        bool $isFuture,
+        ?Holiday $holiday = null,
+        ?array $weeklyOffWeekdays = null,
+        bool $isToday = false,
+        ?LeaveRequestDay $approvedLeaveDay = null,
+        ?WfhRequest $approvedWfhRequest = null,
+    ): array {
         $companyId = $employee->company_id;
         $weeklyOffWeekdays ??= $this->attendancePolicyService->weeklyOffWeekdaysForEmployee($employee);
         $holiday ??= $this->attendancePolicyService->holidayOnDate($companyId, $dateString);
@@ -1428,7 +1499,7 @@ class AttendanceService
             ];
         }
 
-        if ($holiday) {
+        if ($holiday && ! $holiday->isHalfDay()) {
             return [
                 'status' => 'holiday',
                 'status_label' => $holiday->name,
@@ -1440,6 +1511,10 @@ class AttendanceService
                 'can_mark' => false,
                 'day_message' => "Today is a holiday: {$holiday->name}.",
             ];
+        }
+
+        if ($holiday?->isHalfDay()) {
+            $requiredMinutes = (int) floor($requiredMinutes / 2);
         }
 
         if ($this->portalStartService->isBeforeAttendanceTracking($employee, $dateString)) {
@@ -1949,9 +2024,10 @@ class AttendanceService
                 'from_date' => $clipFrom->toDateString(),
                 'to_date' => $clipTo->toDateString(),
                 'date' => $clipFrom->toDateString(),
-                'date_label' => $clipFrom->equalTo($clipTo)
+                'date_label' => ($clipFrom->equalTo($clipTo)
                     ? $clipFrom->format('d M Y')
-                    : $clipFrom->format('d M Y').' – '.$clipTo->format('d M Y'),
+                    : $clipFrom->format('d M Y').' – '.$clipTo->format('d M Y'))
+                    .($holiday->isHalfDay() ? ' · Half day' : ''),
                 'pattern_label' => $holiday->displayDateLabel(),
                 'frequency' => $holiday->frequency,
                 'type' => $holiday->type,

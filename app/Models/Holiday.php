@@ -16,6 +16,8 @@ class Holiday extends Model
 
     public const DURATION_RANGE = 'range';
 
+    public const DURATION_HALF = 'half';
+
     public const FIXED_YEAR = 2000;
 
     protected $fillable = [
@@ -61,7 +63,12 @@ class Holiday extends Model
 
     public function isSingleDay(): bool
     {
-        return $this->duration === self::DURATION_SINGLE;
+        return in_array($this->duration, [self::DURATION_SINGLE, self::DURATION_HALF], true);
+    }
+
+    public function isHalfDay(): bool
+    {
+        return $this->duration === self::DURATION_HALF;
     }
 
     /** @return array{0: Carbon, 1: Carbon} */
@@ -113,6 +120,14 @@ class Holiday extends Model
 
     public function displayDateLabel(): string
     {
+        if ($this->isHalfDay()) {
+            $label = $this->isFixed()
+                ? $this->from_date->format('d M').' (every year)'
+                : $this->from_date->format('d M Y');
+
+            return $label.' · Half day';
+        }
+
         if ($this->isFixed()) {
             if ($this->isSingleDay()) {
                 return $this->from_date->format('d M').' (every year)';

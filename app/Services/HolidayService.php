@@ -98,7 +98,7 @@ class HolidayService
 
             $fromDate = sprintf('%04d-%02d-%02d', Holiday::FIXED_YEAR, $startMonth, $startDay);
 
-            if ($duration === Holiday::DURATION_SINGLE) {
+            if (in_array($duration, [Holiday::DURATION_SINGLE, Holiday::DURATION_HALF], true)) {
                 $toDate = $fromDate;
             } else {
                 $endMonth = (int) $input['end_month'];
@@ -112,7 +112,7 @@ class HolidayService
                     ]);
                 }
             }
-        } elseif ($duration === Holiday::DURATION_SINGLE) {
+        } elseif (in_array($duration, [Holiday::DURATION_SINGLE, Holiday::DURATION_HALF], true)) {
             $holidayDate = $this->requireFourDigitDate($input['holiday_date'] ?? null, 'holiday_date');
             $fromDate = $holidayDate;
             $toDate = $holidayDate;

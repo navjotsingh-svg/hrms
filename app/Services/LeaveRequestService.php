@@ -636,6 +636,7 @@ class LeaveRequestService
             }
 
             $dayValue = in_array($session, [LeaveRequestDay::SESSION_FIRST_HALF, LeaveRequestDay::SESSION_SECOND_HALF], true) ? 0.5 : 1.0;
+            $dayValue = $this->dayValueOnHalfHoliday($employee, $fromDate, $dayValue);
 
             return collect([[
                 'date' => $fromDate,
@@ -662,16 +663,29 @@ class LeaveRequestService
                 'date' => $dateString,
                 'session' => LeaveRequestDay::SESSION_FULL,
                 'duration_minutes' => null,
-                'day_value' => 1.0,
+                'day_value' => $this->dayValueOnHalfHoliday($employee, $dateString, 1.0),
             ]);
         }
 
         return $rows;
     }
 
+    private function dayValueOnHalfHoliday(Employee $employee, string $date, float $dayValue): float
+    {
+        if ($dayValue < 1) {
+            return $dayValue;
+        }
+
+        $holiday = $this->attendancePolicyService->holidayOnDate($employee->company_id, $date);
+
+        return $holiday?->isHalfDay() ? 0.5 : $dayValue;
+    }
+
     private function isNonWorkingDay(Employee $employee, string $date): bool
     {
-        if ($this->attendancePolicyService->holidayOnDate($employee->company_id, $date)) {
+        $holiday = $this->attendancePolicyService->holidayOnDate($employee->company_id, $date);
+
+        if ($holiday && ! $holiday->isHalfDay()) {
             return true;
         }
 

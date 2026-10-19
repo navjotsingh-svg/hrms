@@ -84,6 +84,18 @@ const statusBadgeLabel = (dayData) => {
         return '';
     }
 
+    if (dayData.is_half_holiday) {
+        const name = dayData.holiday_name || 'Half holiday';
+
+        if (dayData.status === 'present' || dayData.status === 'complete') {
+            return `${name} · Present`;
+        }
+
+        if (dayData.status === 'half_day' || dayData.status === 'absent' || dayData.status === 'incomplete') {
+            return name;
+        }
+    }
+
     if (dayData.status === 'present' || dayData.status === 'complete') {
         return 'Present full day';
     }
@@ -807,12 +819,12 @@ document.addEventListener('DOMContentLoaded', async () => {
             ? `${(window.HRMS_WEB_ROUTES?.holidayEdit || '/masters/attendance/holidays')}/${payload.holiday.id}/edit`
             : null;
 
-        const holidaySection = payload.status === 'holiday'
+        const holidaySection = payload.status === 'holiday' || payload.is_half_holiday
             ? `
-                <div class="alert alert-warning mb-3">
+                <div class="alert ${payload.is_half_holiday ? 'alert-info' : 'alert-warning'} mb-3">
                     <div class="fw-semibold mb-1">${payload.holiday?.name || payload.holiday_name || payload.status_label || 'Holiday'}</div>
                     <div>${holidayTypeLabel(payload.holiday?.type)}${payload.holiday?.date_label ? ` · ${payload.holiday.date_label}` : ''}</div>
-                    <div class="small text-muted mt-1">${payload.day_message || 'No attendance is required on this day.'}</div>
+                    <div class="small text-muted mt-1">${payload.day_message || (payload.is_half_holiday ? 'Work the remaining half of this day.' : 'No attendance is required on this day.')}</div>
                     ${holidayEditUrl ? `<a href="${holidayEditUrl}" class="btn btn-sm btn-outline-primary mt-2">Edit holiday</a>` : ''}
                 </div>
             `

@@ -236,7 +236,9 @@ class AttendanceCorrectionService
             ]);
         }
 
-        if ($this->attendancePolicyService->holidayOnDate($employee->company_id, $date)) {
+        $holiday = $this->attendancePolicyService->holidayOnDate($employee->company_id, $date);
+
+        if ($holiday && ! $holiday->isHalfDay()) {
             throw ValidationException::withMessages([
                 'date' => 'Holiday dates cannot be marked absent.',
             ]);

@@ -18,7 +18,7 @@ class StoreHolidayRequest extends FormRequest
             'name' => ['required', 'string', 'max:150'],
             'type' => ['required', Rule::in(['public', 'company', 'optional', 'other'])],
             'frequency' => ['required', Rule::in(['fixed', 'variable'])],
-            'duration' => ['required', Rule::in(['single', 'range'])],
+            'duration' => ['required', Rule::in(['single', 'range', 'half'])],
             'status' => ['required', Rule::in(['active', 'inactive'])],
             'description' => ['nullable', 'string', 'max:1000'],
         ];
@@ -31,7 +31,7 @@ class StoreHolidayRequest extends FormRequest
                 $rules['end_month'] = ['required', 'integer', 'min:1', 'max:12'];
                 $rules['end_day'] = ['required', 'integer', 'min:1', 'max:31'];
             }
-        } elseif ($this->input('duration') === 'single') {
+        } elseif (in_array($this->input('duration'), ['single', 'half'], true)) {
             $rules['holiday_date'] = ['required', 'date', 'regex:/^\d{4}-\d{2}-\d{2}$/'];
         } else {
             $rules['from_date'] = ['required', 'date', 'regex:/^\d{4}-\d{2}-\d{2}$/'];

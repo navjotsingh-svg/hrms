@@ -1056,7 +1056,9 @@ class AttendanceRegularizationService
             ]);
         }
 
-        if ($this->attendancePolicyService->holidayOnDate($employee->company_id, $date)) {
+        $holiday = $this->attendancePolicyService->holidayOnDate($employee->company_id, $date);
+
+        if ($holiday && ! $holiday->isHalfDay()) {
             throw ValidationException::withMessages([
                 'attendance_date' => 'Holiday dates cannot be regularized.',
             ]);

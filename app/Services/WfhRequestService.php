@@ -389,7 +389,9 @@ class WfhRequestService
 
     private function isNonWorkingDay(Employee $employee, string $date): bool
     {
-        if ($this->attendancePolicyService->holidayOnDate($employee->company_id, $date)) {
+        $holiday = $this->attendancePolicyService->holidayOnDate($employee->company_id, $date);
+
+        if ($holiday && ! $holiday->isHalfDay()) {
             return true;
         }
 
