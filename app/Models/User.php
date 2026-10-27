@@ -659,7 +659,8 @@ class User extends Authenticatable
     {
         return $this->hasPermission('leave.approve')
             || $this->hasPermission('leave.manage')
-            || $this->isHrManager();
+            || $this->isHrManager()
+            || $this->isDirectManagerOfAnyone();
     }
 
     public function canReviewLeaveRequest(LeaveRequest $request): bool
@@ -686,11 +687,12 @@ class User extends Authenticatable
             return true;
         }
 
-        if (! $this->hasPermission('leave.approve')) {
-            return false;
+        // Matches leave email routing: the employee's direct manager reviews the request.
+        if ($this->isDirectReportingManagerOfEmployee($request->employee)) {
+            return true;
         }
 
-        return $this->isDirectReportingManagerOfEmployee($request->employee);
+        return false;
     }
 
     public function canViewLeaveRequest(LeaveRequest $request): bool
@@ -713,12 +715,8 @@ class User extends Authenticatable
             return true;
         }
 
-        if ($this->hasPermission('leave.approve')) {
-            return $this->isDirectReportingManagerOfEmployee($request->employee)
-                || $this->isReportingManagerInHierarchy($request->employee);
-        }
-
-        return false;
+        return $this->isDirectReportingManagerOfEmployee($request->employee)
+            || $this->isReportingManagerInHierarchy($request->employee);
     }
 
     public function canViewAllLeaveRequests(): bool
@@ -1278,6 +1276,20 @@ class User extends Authenticatable
     public function isDirectReportingManagerOfEmployee(?Employee $employee): bool
     {
         return app(EmployeeAccessService::class)->isDirectManagerOf($this, $employee);
+    }
+
+    public function isDirectManagerOfAnyone(): bool
+    {
+        $employee = $this->linkedEmployee();
+
+        if (! $employee) {
+            return false;
+        }
+
+        return Employee::query()
+            ->where('company_id', $this->company_id)
+            ->where('manager_id', $employee->id)
+            ->exists();
     }
 
     public function isReportingManagerInHierarchy(?Employee $employee): bool

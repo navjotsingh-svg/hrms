@@ -735,17 +735,6 @@ Route::prefix('v1')->name('api.')->group(function () {
                     ->name('asset-requests.store');
             });
 
-            Route::middleware('company.permission:leave.approve')->group(function () {
-                Route::get('leave-requests/pending', [\App\Http\Controllers\Api\V1\LeaveRequestController::class, 'pending'])
-                    ->name('leave-requests.pending');
-                Route::patch('leave-requests/{leave_request}/approve', [\App\Http\Controllers\Api\V1\LeaveRequestController::class, 'approve'])
-                    ->name('leave-requests.approve')
-                    ->whereNumber('leave_request');
-                Route::patch('leave-requests/{leave_request}/reject', [\App\Http\Controllers\Api\V1\LeaveRequestController::class, 'reject'])
-                    ->name('leave-requests.reject')
-                    ->whereNumber('leave_request');
-            });
-
             Route::middleware('company.permission:wfh.approve')->group(function () {
                 Route::get('wfh-requests/pending', [\App\Http\Controllers\Api\V1\WfhController::class, 'pending'])
                     ->name('wfh-requests.pending');
@@ -833,8 +822,16 @@ Route::prefix('v1')->name('api.')->group(function () {
             Route::middleware('company.member')->group(function () {
                 Route::get('leave-requests', [\App\Http\Controllers\Api\V1\LeaveRequestController::class, 'index'])
                     ->name('leave-requests.index');
+                Route::get('leave-requests/pending', [\App\Http\Controllers\Api\V1\LeaveRequestController::class, 'pending'])
+                    ->name('leave-requests.pending');
                 Route::get('leave-requests/{leave_request}', [\App\Http\Controllers\Api\V1\LeaveRequestController::class, 'show'])
                     ->name('leave-requests.show')
+                    ->whereNumber('leave_request');
+                Route::patch('leave-requests/{leave_request}/approve', [\App\Http\Controllers\Api\V1\LeaveRequestController::class, 'approve'])
+                    ->name('leave-requests.approve')
+                    ->whereNumber('leave_request');
+                Route::patch('leave-requests/{leave_request}/reject', [\App\Http\Controllers\Api\V1\LeaveRequestController::class, 'reject'])
+                    ->name('leave-requests.reject')
                     ->whereNumber('leave_request');
                 Route::patch('leave-requests/{leave_request}/cancel', [\App\Http\Controllers\Api\V1\LeaveRequestController::class, 'cancel'])
                     ->name('leave-requests.cancel')
