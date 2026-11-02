@@ -7,6 +7,14 @@ use Illuminate\Support\Facades\Route;
 
 Route::get('/', fn () => view('auth.login'))->name('login');
 
+// Face Liveness browser assets (served via Laravel so shared hosts that block static .wasm still work)
+Route::get('/liveness-assets/tfjs-backend-wasm/{file}', [\App\Http\Controllers\LivenessAssetController::class, 'wasm'])
+    ->where('file', 'tfjs-backend-wasm(?:-simd|-threaded-simd)?\\.wasm')
+    ->name('liveness-assets.wasm');
+Route::get('/liveness-assets/blazeface/{file}', [\App\Http\Controllers\LivenessAssetController::class, 'blazeface'])
+    ->where('file', 'model\\.json|group1-shard1of1\\.bin')
+    ->name('liveness-assets.blazeface');
+
 Route::post('/auth/session', [AuthSessionController::class, 'store']);
 Route::post('/auth/session/logout', [AuthSessionController::class, 'destroy']);
 
