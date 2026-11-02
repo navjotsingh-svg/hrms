@@ -30,6 +30,7 @@ class AttendanceService
         private WfhRequestService $wfhRequestService,
         private EmployeeAccessService $employeeAccessService,
         private FaceVerificationService $faceVerificationService,
+        private FaceLivenessService $faceLivenessService,
         private AttendanceNetworkService $attendanceNetworkService,
         private AttendanceSettingsService $attendanceSettingsService,
     ) {}
@@ -183,6 +184,10 @@ class AttendanceService
             'face_match_threshold' => $this->faceVerificationService->thresholdPercent((int) $employee->company_id),
             'require_face_match' => $this->faceVerificationService->requiresFaceMatch((int) $employee->company_id),
             'require_punch_photo' => $this->attendanceSettingsService->requiresPunchPhoto((int) $employee->company_id),
+            'require_liveness' => $this->faceLivenessService->enabled()
+                && $this->attendanceSettingsService->requiresPunchPhoto((int) $employee->company_id),
+            'liveness_threshold' => $this->faceLivenessService->thresholdPercent(),
+            'liveness_region' => $this->faceLivenessService->region(),
             'requires_profile_photo' => $this->faceVerificationService->requiresFaceMatch((int) $employee->company_id)
                 && $this->attendanceSettingsService->requiresPunchPhoto((int) $employee->company_id),
             'has_profile_photo' => $this->faceVerificationService->readableProfilePhotoPath($employee) !== null,
@@ -191,6 +196,33 @@ class AttendanceService
                 ? array_map('floatval', $employee->profile_face_descriptor)
                 : null,
         ];
+    }
+
+    public function startLivenessSession(User $user): array
+    {
+        if (! $this->canMarkAttendance($user)) {
+            throw new AccessDeniedHttpException('You are not allowed to mark attendance.');
+        }
+
+        $employee = $this->employeeAccessService->linkedEmployee($user);
+
+        if (! $employee) {
+            throw new NotFoundHttpException('No employee profile is linked to your account.');
+        }
+
+        if (! $this->faceLivenessService->enabled()) {
+            throw ValidationException::withMessages([
+                'liveness' => ['Face liveness is disabled.'],
+            ]);
+        }
+
+        if (! $this->attendanceSettingsService->requiresPunchPhoto((int) $employee->company_id)) {
+            throw ValidationException::withMessages([
+                'liveness' => ['Punch photo is not required, so face liveness is not needed.'],
+            ]);
+        }
+
+        return $this->faceLivenessService->startSession($employee);
     }
 
     public function punch(
@@ -203,6 +235,7 @@ class AttendanceService
         ?array $selfieFaceDescriptor = null,
         ?string $ipAddress = null,
         ?string $macAddress = null,
+        ?string $livenessSessionId = null,
     ): array {
         if (! $this->canMarkAttendance($user)) {
             throw new AccessDeniedHttpException('You are not allowed to mark attendance.');
@@ -247,8 +280,21 @@ class AttendanceService
         $this->attendanceNetworkService->assertIpAllowed((int) $employee->company_id, $ipAddress);
 
         $requiresPhoto = $this->attendanceSettingsService->requiresPunchPhoto((int) $employee->company_id);
+        $requiresLiveness = $requiresPhoto && $this->faceLivenessService->enabled();
+        $livenessReferenceBytes = null;
+        $livenessConfidence = null;
 
-        if ($requiresPhoto && ! $selfie) {
+        if ($requiresLiveness) {
+            if (! filled($livenessSessionId)) {
+                throw ValidationException::withMessages([
+                    'liveness_session_id' => ['Complete the live face check before punching.'],
+                ]);
+            }
+
+            $liveness = $this->faceLivenessService->assertPassed((string) $livenessSessionId);
+            $livenessReferenceBytes = $liveness['reference_bytes'];
+            $livenessConfidence = $liveness['confidence'];
+        } elseif ($requiresPhoto && ! $selfie) {
             throw ValidationException::withMessages([
                 'selfie' => ['A punch photo is required.'],
             ]);
@@ -256,7 +302,12 @@ class AttendanceService
 
         $verifiedMatchScore = null;
 
-        if ($requiresPhoto && $selfie) {
+        if ($requiresPhoto && $livenessReferenceBytes !== null) {
+            $verifiedMatchScore = $this->faceVerificationService->assertPunchAllowedWithImageBytes(
+                $employee,
+                $livenessReferenceBytes,
+            );
+        } elseif ($requiresPhoto && $selfie) {
             $verifiedMatchScore = $this->faceVerificationService->assertPunchAllowed(
                 $employee,
                 $selfie,
@@ -265,9 +316,15 @@ class AttendanceService
 
         $selfiePath = null;
 
-        if ($selfie) {
-            // Face match (AWS Rekognition by default) already ran above; store the photo on S3.
+        if ($livenessReferenceBytes !== null) {
+            $selfiePath = $this->attendanceSelfieStorageService->storeBytes($employee, $livenessReferenceBytes);
+        } elseif ($selfie) {
             $selfiePath = $this->attendanceSelfieStorageService->store($employee, $selfie);
+        }
+
+        // Prefer face-match score; fall back to liveness confidence for audit when match is disabled.
+        if ($verifiedMatchScore === null && $livenessConfidence !== null) {
+            $verifiedMatchScore = $livenessConfidence;
         }
 
         $locationName = trim((string) $locationName);

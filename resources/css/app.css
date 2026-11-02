@@ -5155,6 +5155,23 @@ body.document-lightbox-open {
     border-radius: 0.875rem;
 }
 
+.attendance-liveness-root {
+    flex: 1 1 auto;
+    min-height: 320px;
+    border-radius: 0.875rem;
+    overflow: hidden;
+    background: #0f172a;
+}
+
+.attendance-liveness-root .amplify-liveness-detector,
+.attendance-liveness-panel {
+    min-height: 320px;
+}
+
+.attendance-liveness-status {
+    margin-top: 0.75rem;
+}
+
 .attendance-punch-modal-layout {
     --punch-panel-height: 380px;
     display: grid;

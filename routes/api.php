@@ -492,6 +492,8 @@ Route::prefix('v1')->name('api.')->group(function () {
 
             Route::post('attendance/punch', [\App\Http\Controllers\Api\V1\AttendanceController::class, 'punch'])
                 ->name('attendance.punch');
+            Route::post('attendance/liveness/session', [\App\Http\Controllers\Api\V1\AttendanceController::class, 'startLiveness'])
+                ->name('attendance.liveness.session');
             Route::post('attendance/face-reference', [\App\Http\Controllers\Api\V1\AttendanceSettingsController::class, 'syncFaceReference'])
                 ->name('attendance.face-reference.sync');
             Route::get('attendance/current-ip', [\App\Http\Controllers\Api\V1\AttendanceSettingsController::class, 'currentIp'])

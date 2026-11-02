@@ -24,7 +24,7 @@
             <div class="modal-body pt-2">
                 <div class="attendance-punch-modal-layout" id="{{ $prefix }}PunchModalLayout">
                     <div class="attendance-punch-modal-camera-col" id="{{ $prefix }}PunchModalCameraCol">
-                        <div class="attendance-camera-wrap attendance-camera-wrap--modal">
+                        <div class="attendance-camera-wrap attendance-camera-wrap--modal" id="{{ $prefix }}CameraWrap">
                             <video id="{{ $prefix }}Camera" class="attendance-camera d-none" autoplay playsinline webkit-playsinline muted></video>
                             <canvas id="{{ $prefix }}CameraCanvas" class="d-none"></canvas>
                             <div class="attendance-camera-placeholder" id="{{ $prefix }}CameraPlaceholder">
@@ -35,6 +35,8 @@
                                 <div class="attendance-live-match-label">match</div>
                             </div>
                         </div>
+                        <div class="attendance-liveness-root d-none" id="{{ $prefix }}LivenessRoot"></div>
+                        <div class="attendance-liveness-status small text-muted d-none" id="{{ $prefix }}LivenessStatus" aria-live="polite"></div>
                     </div>
 
                     <div class="attendance-punch-modal-info-col">

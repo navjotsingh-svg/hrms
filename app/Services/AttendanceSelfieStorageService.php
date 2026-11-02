@@ -44,6 +44,38 @@ class AttendanceSelfieStorageService
         );
     }
 
+    public function storeBytes(Employee $employee, string $imageBytes, string $extension = 'jpg'): string
+    {
+        $extension = strtolower($extension) === 'png' ? 'png' : 'jpg';
+        $tempPath = tempnam(sys_get_temp_dir(), 'att_selfie_');
+
+        if ($tempPath === false) {
+            throw ValidationException::withMessages([
+                'selfie' => ['Unable to prepare attendance photo for upload.'],
+            ]);
+        }
+
+        $pathWithExt = $tempPath.'.'.$extension;
+        @rename($tempPath, $pathWithExt);
+        file_put_contents($pathWithExt, $imageBytes);
+
+        try {
+            $uploaded = new UploadedFile(
+                $pathWithExt,
+                'liveness.'.$extension,
+                $extension === 'png' ? 'image/png' : 'image/jpeg',
+                null,
+                true,
+            );
+
+            return $this->store($employee, $uploaded);
+        } finally {
+            if (is_file($pathWithExt)) {
+                @unlink($pathWithExt);
+            }
+        }
+    }
+
     public function url(?string $path): ?string
     {
         if (! filled($path)) {

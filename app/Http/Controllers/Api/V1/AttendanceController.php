@@ -37,6 +37,14 @@ class AttendanceController extends Controller
         ]);
     }
 
+    public function startLiveness(Request $request): JsonResponse
+    {
+        return $this->success(
+            $this->attendanceService->startLivenessSession($request->user()),
+            'Face liveness session created.',
+        );
+    }
+
     public function punch(StoreAttendancePunchRequest $request): JsonResponse
     {
         $user = $request->user();
@@ -63,6 +71,7 @@ class AttendanceController extends Controller
                 $request->input('selfie_face_descriptor'),
                 $ipAddress,
                 $macAddress,
+                $request->input('liveness_session_id'),
             );
 
             $this->activityLogService->logAttendancePunch($user, $request, true, $result);

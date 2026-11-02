@@ -145,6 +145,12 @@ return [
             env('ATTENDANCE_REQUIRE_PUNCH_PHOTO', true),
             FILTER_VALIDATE_BOOL
         ),
+        // AWS Face Liveness challenge before punch (blocks phone photos / printouts)
+        'require_liveness' => filter_var(
+            env('ATTENDANCE_REQUIRE_LIVENESS', true),
+            FILTER_VALIDATE_BOOL
+        ),
+        'liveness_threshold' => (float) env('ATTENDANCE_LIVENESS_THRESHOLD', 80),
         // s3 (default) or local public folder
         'selfie_disk' => env('ATTENDANCE_SELFIE_DISK', 's3'),
         'regularization' => [

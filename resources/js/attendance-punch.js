@@ -5,6 +5,7 @@ import { describeCameraError, describeLocationError, formatCoordinates, getPosit
 import { getDeviceMacAddress } from './device-utils';
 
 const loadFaceVerification = () => import('./face-verification');
+const loadAttendanceLiveness = () => import('./attendance-liveness.jsx');
 
 const buildMapEmbedUrl = (latitude, longitude) => {
     const lat = Number(latitude);
@@ -42,6 +43,9 @@ export function initAttendancePunch({
     const captureBtn = document.getElementById(`${prefix}CaptureBtn`);
     const liveMatchOverlay = document.getElementById(`${prefix}LiveMatchOverlay`);
     const liveMatchValue = document.getElementById(`${prefix}LiveMatchValue`);
+    const cameraWrap = document.getElementById(`${prefix}CameraWrap`);
+    const livenessRoot = document.getElementById(`${prefix}LivenessRoot`);
+    const livenessStatus = document.getElementById(`${prefix}LivenessStatus`);
     const alertBox = alertElementId ? document.getElementById(alertElementId) : null;
 
     if (!punchBtn || !cameraVideo || !cameraCanvas || !punchModalEl || !captureBtn) {
@@ -64,11 +68,15 @@ export function initAttendancePunch({
     let faceMatchThreshold = 90;
     let requireFaceMatch = true;
     let requirePunchPhoto = true;
+    let requireLiveness = true;
     let hasProfilePhoto = false;
     let clientMacAddress = null;
     let livePreviewRunning = false;
     let livePreviewTimer = null;
     let livePreviewBusy = false;
+    let livenessMount = null;
+    let completedLivenessSessionId = null;
+    let livenessPassed = false;
 
     const LIVE_PREVIEW_INTERVAL_MS = 900;
 
@@ -84,9 +92,105 @@ export function initAttendancePunch({
 
     const actionLabel = () => (nextPunchType === 'out' ? 'Punch Out' : 'Punch In');
 
-    const captureBtnLabel = () => (
-        requirePunchPhoto ? `Take Photo & ${actionLabel()}` : actionLabel()
-    );
+    const captureBtnLabel = () => {
+        if (!requirePunchPhoto) {
+            return actionLabel();
+        }
+
+        if (requireLiveness) {
+            return livenessPassed ? `Confirm & ${actionLabel()}` : `Complete live check to ${actionLabel()}`;
+        }
+
+        return `Take Photo & ${actionLabel()}`;
+    };
+
+    const setLivenessStatus = (message, { visible = true } = {}) => {
+        if (!livenessStatus) {
+            return;
+        }
+
+        livenessStatus.textContent = message || '';
+        livenessStatus.classList.toggle('d-none', !visible || !message);
+    };
+
+    const destroyLivenessMount = () => {
+        if (livenessMount) {
+            try {
+                livenessMount.unmount();
+            } catch {
+                // ignore unmount race
+            }
+            livenessMount = null;
+        }
+
+        if (livenessRoot) {
+            livenessRoot.innerHTML = '';
+            livenessRoot.classList.add('d-none');
+        }
+
+        cameraWrap?.classList.remove('d-none');
+        completedLivenessSessionId = null;
+        livenessPassed = false;
+        setLivenessStatus('', { visible: false });
+    };
+
+    const startLivenessFlow = async () => {
+        if (!livenessRoot) {
+            throw new Error('Face liveness UI is missing. Rebuild frontend assets.');
+        }
+
+        destroyLivenessMount();
+        cameraWrap?.classList.add('d-none');
+        livenessRoot.classList.remove('d-none');
+        setLivenessStatus('Starting live face check…');
+        captureBtn.disabled = true;
+        captureBtn.textContent = captureBtnLabel();
+
+        const { data } = await api.post('/attendance/liveness/session');
+        const payload = data.data || {};
+        const sessionId = payload.session_id;
+        const region = payload.region || 'us-east-1';
+        const credentials = payload.credentials;
+
+        if (!sessionId || !credentials?.access_key_id || !credentials?.secret_access_key || !credentials?.session_token) {
+            throw new Error('Unable to start face liveness session.');
+        }
+
+        setLivenessStatus('Follow the oval. Keep your face in frame — photos on a phone will fail.');
+
+        const { mountAttendanceLiveness } = await loadAttendanceLiveness();
+
+        livenessMount = mountAttendanceLiveness(livenessRoot, {
+            sessionId,
+            region,
+            credentials,
+            onComplete: async () => {
+                completedLivenessSessionId = sessionId;
+                livenessPassed = true;
+                setLivenessStatus('Live check passed. Confirm to mark attendance.');
+                captureBtn.disabled = false;
+                captureBtn.textContent = captureBtnLabel();
+            },
+            onError: (error) => {
+                const message = error?.error?.message
+                    || error?.message
+                    || 'Face liveness failed. Try again without using a photo or video of a face.';
+                setLivenessStatus(message);
+                showAlert(message, 'danger');
+                livenessPassed = false;
+                completedLivenessSessionId = null;
+                captureBtn.disabled = true;
+                captureBtn.textContent = captureBtnLabel();
+            },
+            onCancel: () => {
+                setLivenessStatus('Live check cancelled. Close and open punch again to retry.');
+                livenessPassed = false;
+                completedLivenessSessionId = null;
+                captureBtn.disabled = true;
+                captureBtn.textContent = captureBtnLabel();
+            },
+        });
+    };
 
     const setLocationOnlyMode = (enabled) => {
         punchModalLayout?.classList.toggle('attendance-punch-modal-layout--location-only', enabled);
@@ -249,6 +353,7 @@ export function initAttendancePunch({
         faceMatchThreshold = Number(status.face_match_threshold) || 90;
         requireFaceMatch = status.require_face_match !== false;
         requirePunchPhoto = status.require_punch_photo !== false;
+        requireLiveness = requirePunchPhoto && status.require_liveness !== false;
         hasProfilePhoto = Boolean(status.has_profile_photo);
 
         loadFaceVerification().then(({ bindProfileFaceContext }) => {
@@ -375,7 +480,7 @@ export function initAttendancePunch({
     };
 
     const startLivePreview = () => {
-        if (!requirePunchPhoto || !requireFaceMatch) {
+        if (!requirePunchPhoto || !requireFaceMatch || requireLiveness) {
             return;
         }
 
@@ -498,6 +603,7 @@ export function initAttendancePunch({
         updateLocationPanel({ state: 'loading' });
         stopLivePreview();
         stopCamera();
+        destroyLivenessMount();
     };
 
     const openPunchModal = async () => {
@@ -524,9 +630,20 @@ export function initAttendancePunch({
 
         liveMatchOverlay?.classList.add('d-none');
 
-        if (requirePunchPhoto) {
+        if (requirePunchPhoto && requireLiveness) {
+            try {
+                await startLivenessFlow();
+            } catch (error) {
+                const message = getErrorMessage(error, 'Unable to start face liveness. Check camera permission and AWS Face Liveness setup.');
+                setLivenessStatus(message);
+                showAlert(message, 'danger');
+                captureBtn.disabled = true;
+                return;
+            }
+        } else if (requirePunchPhoto) {
             try {
                 await startCamera();
+                startLivePreview();
             } catch (error) {
                 showCameraMessage(getErrorMessage(error, 'Unable to access the camera. Please allow camera permission and try again.'));
                 captureBtn.disabled = true;
@@ -555,7 +672,11 @@ export function initAttendancePunch({
             });
         }
 
-        captureBtn.disabled = false;
+        if (!requireLiveness || livenessPassed) {
+            captureBtn.disabled = false;
+        }
+
+        captureBtn.textContent = captureBtnLabel();
     };
 
     const submitPunch = async () => {
@@ -582,7 +703,13 @@ export function initAttendancePunch({
             formData.append('longitude', String(position.coords.longitude));
             formData.append('location_name', locationName);
 
-            if (requirePunchPhoto) {
+            if (requirePunchPhoto && requireLiveness) {
+                if (!livenessPassed || !completedLivenessSessionId) {
+                    throw new Error('Complete the live face check before punching.');
+                }
+
+                formData.append('liveness_session_id', completedLivenessSessionId);
+            } else if (requirePunchPhoto) {
                 const selfieBlob = await captureSelfieBlob();
                 formData.append('selfie', selfieBlob, 'selfie.jpg');
             }
@@ -625,7 +752,11 @@ export function initAttendancePunch({
                 punchBtn.textContent = actionLabel();
                 punchBtn.disabled = false;
                 captureBtn.disabled = false;
-                if (requirePunchPhoto && punchModalEl.classList.contains('show') && cameraStream) {
+                if (requirePunchPhoto && requireLiveness) {
+                    captureBtn.disabled = !livenessPassed;
+                } else if (requirePunchPhoto && punchModalEl.classList.contains('show') && cameraStream) {
+                    captureBtn.disabled = false;
+                } else if (!requirePunchPhoto) {
                     captureBtn.disabled = false;
                 }
             }
@@ -643,6 +774,7 @@ export function initAttendancePunch({
 
     const destroy = () => {
         stopCamera();
+        destroyLivenessMount();
         punchModal.hide();
     };
 

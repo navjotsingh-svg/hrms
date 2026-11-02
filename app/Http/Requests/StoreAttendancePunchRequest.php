@@ -16,13 +16,19 @@ class StoreAttendancePunchRequest extends FormRequest
     {
         $companyId = (int) ($this->user()?->company_id ?? 0);
         $requiresPhoto = app(AttendanceSettingsService::class)->requiresPunchPhoto($companyId);
+        $requiresLiveness = $requiresPhoto && (bool) config('hrms.attendance.require_liveness', true);
+        $requiresSelfieUpload = $requiresPhoto && ! $requiresLiveness;
 
         return [
             'selfie' => [
-                $requiresPhoto ? 'required' : 'nullable',
+                $requiresSelfieUpload ? 'required' : 'nullable',
                 'image',
                 'mimes:jpg,jpeg,png,webp',
                 'max:5120',
+            ],
+            'liveness_session_id' => [
+                $requiresLiveness ? 'required' : 'nullable',
+                'uuid',
             ],
             'latitude' => ['required', 'numeric', 'between:-90,90'],
             'longitude' => ['required', 'numeric', 'between:-180,180'],

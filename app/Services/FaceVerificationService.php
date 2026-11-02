@@ -83,6 +83,26 @@ class FaceVerificationService
 
     public function assertPunchAllowed(Employee $employee, ?UploadedFile $selfie): ?float
     {
+        if (! $selfie) {
+            throw ValidationException::withMessages([
+                'selfie' => ['A punch photo is required for face verification.'],
+            ]);
+        }
+
+        $selfiePath = $selfie->getRealPath() ?: $selfie->getPathname();
+        $selfieBytes = is_string($selfiePath) && is_file($selfiePath) ? file_get_contents($selfiePath) : false;
+
+        if ($selfieBytes === false) {
+            throw ValidationException::withMessages([
+                'selfie' => ['A punch photo is required for face verification.'],
+            ]);
+        }
+
+        return $this->assertPunchAllowedWithImageBytes($employee, $selfieBytes);
+    }
+
+    public function assertPunchAllowedWithImageBytes(Employee $employee, string $selfieBytes): ?float
+    {
         $companyId = (int) $employee->company_id;
 
         if (! $this->requiresFaceMatch($companyId)) {
@@ -97,17 +117,9 @@ class FaceVerificationService
             ]);
         }
 
-        if (! $selfie) {
-            throw ValidationException::withMessages([
-                'selfie' => ['A punch photo is required for face verification.'],
-            ]);
-        }
-
-        $selfiePath = $selfie->getRealPath() ?: $selfie->getPathname();
         $profileBytes = is_file($profilePath) ? file_get_contents($profilePath) : false;
-        $selfieBytes = is_string($selfiePath) && is_file($selfiePath) ? file_get_contents($selfiePath) : false;
 
-        if ($profileBytes === false || $selfieBytes === false) {
+        if ($profileBytes === false || $selfieBytes === '') {
             throw ValidationException::withMessages([
                 'selfie' => ['Your approved profile photo file is missing. Upload it again from your profile, then punch.'],
             ]);
