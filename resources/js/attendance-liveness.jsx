@@ -2,8 +2,13 @@ import React, { useCallback, useMemo } from 'react';
 import { createRoot } from 'react-dom/client';
 import { ThemeProvider } from '@aws-amplify/ui-react';
 import { FaceLivenessDetectorCore } from '@aws-amplify/ui-react-liveness';
+import { version_wasm } from '@tensorflow/tfjs-backend-wasm';
 import '@aws-amplify/ui-react/styles.css';
 import '@aws-amplify/ui-react-liveness/styles.css';
+
+// Vite rewrites relative WASM paths to the app origin (404). Force Amplify's CDN.
+const LIVENESS_BLAZEFACE_URL = 'https://cdn.liveness.rekognition.amazonaws.com/face-detection/tensorflow-models/blazeface/1.0.2/model/model.json';
+const LIVENESS_TFJS_WASM_URL = `https://cdn.liveness.rekognition.amazonaws.com/face-detection/tensorflow/tfjs-backend-wasm/${version_wasm || '4.11.0'}/`;
 
 const normalizeCredentials = (credentials = {}) => {
     const accessKeyId = credentials.accessKeyId || credentials.access_key_id;
@@ -40,6 +45,10 @@ export const describeLivenessError = (error) => {
 
     if (state === 'CONNECTION_TIMEOUT' || /timeout/i.test(detail)) {
         return 'Face liveness timed out connecting to AWS. Check network/firewall access to Rekognition streaming and try again.';
+    }
+
+    if (/wasm|WebAssembly|model loading timed out|blazeface/i.test(detail)) {
+        return 'Face detection assets failed to load. Allow access to cdn.liveness.rekognition.amazonaws.com and try again.';
     }
 
     if (state === 'MOBILE_LANDSCAPE_ERROR' || /landscape/i.test(detail)) {
@@ -87,6 +96,9 @@ function LivenessPanel({
 
     const config = useMemo(() => ({
         credentialProvider,
+        // Must end with "/". Prevents Vite from requesting /tfjs-backend-wasm-*.wasm on this domain.
+        binaryPath: LIVENESS_TFJS_WASM_URL,
+        faceModelUrl: LIVENESS_BLAZEFACE_URL,
     }), [credentialProvider]);
 
     return (
