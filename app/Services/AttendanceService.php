@@ -225,6 +225,40 @@ class AttendanceService
         return $this->faceLivenessService->startSession($employee);
     }
 
+    /**
+     * Confirm Amplify onAnalysisComplete against GetFaceLivenessSessionResults before enabling punch.
+     *
+     * @return array{session_id: string, confidence: float, status: string, feedback: list<string>, threshold: float}
+     */
+    public function verifyLivenessSession(User $user, string $sessionId): array
+    {
+        if (! $this->canMarkAttendance($user)) {
+            throw new AccessDeniedHttpException('You are not allowed to mark attendance.');
+        }
+
+        $employee = $this->employeeAccessService->linkedEmployee($user);
+
+        if (! $employee) {
+            throw new NotFoundHttpException('No employee profile is linked to your account.');
+        }
+
+        if (! $this->faceLivenessService->enabled()) {
+            throw ValidationException::withMessages([
+                'liveness_session_id' => ['Face liveness is disabled.'],
+            ]);
+        }
+
+        $result = $this->faceLivenessService->assertPassed($sessionId);
+
+        return [
+            'session_id' => trim($sessionId),
+            'confidence' => $result['confidence'],
+            'status' => $result['status'],
+            'feedback' => $result['feedback'],
+            'threshold' => $this->faceLivenessService->thresholdPercent(),
+        ];
+    }
+
     public function punch(
         User $user,
         ?UploadedFile $selfie,

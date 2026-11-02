@@ -45,6 +45,21 @@ class AttendanceController extends Controller
         );
     }
 
+    public function verifyLiveness(Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'session_id' => ['required', 'string', 'uuid'],
+        ]);
+
+        return $this->success(
+            $this->attendanceService->verifyLivenessSession(
+                $request->user(),
+                $validated['session_id'],
+            ),
+            'Face liveness verified.',
+        );
+    }
+
     public function punch(StoreAttendancePunchRequest $request): JsonResponse
     {
         $user = $request->user();

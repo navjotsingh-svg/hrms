@@ -150,7 +150,7 @@ return [
             env('ATTENDANCE_REQUIRE_LIVENESS', true),
             FILTER_VALIDATE_BOOL
         ),
-        'liveness_threshold' => (float) env('ATTENDANCE_LIVENESS_THRESHOLD', 80),
+        'liveness_threshold' => (float) env('ATTENDANCE_LIVENESS_THRESHOLD', 75),
         // s3 (default) or local public folder
         'selfie_disk' => env('ATTENDANCE_SELFIE_DISK', 's3'),
         'regularization' => [

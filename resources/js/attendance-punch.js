@@ -206,12 +206,42 @@ export function initAttendancePunch({
             region,
             credentials,
             onComplete: async () => {
-                completedLivenessSessionId = sessionId;
-                livenessPassed = true;
-                setLivenessRetryVisible(false);
-                setLivenessStatus('Live check passed. Confirm to mark attendance.');
-                captureBtn.disabled = false;
+                // Amplify only signals streaming finished — confirm AWS results before enabling punch.
+                setLivenessStatus('Checking live result…');
+                captureBtn.disabled = true;
                 captureBtn.textContent = captureBtnLabel();
+                setLivenessRetryVisible(false);
+
+                try {
+                    const verifyResponse = await api.post('/attendance/liveness/verify', {
+                        session_id: sessionId,
+                    });
+                    const verifyPayload = verifyResponse?.data?.data || {};
+                    const confidence = Number(verifyPayload.confidence);
+                    const confidenceLabel = Number.isFinite(confidence)
+                        ? ` (${confidence.toFixed(2)}%)`
+                        : '';
+
+                    completedLivenessSessionId = sessionId;
+                    livenessPassed = true;
+                    setLivenessRetryVisible(false);
+                    setLivenessStatus(`Live check passed${confidenceLabel}. Confirm to mark attendance.`);
+                    captureBtn.disabled = false;
+                    captureBtn.textContent = captureBtnLabel();
+                } catch (error) {
+                    console.error('Face liveness verify failed', error?.response?.data || error);
+                    const message = getErrorMessage(
+                        error,
+                        'Face liveness did not succeed. Follow the oval instructions and try again.',
+                    );
+                    setLivenessStatus(message);
+                    showAlert(message, 'danger');
+                    livenessPassed = false;
+                    completedLivenessSessionId = null;
+                    captureBtn.disabled = true;
+                    captureBtn.textContent = captureBtnLabel();
+                    setLivenessRetryVisible(true);
+                }
             },
             onError: (error) => {
                 const message = describeLivenessError(error);

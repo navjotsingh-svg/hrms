@@ -78,7 +78,7 @@ class FaceLivenessService
     }
 
     /**
-     * @return array{confidence: float, reference_bytes: string}
+     * @return array{confidence: float, reference_bytes: string, status: string, feedback: list<string>}
      */
     public function assertPassed(string $sessionId): array
     {
@@ -90,45 +90,54 @@ class FaceLivenessService
             ]);
         }
 
-        try {
-            $result = $this->rekognitionClient()->getFaceLivenessSessionResults([
-                'SessionId' => $sessionId,
-            ]);
-        } catch (AwsException $exception) {
-            Log::warning('AWS Face Liveness results failed.', [
-                'code' => $exception->getAwsErrorCode(),
-                'message' => $exception->getAwsErrorMessage() ?: $exception->getMessage(),
-                'session_id' => $sessionId,
-            ]);
-
-            throw ValidationException::withMessages([
-                'liveness_session_id' => [$this->awsErrorMessage($exception, 'Face liveness could not be verified. Complete the check again.')],
-            ]);
-        } catch (\Throwable $exception) {
-            Log::warning('AWS Face Liveness results failed.', [
-                'message' => $exception->getMessage(),
-                'session_id' => $sessionId,
-            ]);
-
-            throw ValidationException::withMessages([
-                'liveness_session_id' => ['Face liveness could not be verified. Complete the check again.'],
-            ]);
-        }
-
+        $result = $this->waitForSessionResults($sessionId);
         $status = strtoupper((string) ($result['Status'] ?? ''));
         $confidence = round((float) ($result['Confidence'] ?? 0), 2);
         $required = $this->thresholdPercent();
+        $feedback = $this->feedbackMessages($result);
+
+        if (in_array($status, ['CREATED', 'IN_PROGRESS'], true)) {
+            throw ValidationException::withMessages([
+                'liveness_session_id' => ['Face liveness is still processing. Wait a moment and try again.'],
+            ]);
+        }
+
+        if ($status === 'EXPIRED') {
+            throw ValidationException::withMessages([
+                'liveness_session_id' => ['Face liveness session expired. Tap Try again to start a new check.'],
+            ]);
+        }
 
         if ($status !== 'SUCCEEDED') {
+            $detail = $confidence > 0
+                ? " Face liveness score was {$confidence}%."
+                : '';
+            $tips = $feedback !== []
+                ? ' '.implode(' ', $feedback)
+                : ' Keep your face centered in the oval with even lighting, and do not use a photo or video of a face.';
+
+            Log::info('AWS Face Liveness session did not succeed.', [
+                'session_id' => $sessionId,
+                'status' => $status,
+                'confidence' => $confidence,
+                'feedback' => $feedback,
+            ]);
+
             throw ValidationException::withMessages([
-                'liveness_session_id' => ['Face liveness did not succeed. Follow the on-screen oval instructions and try again.'],
+                'liveness_session_id' => [
+                    "Face liveness did not succeed ({$status}).{$detail}{$tips}",
+                ],
             ]);
         }
 
         if ($confidence < $required) {
+            $tips = $feedback !== []
+                ? ' '.implode(' ', $feedback)
+                : ' Do not use a photo or video of a face.';
+
             throw ValidationException::withMessages([
                 'liveness_session_id' => [
-                    "Face liveness failed ({$confidence}%). It must be at least {$required}%. Do not use a photo or video of a face.",
+                    "Face liveness failed ({$confidence}%). It must be at least {$required}%.{$tips}",
                 ],
             ]);
         }
@@ -144,7 +153,92 @@ class FaceLivenessService
         return [
             'confidence' => $confidence,
             'reference_bytes' => $referenceBytes,
+            'status' => $status,
+            'feedback' => $feedback,
         ];
+    }
+
+    /**
+     * Amplify onAnalysisComplete means streaming finished; AWS may still report IN_PROGRESS briefly.
+     *
+     * @return array<string, mixed>
+     */
+    private function waitForSessionResults(string $sessionId): array
+    {
+        $attempts = 8;
+        $delayMs = 400;
+        $lastResult = [];
+
+        for ($attempt = 1; $attempt <= $attempts; $attempt++) {
+            try {
+                $lastResult = $this->rekognitionClient()->getFaceLivenessSessionResults([
+                    'SessionId' => $sessionId,
+                ])->toArray();
+            } catch (AwsException $exception) {
+                Log::warning('AWS Face Liveness results failed.', [
+                    'code' => $exception->getAwsErrorCode(),
+                    'message' => $exception->getAwsErrorMessage() ?: $exception->getMessage(),
+                    'session_id' => $sessionId,
+                    'attempt' => $attempt,
+                ]);
+
+                throw ValidationException::withMessages([
+                    'liveness_session_id' => [$this->awsErrorMessage($exception, 'Face liveness could not be verified. Complete the check again.')],
+                ]);
+            } catch (\Throwable $exception) {
+                Log::warning('AWS Face Liveness results failed.', [
+                    'message' => $exception->getMessage(),
+                    'session_id' => $sessionId,
+                    'attempt' => $attempt,
+                ]);
+
+                throw ValidationException::withMessages([
+                    'liveness_session_id' => ['Face liveness could not be verified. Complete the check again.'],
+                ]);
+            }
+
+            $status = strtoupper((string) ($lastResult['Status'] ?? ''));
+
+            if (! in_array($status, ['CREATED', 'IN_PROGRESS', ''], true)) {
+                return $lastResult;
+            }
+
+            if ($attempt < $attempts) {
+                usleep($delayMs * 1000);
+                $delayMs = min(1200, (int) round($delayMs * 1.35));
+            }
+        }
+
+        return $lastResult;
+    }
+
+    /**
+     * @param  array<string, mixed>  $result
+     * @return list<string>
+     */
+    private function feedbackMessages(array $result): array
+    {
+        $items = $result['Feedback'] ?? [];
+
+        if (! is_array($items)) {
+            return [];
+        }
+
+        $messages = [];
+
+        foreach ($items as $item) {
+            if (! is_array($item)) {
+                continue;
+            }
+
+            $message = trim((string) ($item['Message'] ?? ''));
+
+            if ($message !== '') {
+                $messages[] = $message;
+            }
+        }
+
+        return array_values(array_unique($messages));
     }
 
     /**
