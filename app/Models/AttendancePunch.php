@@ -2,12 +2,15 @@
 
 namespace App\Models;
 
+use App\Services\AttendanceSelfieStorageService;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class AttendancePunch extends Model
 {
     public const PUBLIC_UPLOAD_DIR = 'images/attendance/selfies';
+
+    public const S3_UPLOAD_PREFIX = 'attendance/selfies/';
 
     public const TYPE_IN = 'in';
 
@@ -63,9 +66,13 @@ class AttendancePunch extends Model
         return $this->belongsTo(Employee::class);
     }
 
-    public function selfieUrl(): string
+    public function selfieUrl(): ?string
     {
-        return '/'.ltrim($this->selfie_path, '/');
+        if (! filled($this->selfie_path)) {
+            return null;
+        }
+
+        return app(AttendanceSelfieStorageService::class)->url($this->selfie_path);
     }
 
     public function locationLabel(): string

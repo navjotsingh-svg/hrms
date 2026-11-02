@@ -4,6 +4,8 @@ namespace App\Services;
 
 use App\Models\Company;
 use App\Models\Employee;
+use Aws\Exception\AwsException;
+use Aws\Rekognition\RekognitionClient;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Http;
@@ -20,6 +22,13 @@ class FaceVerificationService
     public function defaultRequireFaceMatch(): bool
     {
         return (bool) config('hrms.attendance.require_face_match', true);
+    }
+
+    public function provider(): string
+    {
+        $provider = strtolower((string) config('hrms.attendance.face_match_provider', 'rekognition'));
+
+        return in_array($provider, ['rekognition', 'insightface'], true) ? $provider : 'rekognition';
     }
 
     public function thresholdPercent(?int $companyId = null): int
@@ -104,48 +113,11 @@ class FaceVerificationService
             ]);
         }
 
-        $minSimilarity = (float) config('hrms.attendance.insightface_min_similarity', 0.40);
-        $requiredPercent = round($minSimilarity * 100, 2);
-        $compareUrl = rtrim((string) config('hrms.attendance.insightface_url'), '/').'/compare';
-
-        try {
-            $response = Http::connectTimeout(5)
-                ->timeout((int) config('hrms.attendance.insightface_timeout', 30))
-                ->withOptions(['expect' => false])
-                ->attach('profile', $profileBytes, basename($profilePath))
-                ->attach('selfie', $selfieBytes, 'selfie.jpg')
-                ->post($compareUrl, [
-                    'threshold' => $minSimilarity,
-                ]);
-        } catch (ConnectionException $exception) {
-            Log::warning('InsightFace compare failed.', [
-                'url' => $compareUrl,
-                'message' => $exception->getMessage(),
-            ]);
-
-            throw ValidationException::withMessages([
-                'selfie' => [$this->unavailableMessage($exception)],
-            ]);
+        if ($this->provider() === 'insightface') {
+            return $this->compareWithInsightFace($profileBytes, $selfieBytes, $profilePath);
         }
 
-        if (! $response->successful()) {
-            throw ValidationException::withMessages([
-                'selfie' => [$response->json('message') ?: 'Face verification could not compare the photos.'],
-            ]);
-        }
-
-        $percent = round((float) $response->json('percent', 0), 2);
-
-        if (! $response->json('matched')) {
-            $message = $response->json('message')
-                ?: "Face verification failed ({$percent}% similar). It must be at least {$requiredPercent}% similar to your approved profile photo.";
-
-            throw ValidationException::withMessages([
-                'selfie' => [$message],
-            ]);
-        }
-
-        return $percent;
+        return $this->compareWithRekognition($profileBytes, $selfieBytes, $companyId);
     }
 
     public function readableProfilePhotoPath(Employee $employee): ?string
@@ -159,21 +131,6 @@ class FaceVerificationService
         $absolutePath = public_path($relativePath);
 
         return is_file($absolutePath) ? $absolutePath : null;
-    }
-
-    private function unavailableMessage(ConnectionException $exception): string
-    {
-        $detail = $exception->getMessage();
-        $serviceDown = str_contains($detail, 'cURL error 7')
-            || str_contains($detail, 'Connection refused')
-            || str_contains($detail, 'Failed to connect')
-            || str_contains($detail, 'Could not resolve');
-
-        if ($serviceDown) {
-            return 'Face verification is unavailable. Start the InsightFace service and try again.';
-        }
-
-        return 'Face verification could not compare the photos. Try the punch again.';
     }
 
     /** @param  array<int, float|int|string>  $descriptor */
@@ -201,6 +158,138 @@ class FaceVerificationService
         if ($employee->profile_face_descriptor !== null) {
             $employee->update(['profile_face_descriptor' => null]);
         }
+    }
+
+    private function compareWithRekognition(string $profileBytes, string $selfieBytes, int $companyId): float
+    {
+        $requiredPercent = (float) $this->thresholdPercent($companyId);
+
+        try {
+            $result = $this->rekognitionClient()->compareFaces([
+                'SourceImage' => ['Bytes' => $profileBytes],
+                'TargetImage' => ['Bytes' => $selfieBytes],
+                'SimilarityThreshold' => $requiredPercent,
+                'QualityFilter' => 'AUTO',
+            ]);
+        } catch (AwsException $exception) {
+            Log::warning('AWS Rekognition compare failed.', [
+                'code' => $exception->getAwsErrorCode(),
+                'message' => $exception->getAwsErrorMessage() ?: $exception->getMessage(),
+            ]);
+
+            throw ValidationException::withMessages([
+                'selfie' => [$this->rekognitionErrorMessage($exception)],
+            ]);
+        } catch (\Throwable $exception) {
+            Log::warning('AWS Rekognition compare failed.', [
+                'message' => $exception->getMessage(),
+            ]);
+
+            throw ValidationException::withMessages([
+                'selfie' => ['Face verification could not compare the photos. Try the punch again.'],
+            ]);
+        }
+
+        $matches = $result['FaceMatches'] ?? [];
+        $bestSimilarity = 0.0;
+
+        foreach ($matches as $match) {
+            $bestSimilarity = max($bestSimilarity, (float) ($match['Similarity'] ?? 0));
+        }
+
+        $percent = round($bestSimilarity, 2);
+
+        if ($matches === [] || $percent < $requiredPercent) {
+            throw ValidationException::withMessages([
+                'selfie' => [
+                    "Face verification failed ({$percent}% similar). It must be at least {$requiredPercent}% similar to your approved profile photo.",
+                ],
+            ]);
+        }
+
+        return $percent;
+    }
+
+    private function compareWithInsightFace(string $profileBytes, string $selfieBytes, string $profilePath): float
+    {
+        $minSimilarity = (float) config('hrms.attendance.insightface_min_similarity', 0.40);
+        $requiredPercent = round($minSimilarity * 100, 2);
+        $compareUrl = rtrim((string) config('hrms.attendance.insightface_url'), '/').'/compare';
+
+        try {
+            $response = Http::connectTimeout(5)
+                ->timeout((int) config('hrms.attendance.insightface_timeout', 30))
+                ->withOptions(['expect' => false])
+                ->attach('profile', $profileBytes, basename($profilePath))
+                ->attach('selfie', $selfieBytes, 'selfie.jpg')
+                ->post($compareUrl, [
+                    'threshold' => $minSimilarity,
+                ]);
+        } catch (ConnectionException $exception) {
+            Log::warning('InsightFace compare failed.', [
+                'url' => $compareUrl,
+                'message' => $exception->getMessage(),
+            ]);
+
+            throw ValidationException::withMessages([
+                'selfie' => ['Face verification is unavailable. Check the face match service and try again.'],
+            ]);
+        }
+
+        if (! $response->successful()) {
+            throw ValidationException::withMessages([
+                'selfie' => [$response->json('message') ?: 'Face verification could not compare the photos.'],
+            ]);
+        }
+
+        $percent = round((float) $response->json('percent', 0), 2);
+
+        if (! $response->json('matched')) {
+            $message = $response->json('message')
+                ?: "Face verification failed ({$percent}% similar). It must be at least {$requiredPercent}% similar to your approved profile photo.";
+
+            throw ValidationException::withMessages([
+                'selfie' => [$message],
+            ]);
+        }
+
+        return $percent;
+    }
+
+    private function rekognitionClient(): RekognitionClient
+    {
+        $key = trim((string) config('services.rekognition.key'));
+        $secret = trim((string) config('services.rekognition.secret'));
+        $region = trim((string) config('services.rekognition.region', 'us-east-1'));
+
+        if ($key === '' || $secret === '') {
+            throw ValidationException::withMessages([
+                'selfie' => ['Face verification is not configured. Add AWS credentials for Rekognition.'],
+            ]);
+        }
+
+        return new RekognitionClient([
+            'version' => 'latest',
+            'region' => $region !== '' ? $region : 'us-east-1',
+            'credentials' => [
+                'key' => $key,
+                'secret' => $secret,
+            ],
+        ]);
+    }
+
+    private function rekognitionErrorMessage(AwsException $exception): string
+    {
+        $code = (string) $exception->getAwsErrorCode();
+
+        return match ($code) {
+            'InvalidParameterException', 'InvalidImageFormatException' => 'The punch photo could not be read. Retake the photo in good lighting and try again.',
+            'InvalidS3ObjectException' => 'Face verification could not read the profile photo. Upload your profile photo again.',
+            'ImageTooLargeException' => 'The punch photo is too large. Retake a clearer closer photo and try again.',
+            'AccessDeniedException', 'UnrecognizedClientException' => 'Face verification is unavailable. Check AWS Rekognition credentials and permissions.',
+            'ProvisionedThroughputExceededException', 'ThrottlingException' => 'Face verification is busy. Wait a moment and try again.',
+            default => 'Face verification could not compare the photos. Center your face and try again.',
+        };
     }
 
     /** @param  array<int, float|int|string>  $descriptorA

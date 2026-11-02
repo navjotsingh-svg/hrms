@@ -130,7 +130,10 @@ return [
 
     'attendance' => [
         'face_match_threshold' => (int) env('ATTENDANCE_FACE_MATCH_THRESHOLD', 90),
-        'face_embedding_model' => env('ATTENDANCE_FACE_EMBEDDING_MODEL', 'insightface-buffalo_s'),
+        // rekognition (default) | insightface
+        'face_match_provider' => env('ATTENDANCE_FACE_MATCH_PROVIDER', 'rekognition'),
+        'rekognition_region' => env('AWS_REKOGNITION_REGION', env('AWS_DEFAULT_REGION', 'us-east-1')),
+        'face_embedding_model' => env('ATTENDANCE_FACE_EMBEDDING_MODEL', 'aws-rekognition'),
         'insightface_url' => env('INSIGHTFACE_URL', 'http://127.0.0.1:8011'),
         'insightface_min_similarity' => (float) env('INSIGHTFACE_MIN_SIMILARITY', 0.40),
         'insightface_timeout' => (int) env('INSIGHTFACE_TIMEOUT', 30),
@@ -142,6 +145,8 @@ return [
             env('ATTENDANCE_REQUIRE_PUNCH_PHOTO', true),
             FILTER_VALIDATE_BOOL
         ),
+        // s3 (default) or local public folder
+        'selfie_disk' => env('ATTENDANCE_SELFIE_DISK', 's3'),
         'regularization' => [
             'enabled' => filter_var(
                 env('ATTENDANCE_REGULARIZATION_ENABLED', true),

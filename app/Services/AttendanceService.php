@@ -22,7 +22,7 @@ use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
 class AttendanceService
 {
     public function __construct(
-        private ImageCompressor $imageCompressor,
+        private AttendanceSelfieStorageService $attendanceSelfieStorageService,
         private AttendancePolicyService $attendancePolicyService,
         private PortalStartService $portalStartService,
         private GeocodingService $geocodingService,
@@ -266,15 +266,8 @@ class AttendanceService
         $selfiePath = null;
 
         if ($selfie) {
-            $relativeDirectory = AttendancePunch::PUBLIC_UPLOAD_DIR."/{$employee->company_id}/{$employee->id}";
-            $selfiePath = $this->imageCompressor->compressAndSave(
-                $selfie,
-                public_path($relativeDirectory),
-                $relativeDirectory,
-                480,
-                70,
-                true,
-            );
+            // Face match (AWS Rekognition by default) already ran above; store the photo on S3.
+            $selfiePath = $this->attendanceSelfieStorageService->store($employee, $selfie);
         }
 
         $locationName = trim((string) $locationName);

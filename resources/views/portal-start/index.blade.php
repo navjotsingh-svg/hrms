@@ -93,7 +93,7 @@
                             Require face match to punch in/out
                         </label>
                         <div class="form-text">
-                            When enabled, the punch photo must match the employee's approved profile photo.
+                            When enabled, the punch photo is compared to the employee's approved profile photo with AWS Rekognition.
                             Only applies when photo capture is required.
                         </div>
                     </div>
