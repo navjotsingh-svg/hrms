@@ -3,6 +3,7 @@
 namespace App\Http\Requests;
 
 use App\Services\AttendanceSettingsService;
+use App\Services\FaceVerificationService;
 use Illuminate\Foundation\Http\FormRequest;
 
 class StoreAttendancePunchRequest extends FormRequest
@@ -16,7 +17,11 @@ class StoreAttendancePunchRequest extends FormRequest
     {
         $companyId = (int) ($this->user()?->company_id ?? 0);
         $requiresPhoto = app(AttendanceSettingsService::class)->requiresPunchPhoto($companyId);
-        $requiresLiveness = $requiresPhoto && (bool) config('hrms.attendance.require_liveness', true);
+        $requiresFaceMatch = app(FaceVerificationService::class)->requiresFaceMatch($companyId);
+        // Must match AttendanceService: liveness only when photo + face match + global toggle.
+        $requiresLiveness = $requiresPhoto
+            && $requiresFaceMatch
+            && (bool) config('hrms.attendance.require_liveness', true);
         $requiresSelfieUpload = $requiresPhoto && ! $requiresLiveness;
 
         return [
