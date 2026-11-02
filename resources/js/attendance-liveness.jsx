@@ -2,13 +2,18 @@ import React, { useCallback, useMemo } from 'react';
 import { createRoot } from 'react-dom/client';
 import { ThemeProvider } from '@aws-amplify/ui-react';
 import { FaceLivenessDetectorCore } from '@aws-amplify/ui-react-liveness';
-import { version_wasm } from '@tensorflow/tfjs-backend-wasm';
 import '@aws-amplify/ui-react/styles.css';
 import '@aws-amplify/ui-react-liveness/styles.css';
 
-// Vite rewrites relative WASM paths to the app origin (404). Force Amplify's CDN.
-const LIVENESS_BLAZEFACE_URL = 'https://cdn.liveness.rekognition.amazonaws.com/face-detection/tensorflow-models/blazeface/1.0.2/model/model.json';
-const LIVENESS_TFJS_WASM_URL = `https://cdn.liveness.rekognition.amazonaws.com/face-detection/tensorflow/tfjs-backend-wasm/${version_wasm || '4.11.0'}/`;
+const resolveLivenessAssetPaths = () => {
+    const origin = typeof window !== 'undefined' ? window.location.origin : '';
+
+    return {
+        // Served from /public/vendor (same origin) so Vite cannot rewrite WASM to a 404 root path.
+        binaryPath: `${origin}/vendor/tfjs-backend-wasm/`,
+        faceModelUrl: `${origin}/vendor/blazeface/model.json`,
+    };
+};
 
 const normalizeCredentials = (credentials = {}) => {
     const accessKeyId = credentials.accessKeyId || credentials.access_key_id;
@@ -47,8 +52,8 @@ export const describeLivenessError = (error) => {
         return 'Face liveness timed out connecting to AWS. Check network/firewall access to Rekognition streaming and try again.';
     }
 
-    if (/wasm|WebAssembly|model loading timed out|blazeface/i.test(detail)) {
-        return 'Face detection assets failed to load. Allow access to cdn.liveness.rekognition.amazonaws.com and try again.';
+    if (/wasm|WebAssembly|model loading timed out|blazeface|404/i.test(detail)) {
+        return 'Face detection assets failed to load from this server. Deploy /vendor/tfjs-backend-wasm and /vendor/blazeface, then hard-refresh.';
     }
 
     if (state === 'MOBILE_LANDSCAPE_ERROR' || /landscape/i.test(detail)) {
@@ -75,6 +80,7 @@ function LivenessPanel({
     onCancel,
 }) {
     const normalized = useMemo(() => normalizeCredentials(credentials), [credentials]);
+    const assetPaths = useMemo(() => resolveLivenessAssetPaths(), []);
 
     const credentialProvider = useCallback(async () => {
         if (!normalized.accessKeyId || !normalized.secretAccessKey) {
@@ -96,10 +102,10 @@ function LivenessPanel({
 
     const config = useMemo(() => ({
         credentialProvider,
-        // Must end with "/". Prevents Vite from requesting /tfjs-backend-wasm-*.wasm on this domain.
-        binaryPath: LIVENESS_TFJS_WASM_URL,
-        faceModelUrl: LIVENESS_BLAZEFACE_URL,
-    }), [credentialProvider]);
+        // binaryPath must end with "/"
+        binaryPath: assetPaths.binaryPath,
+        faceModelUrl: assetPaths.faceModelUrl,
+    }), [credentialProvider, assetPaths]);
 
     return (
         <ThemeProvider>
@@ -113,7 +119,6 @@ function LivenessPanel({
                     region={region}
                     onAnalysisComplete={onComplete}
                     onError={(error) => {
-                        // Helpful for support: full Amplify error in browser console.
                         console.error('Face liveness error', error);
                         onError?.(error);
                     }}
