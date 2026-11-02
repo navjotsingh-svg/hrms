@@ -2,12 +2,18 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { ThemeProvider } from '@aws-amplify/ui-react';
 import { FaceLivenessDetectorCore } from '@aws-amplify/ui-react-liveness';
-import { version_wasm } from '@tensorflow/tfjs-backend-wasm';
+import { setWasmPaths, version_wasm } from '@tensorflow/tfjs-backend-wasm';
 import '@aws-amplify/ui-react/styles.css';
 import '@aws-amplify/ui-react-liveness/styles.css';
 
 const CDN_BLAZEFACE_URL = 'https://cdn.liveness.rekognition.amazonaws.com/face-detection/tensorflow-models/blazeface/1.0.2/model/model.json';
 const CDN_TFJS_WASM_URL = `https://cdn.liveness.rekognition.amazonaws.com/face-detection/tensorflow/tfjs-backend-wasm/${version_wasm || '4.11.0'}/`;
+
+const WASM_BINARY_NAMES = [
+    'tfjs-backend-wasm.wasm',
+    'tfjs-backend-wasm-simd.wasm',
+    'tfjs-backend-wasm-threaded-simd.wasm',
+];
 
 const localAssetPaths = () => {
     const origin = typeof window !== 'undefined' ? window.location.origin : '';
@@ -26,6 +32,28 @@ const cdnAssetPaths = () => ({
     probeWasm: `${CDN_TFJS_WASM_URL}tfjs-backend-wasm-simd.wasm`,
     probeModel: CDN_BLAZEFACE_URL,
 });
+
+const wasmFileMapForPrefix = (binaryPath) => Object.fromEntries(
+    WASM_BINARY_NAMES.map((name) => [name, `${binaryPath}${name}`]),
+);
+
+/**
+ * Force TFJS to resolve wasm binaries from our prefix (or absolute file map).
+ * Must run before Amplify/Human call setBackend('wasm'). Absolute URLs avoid
+ * Emscripten falling back to site-root relative paths after Vite bundling.
+ */
+const applyWasmPaths = (binaryPath) => {
+    if (!binaryPath) {
+        return;
+    }
+
+    try {
+        setWasmPaths(wasmFileMapForPrefix(binaryPath));
+    } catch (error) {
+        // Backend may already be initializing; Amplify also calls setWasmPaths.
+        console.warn('Face liveness setWasmPaths skipped', error);
+    }
+};
 
 const canFetchAsset = async (url) => {
     try {
@@ -46,6 +74,8 @@ const resolveWorkingAssetPaths = async () => {
     const localOk = await canFetchAsset(local.probeWasm) && await canFetchAsset(local.probeModel);
 
     if (localOk) {
+        applyWasmPaths(local.binaryPath);
+
         return { ...local, source: 'local' };
     }
 
@@ -53,6 +83,8 @@ const resolveWorkingAssetPaths = async () => {
     const cdnOk = await canFetchAsset(cdn.probeWasm) && await canFetchAsset(cdn.probeModel);
 
     if (cdnOk) {
+        applyWasmPaths(cdn.binaryPath);
+
         return { ...cdn, source: 'cdn' };
     }
 
@@ -176,6 +208,8 @@ function LivenessPanel({
         if (!assetPaths) {
             return null;
         }
+
+        applyWasmPaths(assetPaths.binaryPath);
 
         return {
             credentialProvider,

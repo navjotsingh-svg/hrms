@@ -3,6 +3,22 @@ import laravel from 'laravel-vite-plugin';
 import react from '@vitejs/plugin-react';
 
 export default defineConfig({
+    resolve: {
+        // Amplify liveness + @vladmandic/human both pull TFJS; one instance so
+        // setWasmPaths in either entry configures the backend that actually loads.
+        dedupe: [
+            '@tensorflow/tfjs-backend-wasm',
+            '@tensorflow/tfjs-core',
+            '@tensorflow/tfjs-backend-cpu',
+        ],
+    },
+    optimizeDeps: {
+        include: [
+            '@tensorflow/tfjs-backend-wasm',
+            '@tensorflow/tfjs-core',
+            '@tensorflow/tfjs-backend-cpu',
+        ],
+    },
     plugins: [
         laravel({
             input: [

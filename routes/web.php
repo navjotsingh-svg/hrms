@@ -14,6 +14,10 @@ Route::get('/liveness-assets/tfjs-backend-wasm/{file}', [\App\Http\Controllers\L
 Route::get('/liveness-assets/blazeface/{file}', [\App\Http\Controllers\LivenessAssetController::class, 'blazeface'])
     ->where('file', 'model\\.json|group1-shard1of1\\.bin')
     ->name('liveness-assets.blazeface');
+// TFJS default locateFile falls back to site-root relative paths after bundling.
+Route::get('/{file}', [\App\Http\Controllers\LivenessAssetController::class, 'wasm'])
+    ->where('file', 'tfjs-backend-wasm(?:-simd|-threaded-simd)?\\.wasm')
+    ->name('liveness-assets.wasm-root');
 
 Route::post('/auth/session', [AuthSessionController::class, 'store']);
 Route::post('/auth/session/logout', [AuthSessionController::class, 'destroy']);

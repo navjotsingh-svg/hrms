@@ -9,6 +9,7 @@
         "@aws-amplify/ui-react": "^6.15.7",
         "@aws-amplify/ui-react-liveness": "^3.7.0",
         "@popperjs/core": "^2.11.8",
+        "@tensorflow/tfjs-backend-wasm": "^4.11.0",
         "@vladmandic/human": "^3.3.6",
         "aws-amplify": "^6.22.2",
         "bootstrap": "^5.3.6",

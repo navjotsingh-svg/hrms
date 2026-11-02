@@ -1,8 +1,21 @@
 import Human from '@vladmandic/human';
+import { setWasmPaths } from '@tensorflow/tfjs-backend-wasm';
 
 const MODEL_BASE = 'https://cdn.jsdelivr.net/npm/@vladmandic/human@3.3.6/models/';
 export const FACE_EMBEDDING_MODEL = 'faceres';
 export const DEFAULT_FACE_MATCH_THRESHOLD = 90;
+
+const LOCAL_TFJS_WASM_PREFIX = `${typeof window !== 'undefined' ? window.location.origin : ''}/liveness-assets/tfjs-backend-wasm/`;
+
+try {
+    setWasmPaths({
+        'tfjs-backend-wasm.wasm': `${LOCAL_TFJS_WASM_PREFIX}tfjs-backend-wasm.wasm`,
+        'tfjs-backend-wasm-simd.wasm': `${LOCAL_TFJS_WASM_PREFIX}tfjs-backend-wasm-simd.wasm`,
+        'tfjs-backend-wasm-threaded-simd.wasm': `${LOCAL_TFJS_WASM_PREFIX}tfjs-backend-wasm-threaded-simd.wasm`,
+    });
+} catch (error) {
+    console.warn('Face verification setWasmPaths skipped', error);
+}
 
 const MATCH_OPTIONS = {
     order: 2,
