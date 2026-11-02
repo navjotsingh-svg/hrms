@@ -37,6 +37,9 @@
                         </div>
                         <div class="attendance-liveness-root d-none" id="{{ $prefix }}LivenessRoot"></div>
                         <div class="attendance-liveness-status small text-muted d-none" id="{{ $prefix }}LivenessStatus" aria-live="polite"></div>
+                        <button type="button" class="btn btn-sm btn-outline-primary mt-2 d-none" id="{{ $prefix }}LivenessRetryBtn">
+                            Try live check again
+                        </button>
                     </div>
 
                     <div class="attendance-punch-modal-info-col">

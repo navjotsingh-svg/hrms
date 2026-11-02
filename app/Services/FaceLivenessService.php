@@ -29,7 +29,7 @@ class FaceLivenessService
     }
 
     /**
-     * @return array{session_id: string, region: string, credentials: array{access_key_id: string, secret_access_key: string, session_token: string, expiration: string|null}}
+     * @return array{session_id: string, region: string, credentials: array{accessKeyId: string, secretAccessKey: string, sessionToken: string, expiration: string}}
      */
     public function startSession(Employee $employee): array
     {
@@ -148,7 +148,7 @@ class FaceLivenessService
     }
 
     /**
-     * @return array{access_key_id: string, secret_access_key: string, session_token: string, expiration: string|null}
+     * @return array{accessKeyId: string, secretAccessKey: string, sessionToken: string, expiration: string}
      */
     private function temporaryCredentials(): array
     {
@@ -196,14 +196,30 @@ class FaceLivenessService
             ]);
         }
 
-        $expiration = $credentials['Expiration'] ?? null;
-
         return [
-            'access_key_id' => (string) $credentials['AccessKeyId'],
-            'secret_access_key' => (string) $credentials['SecretAccessKey'],
-            'session_token' => (string) $credentials['SessionToken'],
-            'expiration' => $expiration ? (string) $expiration : null,
+            // Amplify FaceLivenessDetectorCore expects camelCase + ISO-8601 expiration.
+            'accessKeyId' => (string) $credentials['AccessKeyId'],
+            'secretAccessKey' => (string) $credentials['SecretAccessKey'],
+            'sessionToken' => (string) $credentials['SessionToken'],
+            'expiration' => $this->formatCredentialExpiration($credentials['Expiration'] ?? null),
         ];
+    }
+
+    private function formatCredentialExpiration(mixed $expiration): string
+    {
+        if ($expiration instanceof \DateTimeInterface) {
+            return $expiration->format(DATE_ATOM);
+        }
+
+        if (is_string($expiration) && trim($expiration) !== '') {
+            try {
+                return (new \DateTimeImmutable($expiration))->format(DATE_ATOM);
+            } catch (\Throwable) {
+                // fall through
+            }
+        }
+
+        return now()->addMinutes(14)->toIso8601String();
     }
 
     private function rekognitionClient(): RekognitionClient

@@ -46,6 +46,7 @@ export function initAttendancePunch({
     const cameraWrap = document.getElementById(`${prefix}CameraWrap`);
     const livenessRoot = document.getElementById(`${prefix}LivenessRoot`);
     const livenessStatus = document.getElementById(`${prefix}LivenessStatus`);
+    const livenessRetryBtn = document.getElementById(`${prefix}LivenessRetryBtn`);
     const alertBox = alertElementId ? document.getElementById(alertElementId) : null;
 
     if (!punchBtn || !cameraVideo || !cameraCanvas || !punchModalEl || !captureBtn) {
@@ -113,6 +114,25 @@ export function initAttendancePunch({
         livenessStatus.classList.toggle('d-none', !visible || !message);
     };
 
+    const setLivenessRetryVisible = (visible) => {
+        livenessRetryBtn?.classList.toggle('d-none', !visible);
+    };
+
+    const waitForModalShown = () => new Promise((resolve) => {
+        if (punchModalEl.classList.contains('show')) {
+            // Let Bootstrap finish paint/animation so getUserMedia is more reliable.
+            window.setTimeout(resolve, 250);
+            return;
+        }
+
+        const onShown = () => {
+            punchModalEl.removeEventListener('shown.bs.modal', onShown);
+            window.setTimeout(resolve, 150);
+        };
+
+        punchModalEl.addEventListener('shown.bs.modal', onShown, { once: true });
+    });
+
     const destroyLivenessMount = () => {
         if (livenessMount) {
             try {
@@ -132,6 +152,7 @@ export function initAttendancePunch({
         completedLivenessSessionId = null;
         livenessPassed = false;
         setLivenessStatus('', { visible: false });
+        setLivenessRetryVisible(false);
     };
 
     const startLivenessFlow = async () => {
@@ -143,22 +164,30 @@ export function initAttendancePunch({
         cameraWrap?.classList.add('d-none');
         livenessRoot.classList.remove('d-none');
         setLivenessStatus('Starting live face check…');
+        setLivenessRetryVisible(false);
         captureBtn.disabled = true;
         captureBtn.textContent = captureBtnLabel();
+
+        await waitForModalShown();
 
         const { data } = await api.post('/attendance/liveness/session');
         const payload = data.data || {};
         const sessionId = payload.session_id;
         const region = payload.region || 'us-east-1';
-        const credentials = payload.credentials;
+        const credentials = payload.credentials || {};
+        const hasCredentials = Boolean(
+            (credentials.accessKeyId || credentials.access_key_id)
+            && (credentials.secretAccessKey || credentials.secret_access_key)
+            && (credentials.sessionToken || credentials.session_token),
+        );
 
-        if (!sessionId || !credentials?.access_key_id || !credentials?.secret_access_key || !credentials?.session_token) {
+        if (!sessionId || !hasCredentials) {
             throw new Error('Unable to start face liveness session.');
         }
 
         setLivenessStatus('Follow the oval. Keep your face in frame — photos on a phone will fail.');
 
-        const { mountAttendanceLiveness } = await loadAttendanceLiveness();
+        const { mountAttendanceLiveness, describeLivenessError } = await loadAttendanceLiveness();
 
         livenessMount = mountAttendanceLiveness(livenessRoot, {
             sessionId,
@@ -167,27 +196,28 @@ export function initAttendancePunch({
             onComplete: async () => {
                 completedLivenessSessionId = sessionId;
                 livenessPassed = true;
+                setLivenessRetryVisible(false);
                 setLivenessStatus('Live check passed. Confirm to mark attendance.');
                 captureBtn.disabled = false;
                 captureBtn.textContent = captureBtnLabel();
             },
             onError: (error) => {
-                const message = error?.error?.message
-                    || error?.message
-                    || 'Face liveness failed. Try again without using a photo or video of a face.';
+                const message = describeLivenessError(error);
                 setLivenessStatus(message);
                 showAlert(message, 'danger');
                 livenessPassed = false;
                 completedLivenessSessionId = null;
                 captureBtn.disabled = true;
                 captureBtn.textContent = captureBtnLabel();
+                setLivenessRetryVisible(true);
             },
             onCancel: () => {
-                setLivenessStatus('Live check cancelled. Close and open punch again to retry.');
+                setLivenessStatus('Live check cancelled. Tap Try again to restart.');
                 livenessPassed = false;
                 completedLivenessSessionId = null;
                 captureBtn.disabled = true;
                 captureBtn.textContent = captureBtnLabel();
+                setLivenessRetryVisible(true);
             },
         });
     };
@@ -780,6 +810,20 @@ export function initAttendancePunch({
 
     punchBtn.addEventListener('click', openPunchModal);
     captureBtn.addEventListener('click', submitPunch);
+    livenessRetryBtn?.addEventListener('click', async () => {
+        if (isSubmitting) {
+            return;
+        }
+
+        try {
+            await startLivenessFlow();
+        } catch (error) {
+            const message = getErrorMessage(error, 'Unable to restart face liveness.');
+            setLivenessStatus(message);
+            showAlert(message, 'danger');
+            setLivenessRetryVisible(true);
+        }
+    });
     punchModalEl.addEventListener('hidden.bs.modal', resetModalState);
     prefetchLocation();
     refreshStatus().catch((error) => {
