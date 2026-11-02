@@ -184,8 +184,10 @@ class AttendanceService
             'face_match_threshold' => $this->faceVerificationService->thresholdPercent((int) $employee->company_id),
             'require_face_match' => $this->faceVerificationService->requiresFaceMatch((int) $employee->company_id),
             'require_punch_photo' => $this->attendanceSettingsService->requiresPunchPhoto((int) $employee->company_id),
+            // Liveness only when HR requires face match (identity) and punch photo, plus global toggle.
             'require_liveness' => $this->faceLivenessService->enabled()
-                && $this->attendanceSettingsService->requiresPunchPhoto((int) $employee->company_id),
+                && $this->attendanceSettingsService->requiresPunchPhoto((int) $employee->company_id)
+                && $this->faceVerificationService->requiresFaceMatch((int) $employee->company_id),
             'liveness_threshold' => $this->faceLivenessService->thresholdPercent(),
             'liveness_region' => $this->faceLivenessService->region(),
             'requires_profile_photo' => $this->faceVerificationService->requiresFaceMatch((int) $employee->company_id)
@@ -222,6 +224,12 @@ class AttendanceService
             ]);
         }
 
+        if (! $this->faceVerificationService->requiresFaceMatch((int) $employee->company_id)) {
+            throw ValidationException::withMessages([
+                'liveness' => ['Face match is not required for this company, so face liveness is not needed.'],
+            ]);
+        }
+
         return $this->faceLivenessService->startSession($employee);
     }
 
@@ -245,6 +253,14 @@ class AttendanceService
         if (! $this->faceLivenessService->enabled()) {
             throw ValidationException::withMessages([
                 'liveness_session_id' => ['Face liveness is disabled.'],
+            ]);
+        }
+
+        if (! $this->attendanceSettingsService->requiresPunchPhoto((int) $employee->company_id)
+            || ! $this->faceVerificationService->requiresFaceMatch((int) $employee->company_id)
+        ) {
+            throw ValidationException::withMessages([
+                'liveness_session_id' => ['Face liveness is not required for the current punch settings.'],
             ]);
         }
 
@@ -314,7 +330,8 @@ class AttendanceService
         $this->attendanceNetworkService->assertIpAllowed((int) $employee->company_id, $ipAddress);
 
         $requiresPhoto = $this->attendanceSettingsService->requiresPunchPhoto((int) $employee->company_id);
-        $requiresLiveness = $requiresPhoto && $this->faceLivenessService->enabled();
+        $requiresFaceMatch = $this->faceVerificationService->requiresFaceMatch((int) $employee->company_id);
+        $requiresLiveness = $requiresPhoto && $requiresFaceMatch && $this->faceLivenessService->enabled();
         $livenessReferenceBytes = null;
         $livenessConfidence = null;
 
@@ -336,12 +353,12 @@ class AttendanceService
 
         $verifiedMatchScore = null;
 
-        if ($requiresPhoto && $livenessReferenceBytes !== null) {
+        if ($requiresFaceMatch && $requiresPhoto && $livenessReferenceBytes !== null) {
             $verifiedMatchScore = $this->faceVerificationService->assertPunchAllowedWithImageBytes(
                 $employee,
                 $livenessReferenceBytes,
             );
-        } elseif ($requiresPhoto && $selfie) {
+        } elseif ($requiresFaceMatch && $requiresPhoto && $selfie) {
             $verifiedMatchScore = $this->faceVerificationService->assertPunchAllowed(
                 $employee,
                 $selfie,

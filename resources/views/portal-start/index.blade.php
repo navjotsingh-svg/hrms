@@ -93,8 +93,8 @@
                             Require face match to punch in/out
                         </label>
                         <div class="form-text">
-                            When enabled, punch uses AWS Face Liveness (blocks phone photos) then compares the live face to the approved profile photo with Rekognition.
-                            Only applies when photo capture is required.
+                            When enabled (and punch photo is required), employees complete AWS Face Liveness then the live face is matched to their approved profile photo.
+                            Turn this off to allow punch with location only, or with a photo that is not face-matched.
                         </div>
                     </div>
 

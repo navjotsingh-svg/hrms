@@ -162,9 +162,13 @@ function LivenessPanel({
     const normalized = useMemo(() => normalizeCredentials(credentials), [credentials]);
     const [assetPaths, setAssetPaths] = useState(null);
     const [bootError, setBootError] = useState(null);
+    // Amplify stays on "Verifying..." after onAnalysisComplete (no onDone transition) — replace UI ourselves.
+    const [outcome, setOutcome] = useState(null);
 
     useEffect(() => {
         let cancelled = false;
+
+        setOutcome(null);
 
         resolveWorkingAssetPaths()
             .then((paths) => {
@@ -184,7 +188,7 @@ function LivenessPanel({
         return () => {
             cancelled = true;
         };
-    }, [onError]);
+    }, [onError, sessionId]);
 
     const credentialProvider = useCallback(async () => {
         if (!normalized.accessKeyId || !normalized.secretAccessKey) {
@@ -218,6 +222,32 @@ function LivenessPanel({
         };
     }, [credentialProvider, assetPaths]);
 
+    const handleAnalysisComplete = useCallback(async (deviceInfo) => {
+        setOutcome({ status: 'verifying' });
+
+        try {
+            const result = await onComplete?.(deviceInfo);
+
+            if (result && result.passed === false) {
+                setOutcome({
+                    status: 'failed',
+                    message: result.message || 'Face liveness did not succeed. Try again.',
+                });
+
+                return;
+            }
+
+            setOutcome({
+                status: 'passed',
+                message: result?.message || 'Live check passed. Confirm to mark attendance.',
+            });
+        } catch (error) {
+            const message = describeLivenessError(error);
+            setOutcome({ status: 'failed', message });
+            throw error;
+        }
+    }, [onComplete]);
+
     if (bootError) {
         return (
             <div className="alert alert-danger mb-0">
@@ -234,6 +264,26 @@ function LivenessPanel({
         );
     }
 
+    if (outcome?.status === 'passed') {
+        return (
+            <div className="attendance-liveness-panel">
+                <div className="alert alert-success mb-0">
+                    {outcome.message}
+                </div>
+            </div>
+        );
+    }
+
+    if (outcome?.status === 'failed') {
+        return (
+            <div className="attendance-liveness-panel">
+                <div className="alert alert-danger mb-0">
+                    {outcome.message}
+                </div>
+            </div>
+        );
+    }
+
     return (
         <ThemeProvider>
             <div className="attendance-liveness-panel">
@@ -244,7 +294,7 @@ function LivenessPanel({
                     key={`${sessionId}-${assetPaths.source}`}
                     sessionId={sessionId}
                     region={region}
-                    onAnalysisComplete={onComplete}
+                    onAnalysisComplete={handleAnalysisComplete}
                     onError={(error) => {
                         console.error('Face liveness error', error);
                         onError?.(error);

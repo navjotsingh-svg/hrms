@@ -221,13 +221,17 @@ export function initAttendancePunch({
                     const confidenceLabel = Number.isFinite(confidence)
                         ? ` (${confidence.toFixed(2)}%)`
                         : '';
+                    const message = `Live check passed${confidenceLabel}. Confirm to mark attendance.`;
 
                     completedLivenessSessionId = sessionId;
                     livenessPassed = true;
                     setLivenessRetryVisible(false);
-                    setLivenessStatus(`Live check passed${confidenceLabel}. Confirm to mark attendance.`);
+                    setLivenessStatus(message);
                     captureBtn.disabled = false;
                     captureBtn.textContent = captureBtnLabel();
+
+                    // Returned so attendance-liveness can replace Amplify's stuck "Verifying..." UI.
+                    return { passed: true, message, confidence };
                 } catch (error) {
                     console.error('Face liveness verify failed', error?.response?.data || error);
                     const message = getErrorMessage(
@@ -241,6 +245,8 @@ export function initAttendancePunch({
                     captureBtn.disabled = true;
                     captureBtn.textContent = captureBtnLabel();
                     setLivenessRetryVisible(true);
+
+                    return { passed: false, message };
                 }
             },
             onError: (error) => {
@@ -425,7 +431,8 @@ export function initAttendancePunch({
         faceMatchThreshold = Number(status.face_match_threshold) || 90;
         requireFaceMatch = status.require_face_match !== false;
         requirePunchPhoto = status.require_punch_photo !== false;
-        requireLiveness = requirePunchPhoto && status.require_liveness !== false;
+        // Live check + face compare only when HR requires face match (and punch photo / global liveness).
+        requireLiveness = requirePunchPhoto && requireFaceMatch && status.require_liveness !== false;
         hasProfilePhoto = Boolean(status.has_profile_photo);
 
         loadFaceVerification().then(({ bindProfileFaceContext }) => {
