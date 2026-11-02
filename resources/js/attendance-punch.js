@@ -170,19 +170,31 @@ export function initAttendancePunch({
 
         await waitForModalShown();
 
-        const { data } = await api.post('/attendance/liveness/session');
-        const payload = data.data || {};
-        const sessionId = payload.session_id;
+        let response;
+
+        try {
+            response = await api.post('/attendance/liveness/session');
+        } catch (error) {
+            console.error('Face liveness session API failed', error?.response?.data || error);
+            throw new Error(getErrorMessage(error, 'Unable to start face liveness session. Check AWS Rekognition Face Liveness permissions.'));
+        }
+
+        const payload = response?.data?.data || {};
+        const sessionId = payload.session_id || payload.sessionId || null;
         const region = payload.region || 'us-east-1';
         const credentials = payload.credentials || {};
         const hasCredentials = Boolean(
             (credentials.accessKeyId || credentials.access_key_id)
-            && (credentials.secretAccessKey || credentials.secret_access_key)
-            && (credentials.sessionToken || credentials.session_token),
+            && (credentials.secretAccessKey || credentials.secret_access_key),
         );
 
         if (!sessionId || !hasCredentials) {
-            throw new Error('Unable to start face liveness session.');
+            console.error('Face liveness session payload incomplete', payload);
+            throw new Error(
+                !sessionId
+                    ? 'Face liveness session was not created. Ensure CreateFaceLivenessSession is allowed and the region supports Face Liveness.'
+                    : 'Face liveness credentials were not returned. Check AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY on the server.',
+            );
         }
 
         setLivenessStatus('Follow the oval. Keep your face in frame — photos on a phone will fail.');

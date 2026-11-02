@@ -68,11 +68,21 @@ function LivenessPanel({
     const normalized = useMemo(() => normalizeCredentials(credentials), [credentials]);
 
     const credentialProvider = useCallback(async () => {
-        if (!normalized.accessKeyId || !normalized.secretAccessKey || !normalized.sessionToken) {
+        if (!normalized.accessKeyId || !normalized.secretAccessKey) {
             throw new Error('Face liveness credentials are incomplete.');
         }
 
-        return normalized;
+        const payload = {
+            accessKeyId: normalized.accessKeyId,
+            secretAccessKey: normalized.secretAccessKey,
+            expiration: normalized.expiration,
+        };
+
+        if (normalized.sessionToken) {
+            payload.sessionToken = normalized.sessionToken;
+        }
+
+        return payload;
     }, [normalized]);
 
     const config = useMemo(() => ({

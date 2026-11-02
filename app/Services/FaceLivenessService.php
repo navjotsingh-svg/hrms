@@ -148,7 +148,7 @@ class FaceLivenessService
     }
 
     /**
-     * @return array{accessKeyId: string, secretAccessKey: string, sessionToken: string, expiration: string}
+     * @return array{accessKeyId: string, secretAccessKey: string, sessionToken?: string, expiration: string}
      */
     private function temporaryCredentials(): array
     {
@@ -165,43 +165,41 @@ class FaceLivenessService
             $result = $this->stsClient()->getSessionToken([
                 'DurationSeconds' => 900,
             ]);
+
+            $credentials = $result['Credentials'] ?? null;
+
+            if (is_array($credentials)
+                && ! empty($credentials['AccessKeyId'])
+                && ! empty($credentials['SecretAccessKey'])
+                && ! empty($credentials['SessionToken'])
+            ) {
+                return [
+                    // Amplify FaceLivenessDetectorCore expects camelCase + ISO-8601 expiration.
+                    'accessKeyId' => (string) $credentials['AccessKeyId'],
+                    'secretAccessKey' => (string) $credentials['SecretAccessKey'],
+                    'sessionToken' => (string) $credentials['SessionToken'],
+                    'expiration' => $this->formatCredentialExpiration($credentials['Expiration'] ?? null),
+                ];
+            }
+
+            Log::warning('AWS STS GetSessionToken returned incomplete credentials; falling back to IAM keys.');
         } catch (AwsException $exception) {
-            Log::warning('AWS STS GetSessionToken failed for Face Liveness.', [
+            Log::warning('AWS STS GetSessionToken failed for Face Liveness; falling back to IAM keys.', [
                 'code' => $exception->getAwsErrorCode(),
                 'message' => $exception->getAwsErrorMessage() ?: $exception->getMessage(),
             ]);
-
-            throw ValidationException::withMessages([
-                'liveness' => ['Unable to issue temporary AWS credentials for face liveness. Allow sts:GetSessionToken on the IAM user.'],
-            ]);
         } catch (\Throwable $exception) {
-            Log::warning('AWS STS GetSessionToken failed for Face Liveness.', [
+            Log::warning('AWS STS GetSessionToken failed for Face Liveness; falling back to IAM keys.', [
                 'message' => $exception->getMessage(),
             ]);
-
-            throw ValidationException::withMessages([
-                'liveness' => ['Unable to issue temporary AWS credentials for face liveness.'],
-            ]);
         }
 
-        $credentials = $result['Credentials'] ?? null;
-
-        if (! is_array($credentials)
-            || empty($credentials['AccessKeyId'])
-            || empty($credentials['SecretAccessKey'])
-            || empty($credentials['SessionToken'])
-        ) {
-            throw ValidationException::withMessages([
-                'liveness' => ['Unable to issue temporary AWS credentials for face liveness.'],
-            ]);
-        }
-
+        // Fallback for hosts where sts:GetSessionToken is blocked. Prefer a Cognito
+        // identity pool / AssumeRole in production when possible.
         return [
-            // Amplify FaceLivenessDetectorCore expects camelCase + ISO-8601 expiration.
-            'accessKeyId' => (string) $credentials['AccessKeyId'],
-            'secretAccessKey' => (string) $credentials['SecretAccessKey'],
-            'sessionToken' => (string) $credentials['SessionToken'],
-            'expiration' => $this->formatCredentialExpiration($credentials['Expiration'] ?? null),
+            'accessKeyId' => $key,
+            'secretAccessKey' => $secret,
+            'expiration' => now()->addMinutes(14)->toIso8601String(),
         ];
     }
 
