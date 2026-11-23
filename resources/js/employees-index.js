@@ -64,7 +64,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     const routes = webRoutes();
 
     let currentPage = 1;
-    let currentPerPage = readPerPage(perPageSelect);
+    let currentPerPage = readPerPage(perPageSelect, 12);
     let currentLayout = localStorage.getItem(LAYOUT_STORAGE_KEY) === 'cards' ? 'cards' : 'table';
     let canManage = false;
     let canViewProfile = false;

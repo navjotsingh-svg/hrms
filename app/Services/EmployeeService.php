@@ -98,7 +98,7 @@ class EmployeeService
         }
 
         $page = max(1, (int) ($filters['page'] ?? 1));
-        $perPage = max(1, (int) ($filters['per_page'] ?? 10));
+        $perPage = max(1, (int) ($filters['per_page'] ?? 12));
 
         return $query->paginate($perPage, ['*'], 'page', $page);
     }

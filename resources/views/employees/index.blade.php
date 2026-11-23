@@ -76,6 +76,8 @@
     'perPageId' => 'employeesPerPage',
     'wrapId' => 'employeesPagination',
     'ariaLabel' => 'Employees pagination',
+    'perPageOptions' => [12, 25, 50],
+    'defaultPerPage' => 12,
 ])
 
         <div id="employeesListContainer" data-can-manage-offboarding="{{ Auth::user()->canManageOffboarding() ? '1' : '0' }}">
@@ -116,6 +118,9 @@
             'wrapId' => 'employeesPagination',
             'ariaLabel' => 'Employees pagination',
             'infoText' => 'Loading pagination...',
+            'showPerPage' => true,
+            'perPageOptions' => [12, 25, 50],
+            'defaultPerPage' => 12,
         ])
     </div>
 
