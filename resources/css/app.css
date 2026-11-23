@@ -3301,6 +3301,40 @@ body.logo-lightbox-open .modal-backdrop {
     transition: border-color 0.2s ease, box-shadow 0.2s ease;
 }
 
+/* Keep phone + remove button on one row (wizard width:100% otherwise wraps the ×) */
+.employee-wizard .input-group {
+    flex-wrap: nowrap;
+    align-items: stretch;
+    width: 100%;
+}
+
+.employee-wizard .input-group > .form-control,
+.employee-wizard .input-group > .form-select {
+    width: 1%;
+    flex: 1 1 auto;
+    max-width: none;
+    min-width: 0;
+}
+
+.employee-wizard .input-group > .form-control:not(:last-child),
+.employee-wizard .input-group > .form-select:not(:last-child) {
+    border-top-right-radius: 0;
+    border-bottom-right-radius: 0;
+}
+
+.employee-wizard .input-group > .btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex: 0 0 auto;
+    min-width: 2.75rem;
+}
+
+.employee-wizard .input-group > .btn:not(:first-child) {
+    border-top-left-radius: 0;
+    border-bottom-left-radius: 0;
+}
+
 .employee-wizard .form-control:focus,
 .employee-wizard .form-select:focus {
     border-color: var(--hrms-brand);
