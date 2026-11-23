@@ -4,6 +4,7 @@ namespace App\Http\Requests\Concerns;
 
 use App\Models\Employee;
 use App\Models\Role;
+use App\Support\FamilyRelationOptions;
 use Illuminate\Validation\Rule;
 
 trait ValidatesEmployeeFields
@@ -75,13 +76,24 @@ trait ValidatesEmployeeFields
             'role_id' => [
                 'required',
                 'integer',
-                Rule::exists('roles', 'id')->where(function ($query) use ($companyId) {
+                Rule::exists('roles', 'id')->where(function ($query) use ($companyId, $employeeId) {
                     $query->where('scope', 'company')
-                        ->whereNotIn('slug', [Role::SLUG_SUPER_ADMIN, Role::SLUG_COMPANY_ADMIN])
                         ->where(function ($builder) use ($companyId) {
                             $builder
                                 ->whereNull('company_id')
                                 ->orWhere('company_id', $companyId);
+                        })
+                        // Keep an already-assigned company_admin role editable, but never allow assigning super_admin.
+                        ->where(function ($builder) use ($employeeId) {
+                            $builder->whereNotIn('slug', [Role::SLUG_SUPER_ADMIN, Role::SLUG_COMPANY_ADMIN]);
+
+                            if ($employeeId) {
+                                $currentRoleId = Employee::query()->whereKey($employeeId)->value('role_id');
+
+                                if ($currentRoleId) {
+                                    $builder->orWhere('id', $currentRoleId);
+                                }
+                            }
                         });
                 }),
             ],
@@ -130,6 +142,11 @@ trait ValidatesEmployeeFields
             'state' => ['nullable', 'string', 'max:100'],
             'country' => ['nullable', 'string', 'max:100'],
             'postal_code' => ['nullable', 'string', 'max:20'],
+            'emergency_contacts' => ['nullable', 'array', 'max:10'],
+            'emergency_contacts.*.name' => ['required', 'string', 'max:100'],
+            'emergency_contacts.*.relation' => ['required', 'string', 'max:50', FamilyRelationOptions::validationRule()],
+            'emergency_contacts.*.phones' => ['required', 'array', 'min:1'],
+            'emergency_contacts.*.phones.*' => ['required', 'digits:10'],
             'tax_regime' => ['nullable', Rule::in([Employee::TAX_REGIME_OLD, Employee::TAX_REGIME_NEW])],
             'give_portal_access' => ['sometimes', 'boolean'],
         ];
@@ -140,6 +157,8 @@ trait ValidatesEmployeeFields
         return [
             'phone.digits' => 'Mobile number must be exactly 10 digits.',
             'email.unique' => 'This email is already used by an active employee.',
+            'emergency_contacts.*.phones.*.digits' => 'Each emergency mobile number must be exactly 10 digits.',
+            'emergency_contacts.*.phones.min' => 'Add at least one mobile number for each emergency contact.',
         ];
     }
 }

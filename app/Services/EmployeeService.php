@@ -11,6 +11,7 @@ use App\Models\EmployeeWeeklyOffDay;
 use App\Models\LeaveType;
 use App\Models\Role;
 use App\Models\User;
+use App\Support\EmergencyContactPayload;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
@@ -114,6 +115,7 @@ class EmployeeService
         $this->normalizeProbationData($data);
         $this->normalizePaidEmployeeData($data);
         $this->normalizeTaxRegimeData($data);
+        $this->normalizeEmergencyContactData($data);
         $plainPassword = null;
         $reusedPortalUser = false;
         $employeeCode = $data['employee_code'];
@@ -255,6 +257,7 @@ class EmployeeService
         $this->normalizeProbationData($data);
         $this->normalizePaidEmployeeData($data);
         $this->normalizeTaxRegimeData($data);
+        $this->normalizeEmergencyContactData($data);
         $plainPassword = null;
         $isFirstPortalIssue = false;
         $hadPortalAccess = (bool) $employee->user_id;
@@ -1218,6 +1221,25 @@ class EmployeeService
         $data['tax_regime'] = ($data['tax_regime'] ?? Employee::TAX_REGIME_NEW) === Employee::TAX_REGIME_OLD
             ? Employee::TAX_REGIME_OLD
             : Employee::TAX_REGIME_NEW;
+    }
+
+    private function normalizeEmergencyContactData(array &$data): void
+    {
+        if (! array_key_exists('emergency_contacts', $data)) {
+            return;
+        }
+
+        $contacts = EmergencyContactPayload::normalize([
+            'contacts' => is_array($data['emergency_contacts']) ? $data['emergency_contacts'] : [],
+        ])['contacts'];
+
+        $primary = $contacts[0] ?? null;
+
+        $data['emergency_contacts'] = $contacts !== [] ? $contacts : null;
+        $data['emergency_contact_name'] = $primary['name'] ?? null;
+        $data['emergency_contact_phone'] = $primary['phones'][0] ?? null;
+        $data['emergency_contact_relation'] = $primary['relation'] ?? null;
+        $data['emergency_contact_family_member_id'] = null;
     }
 
     private function normalizeProbationData(array &$data): void

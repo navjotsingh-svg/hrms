@@ -16,11 +16,16 @@
             </div>
             <div class="wizard-step" data-step="3">
                 <div class="wizard-step-circle"><span>3</span></div>
-                <span class="wizard-step-label">Salary</span>
-                <span class="wizard-step-hint">Compensation</span>
+                <span class="wizard-step-label">Emergency</span>
+                <span class="wizard-step-hint">Emergency contacts</span>
             </div>
             <div class="wizard-step" data-step="4">
                 <div class="wizard-step-circle"><span>4</span></div>
+                <span class="wizard-step-label">Salary</span>
+                <span class="wizard-step-hint">Compensation</span>
+            </div>
+            <div class="wizard-step" data-step="5">
+                <div class="wizard-step-circle"><span>5</span></div>
                 <span class="wizard-step-label">Review</span>
                 <span class="wizard-step-hint">Confirm &amp; access</span>
             </div>
@@ -32,7 +37,7 @@
         <div class="wizard-panel-header wizard-panel-header--styled">
             <div class="wizard-panel-header-icon wizard-panel-header-icon--personal" aria-hidden="true">👤</div>
             <div>
-                <span class="wizard-step-badge">Step 1 of 4</span>
+                <span class="wizard-step-badge">Step 1 of 5</span>
                 <h2 class="wizard-panel-title">Personal Information</h2>
                 <p class="wizard-panel-desc">Basic identity and contact details for the employee record.</p>
             </div>
@@ -146,7 +151,7 @@
         <div class="wizard-panel-header wizard-panel-header--styled">
             <div class="wizard-panel-header-icon wizard-panel-header-icon--employment" aria-hidden="true">💼</div>
             <div>
-                <span class="wizard-step-badge">Step 2 of 4</span>
+                <span class="wizard-step-badge">Step 2 of 5</span>
                 <h2 class="wizard-panel-title">Employment Details</h2>
                 <p class="wizard-panel-desc">Role, department, reporting structure, and probation within your company.</p>
             </div>
@@ -343,12 +348,39 @@
         </div>
     </div>
 
-    {{-- Step 3: Salary --}}
+    {{-- Step 3: Emergency Contact --}}
     <div class="wizard-panel" data-step-panel="3">
+        <div class="wizard-panel-header wizard-panel-header--styled">
+            <div class="wizard-panel-header-icon wizard-panel-header-icon--emergency" aria-hidden="true">🆘</div>
+            <div>
+                <span class="wizard-step-badge">Step 3 of 5</span>
+                <h2 class="wizard-panel-title">Emergency Contact</h2>
+                <p class="wizard-panel-desc">Add one or more people to contact in an emergency. Optional — can also be submitted later by the employee.</p>
+            </div>
+        </div>
+
+        <div class="wizard-form-section">
+            <div class="wizard-form-section-head">
+                <span class="wizard-form-section-icon" aria-hidden="true">📞</span>
+                <div>
+                    <h6 class="wizard-form-section-title">Emergency Contacts</h6>
+                    <p class="wizard-form-section-desc">Each contact needs a name, relation, and at least one 10-digit mobile number.</p>
+                </div>
+            </div>
+            <div class="wizard-form-section-body">
+                <div id="employeeEmergencyContactsList" class="d-flex flex-column gap-3 mb-3"></div>
+                <button type="button" class="btn btn-sm btn-outline-secondary" id="employeeAddEmergencyContact">+ Add Emergency Contact</button>
+                <div class="invalid-feedback d-block" data-error="emergency_contacts"></div>
+            </div>
+        </div>
+    </div>
+
+    {{-- Step 4: Salary --}}
+    <div class="wizard-panel" data-step-panel="4">
         <div class="wizard-panel-header wizard-panel-header--styled">
             <div class="wizard-panel-header-icon wizard-panel-header-icon--salary" aria-hidden="true">💰</div>
             <div>
-                <span class="wizard-step-badge">Step 3 of 4</span>
+                <span class="wizard-step-badge">Step 4 of 5</span>
                 <h2 class="wizard-panel-title">Salary &amp; Compensation</h2>
                 <p class="wizard-panel-desc">Define the compensation structure for payroll. Bank details are added by the employee from their portal.</p>
             </div>
@@ -470,12 +502,12 @@
         </div>
     </div>
 
-    {{-- Step 4: Review --}}
-    <div class="wizard-panel" data-step-panel="4">
+    {{-- Step 5: Review --}}
+    <div class="wizard-panel" data-step-panel="5">
         <div class="wizard-panel-header wizard-panel-header--styled">
             <div class="wizard-panel-header-icon wizard-panel-header-icon--review" aria-hidden="true">✅</div>
             <div>
-                <span class="wizard-step-badge">Step 4 of 4</span>
+                <span class="wizard-step-badge">Step 5 of 5</span>
                 <h2 class="wizard-panel-title">Review &amp; Portal Access</h2>
                 <p class="wizard-panel-desc">Confirm all details before saving the employee record.</p>
             </div>
@@ -531,3 +563,39 @@
         </div>
     </div>
 </div>
+
+<template id="employeeEmergencyContactRowTemplate">
+    <div class="profile-emergency-contact-row border rounded p-3" data-emergency-contact-row>
+        <div class="d-flex justify-content-between align-items-start gap-2 mb-3">
+            <strong class="profile-emergency-contact-row-title">Emergency Contact</strong>
+            <button type="button" class="btn btn-sm btn-outline-danger" data-remove-emergency-contact>&times; Remove</button>
+        </div>
+        <div class="row g-3">
+            <div class="col-md-4">
+                <label class="form-label">Name <span class="text-danger">*</span></label>
+                <input type="text" class="form-control" data-emergency-name placeholder="Contact name">
+            </div>
+            <div class="col-md-4">
+                <label class="form-label">Relation <span class="text-danger">*</span></label>
+                <select class="form-select" data-emergency-relation>
+                    <option value="">Select relation</option>
+                    @foreach (config('hrms.family_relations', []) as $relation)
+                        <option value="{{ $relation }}">{{ $relation }}</option>
+                    @endforeach
+                </select>
+            </div>
+        </div>
+        <div class="mt-3">
+            <label class="form-label">Mobile Numbers <span class="text-danger">*</span></label>
+            <div class="d-flex flex-column gap-2" data-emergency-phones-list></div>
+            <button type="button" class="btn btn-sm btn-outline-secondary mt-2" data-add-emergency-phone>+ Add Phone Number</button>
+        </div>
+    </div>
+</template>
+
+<template id="employeeEmergencyPhoneRowTemplate">
+    <div class="input-group" data-emergency-phone-row>
+        <input type="tel" class="form-control" data-emergency-phone inputmode="numeric" maxlength="10" pattern="[0-9]{10}" title="Enter a 10-digit mobile number" placeholder="10 digit mobile">
+        <button type="button" class="btn btn-outline-danger" data-remove-emergency-phone aria-label="Remove phone">&times;</button>
+    </div>
+</template>

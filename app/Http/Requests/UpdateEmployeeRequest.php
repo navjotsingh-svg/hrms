@@ -21,7 +21,7 @@ class UpdateEmployeeRequest extends FormRequest
 
         return array_merge(
             $this->employeeRules(
-                $this->user()?->company_id,
+                $employee?->company_id ?? $this->user()?->company_id,
                 $employee?->id,
                 $employee?->user_id,
                 (bool) $employee?->user_id || $grantPortalAccess

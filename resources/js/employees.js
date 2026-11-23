@@ -28,7 +28,7 @@ import {
 const webRoutes = () => window.HRMS_WEB_ROUTES || {};
 const EXCLUDED_ROLE_SLUGS = ['super_admin', 'company_admin'];
 const ASYNC_FIELDS = ['email', 'phone', 'employee_code'];
-const TOTAL_STEPS = 4;
+const TOTAL_STEPS = 5;
 
 const EMPLOYMENT_LABELS = {
     full_time: 'Full Time',
@@ -665,9 +665,163 @@ document.addEventListener('DOMContentLoaded', async () => {
             return fields;
         }
         if (step === 3) {
+            return [];
+        }
+        if (step === 4) {
             return isPaidEmployee() ? ['annual_ctc', 'salary_effective_from'] : [];
         }
         return [];
+    };
+
+    const createEmergencyPhoneRow = (phone = '') => {
+        const template = document.getElementById('employeeEmergencyPhoneRowTemplate');
+        const row = template?.content.firstElementChild?.cloneNode(true);
+
+        if (!row) {
+            return null;
+        }
+
+        const input = row.querySelector('[data-emergency-phone]');
+
+        if (input) {
+            input.value = phone || '';
+        }
+
+        return row;
+    };
+
+    const updateEmergencyPhoneRemoveButtons = (contactRow) => {
+        const phoneRows = contactRow.querySelectorAll('[data-emergency-phone-row]');
+
+        phoneRows.forEach((row) => {
+            const removeBtn = row.querySelector('[data-remove-emergency-phone]');
+            removeBtn?.classList.toggle('d-none', phoneRows.length <= 1);
+        });
+    };
+
+    const updateEmergencyContactRemoveButtons = () => {
+        const rows = form.querySelectorAll('[data-emergency-contact-row]');
+
+        rows.forEach((row) => {
+            const removeBtn = row.querySelector('[data-remove-emergency-contact]');
+            removeBtn?.classList.toggle('d-none', rows.length <= 1);
+        });
+    };
+
+    const createEmergencyContactRow = (contact = {}) => {
+        const template = document.getElementById('employeeEmergencyContactRowTemplate');
+        const row = template?.content.firstElementChild?.cloneNode(true);
+
+        if (!row) {
+            return null;
+        }
+
+        const nameInput = row.querySelector('[data-emergency-name]');
+        const relationInput = row.querySelector('[data-emergency-relation]');
+
+        if (nameInput) {
+            nameInput.value = contact.name || '';
+        }
+
+        if (relationInput) {
+            relationInput.value = contact.relation || '';
+        }
+
+        const phonesList = row.querySelector('[data-emergency-phones-list]');
+        const phones = (contact.phones || []).filter(Boolean);
+
+        if (phones.length === 0 && contact.phone) {
+            phones.push(contact.phone);
+        }
+
+        (phones.length ? phones : ['']).forEach((phone) => {
+            const phoneRow = createEmergencyPhoneRow(phone);
+
+            if (phoneRow && phonesList) {
+                phonesList.appendChild(phoneRow);
+            }
+        });
+
+        updateEmergencyPhoneRemoveButtons(row);
+
+        return row;
+    };
+
+    const fillEmergencyContactsList = (contacts = []) => {
+        const list = document.getElementById('employeeEmergencyContactsList');
+
+        if (!list) {
+            return;
+        }
+
+        list.innerHTML = '';
+
+        const normalized = contacts.length
+            ? contacts
+            : [{ name: '', relation: '', phones: [''] }];
+
+        normalized.forEach((contact) => {
+            const row = createEmergencyContactRow(contact);
+
+            if (row) {
+                list.appendChild(row);
+            }
+        });
+
+        updateEmergencyContactRemoveButtons();
+    };
+
+    const collectEmergencyContactsFromForm = () => Array.from(form.querySelectorAll('[data-emergency-contact-row]')).map((row) => ({
+        name: row.querySelector('[data-emergency-name]')?.value.trim() || '',
+        relation: row.querySelector('[data-emergency-relation]')?.value.trim() || '',
+        phones: Array.from(row.querySelectorAll('[data-emergency-phone]'))
+            .map((input) => input.value.trim())
+            .filter(Boolean),
+    })).filter((contact) => contact.name || contact.relation || contact.phones.length);
+
+    const formatEmergencyContactsReview = () => {
+        const contacts = collectEmergencyContactsFromForm();
+
+        if (!contacts.length) {
+            return '—';
+        }
+
+        return contacts.map((contact) => {
+            const phones = contact.phones.join(', ');
+            const relation = contact.relation ? ` (${contact.relation})` : '';
+
+            return phones
+                ? `${contact.name || 'Contact'}${relation}: ${phones}`
+                : `${contact.name || 'Contact'}${relation}`;
+        }).join('; ');
+    };
+
+    const validateEmergencyContactsStep = () => {
+        setFieldError(form, 'emergency_contacts', '');
+        const contacts = collectEmergencyContactsFromForm();
+
+        if (!contacts.length) {
+            return true;
+        }
+
+        for (const contact of contacts) {
+            if (!contact.name || !contact.relation) {
+                setFieldError(form, 'emergency_contacts', 'Each emergency contact needs a name and relation.');
+                return false;
+            }
+
+            if (!contact.phones.length) {
+                setFieldError(form, 'emergency_contacts', 'Each emergency contact needs at least one mobile number.');
+                return false;
+            }
+
+            if (contact.phones.some((phone) => !isValidMobile(phone))) {
+                setFieldError(form, 'emergency_contacts', 'Each emergency mobile number must be exactly 10 digits.');
+                return false;
+            }
+        }
+
+        return true;
     };
 
     const validateStep = async (step) => {
@@ -700,6 +854,10 @@ document.addEventListener('DOMContentLoaded', async () => {
 
         if (step === 2 && getSelectedLeaveTypeIds().length === 0) {
             setFieldError(form, 'leave_type_ids', 'Select at least one leave type.');
+            valid = false;
+        }
+
+        if (step === 3 && !validateEmergencyContactsStep()) {
             valid = false;
         }
 
@@ -755,7 +913,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             buildReviewSummary();
         }
 
-        if (currentStep === 3) {
+        if (currentStep === 4) {
             syncSalaryEffectiveFrom();
         }
 
@@ -804,6 +962,12 @@ document.addEventListener('DOMContentLoaded', async () => {
                     ...(isProbationApplicable()
                         ? [['Probation Ends', getValue('probation_end_date') || '—']]
                         : []),
+                ],
+            },
+            {
+                title: 'Emergency',
+                rows: [
+                    ['Contacts', formatEmergencyContactsReview()],
                 ],
             },
             {
@@ -967,11 +1131,22 @@ document.addEventListener('DOMContentLoaded', async () => {
         updateShiftPreview();
     };
 
-    const loadRoles = async () => {
-        const { data } = await api.get('/roles');
-        roleOptions = (data.data.roles || [])
+    const loadRoles = async (preserveRole = null) => {
+        const { data } = await api.get('/roles', { params: { per_page: 50 } });
+        const roles = data.data.roles || [];
+        roleOptions = roles
             .filter((role) => !EXCLUDED_ROLE_SLUGS.includes(role.slug))
             .map((role) => ({ value: role.id, label: role.name }));
+
+        // Keep the employee's current role visible even if it is normally excluded (e.g. company_admin).
+        if (preserveRole?.id && !roleOptions.some((option) => Number(option.value) === Number(preserveRole.id))) {
+            const current = roles.find((role) => Number(role.id) === Number(preserveRole.id));
+            roleOptions.unshift({
+                value: preserveRole.id,
+                label: current?.name || preserveRole.name || `Current role #${preserveRole.id}`,
+            });
+        }
+
         setSelectOptions('role_id', roleOptions, 'Select role');
     };
 
@@ -1073,7 +1248,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             phone: normalizeMobile(getValue('phone')),
             employee_code: getValue('employee_code'),
             department_ids: getDepartmentIds(),
-            role_id: Number(getValue('role_id')),
+            role_id: getValue('role_id') ? Number(getValue('role_id')) : null,
             shift_id: Number(getValue('shift_id')),
             weekly_off_mode: getValue('weekly_off_mode') || 'company_default',
             weekly_off_weekdays: getValue('weekly_off_mode') === 'custom'
@@ -1098,6 +1273,11 @@ document.addEventListener('DOMContentLoaded', async () => {
             state: nullable(getValue('state')),
             country: nullable(getValue('country')),
             postal_code: nullable(getValue('postal_code')),
+            emergency_contacts: collectEmergencyContactsFromForm().map((contact) => ({
+                name: contact.name,
+                relation: contact.relation,
+                phones: contact.phones,
+            })),
             annual_ctc: isPaidEmployee() ? num('annual_ctc') : null,
             salary_effective_from: isPaidEmployee() ? getValue('salary_effective_from') : null,
             salary_revision_notes: nullable(getValue('salary_revision_notes')),
@@ -1117,26 +1297,21 @@ document.addEventListener('DOMContentLoaded', async () => {
     };
 
     const validateStepsForSave = async () => {
-        if (currentStep === TOTAL_STEPS) {
-            for (let step = 1; step <= 3; step += 1) {
-                const valid = await validateStep(step);
-                if (!valid) {
-                    currentStep = step;
-                    updateStepUi();
-                    showAlert(`Please fix errors in step ${step} before saving.`);
-                    focusFirstInvalidField(form);
-                    return false;
-                }
+        // Full-record saves must re-check earlier required steps (role, shift, etc.),
+        // not only the step currently on screen.
+        const stepsToValidate = currentStep === TOTAL_STEPS
+            ? TOTAL_STEPS - 1
+            : Math.max(currentStep, 2);
+
+        for (let step = 1; step <= stepsToValidate; step += 1) {
+            const valid = await validateStep(step);
+            if (!valid) {
+                currentStep = step;
+                updateStepUi();
+                showAlert(`Please fix errors in step ${step} before saving.`);
+                focusFirstInvalidField(form);
+                return false;
             }
-
-            return true;
-        }
-
-        const valid = await validateStep(currentStep);
-        if (!valid) {
-            showAlert('Please complete all required fields before saving.');
-            focusFirstInvalidField(form);
-            return false;
         }
 
         return true;
@@ -1212,6 +1387,24 @@ document.addEventListener('DOMContentLoaded', async () => {
         setInputValue('state', employee.state);
         setInputValue('country', employee.country || 'India');
         setInputValue('postal_code', employee.postal_code);
+
+        const emergencyContacts = Array.isArray(employee.emergency_contacts) && employee.emergency_contacts.length
+            ? employee.emergency_contacts.map((contact) => ({
+                name: contact.name || '',
+                relation: contact.relation || '',
+                phones: (contact.phones || []).filter(Boolean).length
+                    ? contact.phones.filter(Boolean)
+                    : (contact.phone ? [contact.phone] : ['']),
+            }))
+            : (employee.emergency_contact_name
+                ? [{
+                    name: employee.emergency_contact_name || '',
+                    relation: employee.emergency_contact_relation || '',
+                    phones: employee.emergency_contact_phone ? [employee.emergency_contact_phone] : [''],
+                }]
+                : []);
+
+        fillEmergencyContactsList(emergencyContacts);
 
         const departmentIds = employee.department_ids?.length
             ? employee.department_ids
@@ -1359,6 +1552,61 @@ document.addEventListener('DOMContentLoaded', async () => {
     form.querySelector('#give_portal_access')?.addEventListener('change', buildReviewSummary);
     form.querySelector('#grant_portal_access')?.addEventListener('change', buildReviewSummary);
 
+    document.getElementById('employeeAddEmergencyContact')?.addEventListener('click', () => {
+        const list = document.getElementById('employeeEmergencyContactsList');
+        const row = createEmergencyContactRow();
+
+        if (row && list) {
+            list.appendChild(row);
+            updateEmergencyContactRemoveButtons();
+            setFieldError(form, 'emergency_contacts', '');
+        }
+    });
+
+    form.addEventListener('click', (event) => {
+        const removeContactBtn = event.target.closest('[data-remove-emergency-contact]');
+
+        if (removeContactBtn && form.contains(removeContactBtn)) {
+            removeContactBtn.closest('[data-emergency-contact-row]')?.remove();
+            updateEmergencyContactRemoveButtons();
+            setFieldError(form, 'emergency_contacts', '');
+            return;
+        }
+
+        const addPhoneBtn = event.target.closest('[data-add-emergency-phone]');
+
+        if (addPhoneBtn && form.contains(addPhoneBtn)) {
+            const contactRow = addPhoneBtn.closest('[data-emergency-contact-row]');
+            const phonesList = contactRow?.querySelector('[data-emergency-phones-list]');
+            const phoneRow = createEmergencyPhoneRow();
+
+            if (phoneRow && phonesList) {
+                phonesList.appendChild(phoneRow);
+                updateEmergencyPhoneRemoveButtons(contactRow);
+            }
+
+            return;
+        }
+
+        const removePhoneBtn = event.target.closest('[data-remove-emergency-phone]');
+
+        if (removePhoneBtn && form.contains(removePhoneBtn)) {
+            const contactRow = removePhoneBtn.closest('[data-emergency-contact-row]');
+            removePhoneBtn.closest('[data-emergency-phone-row]')?.remove();
+
+            if (contactRow) {
+                updateEmergencyPhoneRemoveButtons(contactRow);
+            }
+        }
+    });
+
+    form.addEventListener('input', (event) => {
+        if (event.target.matches('[data-emergency-phone]')) {
+            event.target.value = event.target.value.replace(/\D/g, '').slice(0, 10);
+            setFieldError(form, 'emergency_contacts', '');
+        }
+    });
+
     form.querySelector('#probation_end_date')?.addEventListener('input', (event) => {
         event.target.dataset.manualEdit = '1';
         syncProbationStatusFromEndDate();
@@ -1475,7 +1723,12 @@ document.addEventListener('DOMContentLoaded', async () => {
                 throw new Error('Employee details could not be loaded.');
             }
 
-            await Promise.all([loadRoles(), loadShifts(employee.shift_id || null), loadCompanyWeeklyOff(), loadLeaveTypes()]);
+            await Promise.all([
+                loadRoles(employee.role || { id: employee.role_id }),
+                loadShifts(employee.shift_id || null),
+                loadCompanyWeeklyOff(),
+                loadLeaveTypes(),
+            ]);
             try {
                 const { data: settingsResponse } = await api.get('/payroll-settings');
                 companyPayrollSettings = settingsResponse.data || companyPayrollSettings;
@@ -1498,6 +1751,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
             await loadDepartments();
             await loadManagers();
+            fillEmergencyContactsList([]);
             form.querySelector('#joining_date').value = todayDate;
             syncSalaryEffectiveFrom(true);
             toggleProbationFields();
@@ -1507,6 +1761,10 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
     } catch (error) {
         showAlert(getErrorMessage(error));
+    }
+
+    if (!document.querySelector('#employeeEmergencyContactsList')?.children.length) {
+        fillEmergencyContactsList([]);
     }
 
     updateStepUi();
@@ -1522,7 +1780,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             return;
         }
 
-        for (let step = 1; step <= 3; step += 1) {
+        for (let step = 1; step <= TOTAL_STEPS - 1; step += 1) {
             const valid = await validateStep(step);
             if (!valid) {
                 currentStep = step;
